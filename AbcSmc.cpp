@@ -15,6 +15,7 @@
 #include <iostream>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
+#include "pls.h"
 
 const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
 
@@ -134,6 +135,7 @@ class ModelMetrics {
     public:
         void add_metric(string met, NumericType ntype) { _mets.push_back(new Metric(met, ntype)); }
         vector<Metric*> get_metrics() { return _mets; }
+        int size() { return _mets.size(); }
 
     private:
         vector<Metric*> _mets;
@@ -168,6 +170,7 @@ class AbcSmc {
         
 
         void run(string executable) {
+            _executable_filename = executable;
             _particles.clear();
             _predictive_prior.clear();
 
@@ -175,50 +178,24 @@ class AbcSmc {
             _predictive_prior.resize( _num_smc_sets, vector<Particle*>(_num_particles*_particle_threshold) );
 
             for (int t = 0; t<_num_smc_sets; t++) {
-
-                for (int i = 0; i<_num_particles; i++) {
-                    Particle* p = new Particle();
-                    vector<double> par_sample;
-                    if (t == 0) { // sample priors
-                        par_sample = sample_priors();
-                    } else { // sample predictive priors
-                        par_sample = sample_predictive_priors();
-                        //par_sample = sample_predictive_priors(t-1);
-                    }
-                    p->set_parameter_values( par_sample );
-                    _particles[t][i] = p;
-                    
-                    string output_filename = "tmp_sim_" + toString(t) + "_" + toString(i) + ".out"; 
-                    string command = executable + " " + output_filename;
-                    for (unsigned int j = 0; j<par_sample.size(); j++) {
-                        command += " " + toString(par_sample[j]);
-                    }
-                    std::cerr << command << endl;
-                    string retval = exec("echo 1 2.3");
-                    stringstream ss;
-                    ss.str(retval);
-                    double v1; double v2;
-                    ss >> v1 >> v2;
-                    //string retval = exec("ls -l");
-                    std::cerr << retval;
-                    std::cerr << "imported: " << v1 << " " << v2 << endl;
-                    // ./executable_name summary_stats par1val par2val par3val par4val par5val ... 
-                     
-                }
-
-
-                // Run PLS
+                X_orig = Mat2D::Zero(_num_particles, _model_mets->size());
+                Y_orig = Mat2D::Zero(_num_particles, _model_pars->size());
+                _populate_particles( t, X_orig, Y_orig );
+                // Write out particles
 
                 // Select best scoring particles
-           
-                // do the dishes
+                vector<int> sample = _filter_particles( X_orig, Y_orig );
 
-                // don't forget the cat litter
+                // Write out predictive prior
             }
         }
 
+        int npar() { return _model_pars->size(); }
+        int nmet() { return _model_mets->size(); }
 
     private:
+        Mat2D X_orig;
+        Mat2D Y_orig;
         ModelParameters* _model_pars;
         ModelMetrics* _model_mets;
         int _num_smc_sets;
@@ -231,32 +208,144 @@ class AbcSmc {
         vector< vector<Particle*> > _particles;
         vector< vector<Particle*> > _predictive_prior;
 
-        vector<double> sample_priors() {
+        void _populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig) {
+            for (int i = 0; i<_num_particles; i++) {
+                if (t == 0) { // sample priors
+                    Y_orig.row(i) = sample_priors();
+                } else { // sample predictive priors
+Y_orig.row(i) = sample_priors();
+//                    Y_orig.row(i) = sample_predictive_priors();
+                }
+
+                //string output_filename = "tmp_sim_" + toString(t) + "_" + toString(i) + ".out"; 
+                //string command = executable + " " + output_filename;
+                string command = _executable_filename;
+                for (int j = 0; j<npar(); j++) {
+                    command += " " + toString(Y_orig(i,j));
+                }
+                // ./executable_name summary_stats par1val par2val par3val par4val par5val ... 
+
+                //std::cerr << command << endl;
+                //string retval = exec("echo 19 2.3");
+                string retval = exec(command);
+                stringstream ss;
+                ss.str(retval);
+                //std::cerr << "nmet=" << nmet() << " captured=" << retval << endl;
+            
+                for (int j = 0; j<nmet(); j++) {
+                    ss >> X_orig(i, j);
+                }
+            }
+        }
+
+        vector<int> _filter_particles (Mat2D &X_orig, Mat2D &Y_orig) {
+            // Run PLS
+            //void test_bc( Mat2D );
+            //test_bc(Y_orig);
+
+            Mat2D X = colwise_z_scores( X_orig );
+            Mat2D Y = colwise_z_scores( Y_orig );
+
+            PLS_Model plsm;
+            int nobs  = X_orig.rows();      // number of observations
+            int npred = X_orig.cols();      // number of predictor variables
+            int nresp = Y_orig.cols();      // number of response variables
+            int ncomp = npar();             // It doesn't make sense to consider more components than model parameters
+            plsm.initialize(npred, nresp, ncomp);
+            plsm.plsr(X, Y, plsm, KERNEL_TYPE1);
+
+            // A is number of components to use
+            for (int A = 1; A<=ncomp; A++) { 
+                // How well did we do with this many components?
+                cout << A << " components\t";
+                cout << "explained variance: " << plsm.explained_variance(X, Y, A);
+                //cout << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
+                cout << " SSE: " << plsm.SSE(X,Y,A) <<  endl; 
+            }
+
+            cout << "Validation (PRESS):\n";
+            cout << plsm.loo_validation(X, Y, PRESS) << endl;
+
+            cout << "Validation (RMSEP):\n";
+            cout << plsm.loo_validation(X, Y, RMSEP) << endl;
+
+            cout << "Optimal number of components (LOO):\t" << plsm.optimal_num_components(X, Y, LOO) << endl;
+
+            Row obsmet_orig;
+            obsmet_orig.setZero(2);
+            obsmet_orig(0) = 40; // number of dice
+            obsmet_orig(1) = 10; // number of faces
+            Row = obsmet = colwise_z_scores // transform using mean and sd of simulated data
+
+            cout << "scores:\t" << plsm.scores(obsmet) << endl;
+            //cout << "Optimal number of components (NEW DATA):\t" << plsm.optimal_num_components(X.bottomRows(nobs - nobs*0.6), Y.bottomRows(nobs - nobs*0.6), NEW_DATA) << endl;
+            cout << "DONE!!!\n";
+            vector<int> DUMMY;
+            return DUMMY; ////////////////FINISH IMPLEMENTING
+        }
+        
+        vector<double> euclidean( Row obsmet, Mat2D simmet ) {
+        
+        }
+
+        Row sample_priors() {
             vector<Parameter*> par_vector = _model_pars->get_parameters();
-            vector<double> par_sample;
+            //vector<double> par_sample;
+            Row par_sample = Row::Zero(_model_pars->size());
 
             for (int i = 0; i < _model_pars->size(); i++) {
-                par_sample.push_back( par_vector[i]->sample() );
+                par_sample(i) =  par_vector[i]->sample();
             }
             return par_sample;
         }
 
+        Row sample_predictive_priors() { Row dummy; return dummy; }
 
-        //vector<double> sample_priors() { vector<double> dummy; return dummy; }
-        vector<double> sample_predictive_priors() { vector<double> dummy; return dummy; }
+/*        void sample_predictive_prior(int set_num, vector<Particle> &particles, int sample_size, MTRand* mtrand, int mpi_rank) {
+            // Read in predictive prior from the last set.
+            // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
+            vector<Particle> predictive_prior = read_predictive_prior_file( set_num - 1 );
+            Doubled_variances sampling_variance = calculate_doubled_variances( predictive_prior );
+            
+            vector<double> weights;
+            if (set_num == 1) {
+                // uniform weights for set 0 predictive prior
+                weights.resize(predictive_prior.size(), 1.0/(double) predictive_prior.size());
+            } else if ( set_num > 1 ) {
+                // weights from set - 2 are needed to calculate weights for set - 1
+                weights = calculate_predictive_prior_weights( predictive_prior, set_num );
+            }
+            if (mpi_rank == 0) write_weights_file( weights, set_num - 1 );
+
+            particles.resize(sample_size);
+            for (int i = 0; i < sample_size; i++) {
+                // Select a particle index j to use from the predictive prior
+                int j = rand_nonuniform_int( weights, mtrand );
+                particles[i].R0 = rand_trunc_normal( predictive_prior[ j ].R0, sampling_variance.R0, R0_hard_min, R0_hard_max, mtrand ); 
+                particles[i].Ih = rand_trunc_normal( predictive_prior[ j ].Ih, sampling_variance.Ih, Ih_hard_min, Ih_hard_max, mtrand ); 
+                particles[i].h  = rand_trunc_normal( predictive_prior[ j ].h,  sampling_variance.h,  h_hard_min,  h_hard_max,  mtrand ); 
+                particles[i].P0 = (int) (rand_trunc_normal( predictive_prior[ j ].P0, sampling_variance.P0, P0_hard_min, P0_hard_max, mtrand ) + 0.5);
+            }
+            return;
+        }*/
 };
 
 int main(int argc, char* argv[]) {
     gsl_rng_set(RNG, time (NULL) * getpid()); // seed the rng using sys time and the process id
     ModelParameters* par = new ModelParameters();
-    par->add_parameter( new Parameter("R0", UNIFORM, FLOAT, 1, 8) );
-    par->add_parameter( new Parameter("h", UNIFORM, INT, 0, 1) );
+    par->add_parameter( new Parameter("ndice", UNIFORM, INT, 1, 100) );
+    par->add_parameter( new Parameter("sides", UNIFORM, INT, 1, 100) );
+    
     ModelMetrics* met = new ModelMetrics(); // the name and order of summary stats returned by simulator
+    met->add_metric( "sum", INT );
+    met->add_metric( "sd", FLOAT );
+
     AbcSmc* abc = new AbcSmc(par, met);
-    abc->set_smc_iterations(2); // or have it test for convergence
-    abc->set_num_samples(1);
-    abc->set_metric_basefilename("summary_stats");
-    abc->run("executable_name");  // ./executable_name summary_stats par1val par2val par3val par4val par5val ...
+    abc->set_smc_iterations(1); // or have it test for convergence
+    abc->set_num_samples(1000);
+    //abc->set_metric_basefilename("summary_stats");
+    abc->run("/home/tjhladish/work/abc_cpp/dice_game");  // ./executable_name summary_stats par1val par2val par3val par4val par5val ...
+    //abc->run("/home/tjhladish/work/abc_cpp/dice_game.py");  // ./executable_name summary_stats par1val par2val par3val par4val par5val ...
 
 
 
