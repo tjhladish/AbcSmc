@@ -16,12 +16,40 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include "pls.h"
+#include "RunningStat.h"
 
 const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
 
 
 using namespace std;
 
+inline double uniform_pdf(double a, double b) { return 1.0 / fabs(b-a); }
+
+int gsl_rng_nonuniform_int(vector<double>& weights, const gsl_rng* rng) {
+    // Weights must sum to 1!!
+    double running_sum = 0;
+    double r = gsl_rng_uniform(RNG);
+    for (unsigned int i = 0; i<weights.size(); i++) {
+        running_sum += weights[i];
+        if (r<=running_sum) return i;
+    }
+    cerr << "Weights may not be normalized\n";
+    exit(100);
+}
+
+double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng) {
+    double sigma = sqrt(sigma_squared);
+    // Don't like this, but it will work
+    // as long as min and max are reasonable
+    // (relative to the pdf)
+    while (1) {
+        double dev = gsl_ran_gaussian(rng, sigma) + mu; 
+        if (dev >= min and dev <= max) {
+            return dev;
+        }
+    }
+}
+ 
 std::string exec(std::string cmd) {
     FILE* pipe = popen(cmd.c_str(), "r");
     if (!pipe) return "ERROR";
@@ -66,17 +94,18 @@ class Parameter {
         }*/
 
         Parameter( string s, PriorType p, NumericType n, double val1, double val2 ) : name(s), ptype(p), ntype(n) {
+            assert(ptype == UNIFORM);
             if (ptype == UNIFORM) {
                 fmin = val1;
                 fmax = val2;
                 mean = (val2 - val1) / 2.0;
                 stdev = sqrt(pow(val2-val1,2)/12);
-            } else if (ptype == NORMAL) {
+            } /*else if (ptype == NORMAL) {
                 fmin = DBL_MIN;
                 fmax = DBL_MAX;
                 mean = val1;
                 stdev = val2;
-            }
+            }*/
         }
 
         double sample() { 
@@ -91,12 +120,20 @@ class Parameter {
         //int sample_int() { return gsl_rng_uniform_int(RNG, imax-imin) + imin; }
         //double sample_float() { return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin; }
 
+        double get_doubled_variance(int t) { return doubled_variance[t]; }
+        void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
+        double get_min() { return fmin; }
+        double get_max() { return fmax; }
+        NumericType get_numeric_type() { return ntype; }
+        
+
     private:
         string name;
         PriorType ptype;
         NumericType ntype;
         //int imin, imax;
         double fmin, fmax, mean, stdev;
+        vector<double> doubled_variance;
 
 //num != static_cast<int>(num)
 };
@@ -108,15 +145,16 @@ class ModelParameters {
         int size() { return _pars.size(); }
 
         //Parameter* p = new Parameter( name, PriorType, NumericType, val1, val2, );
-        void add_parameter(Parameter* p) { _pars.push_back(p); }
+        void add_next_parameter(Parameter* p) { _pars.push_back(p); }
 
 
-        void add_parameter(string name, PriorType ptype, NumericType ntype, double val1, double val2) {
+        void add_next_parameter(string name, PriorType ptype, NumericType ntype, double val1, double val2) {
             Parameter* p = new Parameter(name, ptype, ntype, val1, val2);
             _pars.push_back(p);
         }
 
         vector<Parameter*> get_parameters() { return _pars; }
+        Parameter* get_parameter(int i) { return _pars[i]; }
 
     private:
         vector<Parameter*> _pars;
@@ -125,15 +163,16 @@ class ModelParameters {
 
 struct Metric {
     Metric() {};
-    Metric(string n, NumericType nt) : name(n), ntype(nt) {};
+    Metric(string n, NumericType nt, double val) : name(n), ntype(nt), obs_val(val) {};
     string name;
     NumericType ntype;
+    double obs_val;
 };
 
 
 class ModelMetrics {
     public:
-        void add_metric(string met, NumericType ntype) { _mets.push_back(new Metric(met, ntype)); }
+        void add_next_metric(string met, NumericType ntype, double obs_val) { _mets.push_back(new Metric(met, ntype, obs_val)); }
         vector<Metric*> get_metrics() { return _mets; }
         int size() { return _mets.size(); }
 
@@ -142,18 +181,34 @@ class ModelMetrics {
 };
 
 
-class Particle {
+/*class Particle {
     public:
         //add_particle(vector<double> par_vals, vector<double> met_vals) { _pars=par_vals; _mets=met_vals; }
+        const inline double get_parameter_value( int i ) { return _pars[i]; } 
         vector<double> get_parameter_values() { return _pars; } 
         void set_parameter_values(vector<double> p ) { _pars = p; } 
         vector<double> get_metric_values() { return _mets; } 
         void set_metric_values(vector<double> m) { _mets = m; } 
 
+        friend ostream& operator<<(ostream& os, Particle& par);
+        //friend ostream& operator<<(ostream& os, const Particle& par);
+
     private:
         vector<double> _pars;
         vector<double> _mets;
 };
+
+ostream& operator<<(ostream& os, Particle& particle) {
+//ostream& operator<<(ostream& os, const Particle& particle) {
+    vector<double> _pars = particle.get_parameter_values();
+    vector<double> _mets = particle.get_metric_values();
+
+    for (unsigned int i = 0; i<_pars.size(); i++) os << _pars[i] << " ";
+    for (unsigned int i = 0; i<_mets.size() - 1; i++) os << _mets[i] << " ";
+    os << _mets.back();
+    return os;
+}*/
+
 
 
 class AbcSmc {
@@ -163,6 +218,9 @@ class AbcSmc {
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
         void set_num_samples(int n) { _num_particles = n; }
+        void set_predictive_prior_size(int n) { assert(n > 0); assert(n <= _num_particles); _predictive_prior_size = n; }
+        void set_predictive_prior_fraction(float f)        { assert(f > 0); assert(f <= 1); _predictive_prior_size = _num_particles * f; }
+        void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
         void set_metric_basefilename( string name ) { _metrics_filename = name; }
         //void set_executable_filename( string name ) { _executable_filename = name; }
         //void set_particle_basefilename( string name ) { _particle_filename = name; }
@@ -170,22 +228,40 @@ class AbcSmc {
         
 
         void run(string executable) {
+        // NEED TO ADD SANITY CHECKS HERE
             _executable_filename = executable;
-            _particles.clear();
-            _predictive_prior.clear();
+            _particle_parameters.clear();
+            _particle_metrics.clear();
+            _weights.clear();
 
-            _particles.resize( _num_smc_sets, vector<Particle*>(_num_particles) );
-            _predictive_prior.resize( _num_smc_sets, vector<Particle*>(_num_particles*_particle_threshold) );
+            _particle_parameters.resize( _num_smc_sets, Mat2D::Zero(_num_particles, npar()) );
+            _particle_metrics.resize( _num_smc_sets, Mat2D::Zero(_num_particles, nmet()) );
+            _weights.resize(_num_smc_sets);
+
+            //_particles.clear();
+            _predictive_prior.clear();
+            _predictive_prior.resize(_num_smc_sets);
+
+            //_particles.resize( _num_smc_sets, vector<Particle*>(_num_particles) );
+            //_predictive_prior.resize( _num_smc_sets, vector<Particle*>(_predictive_prior_size) );
 
             for (int t = 0; t<_num_smc_sets; t++) {
-                X_orig = Mat2D::Zero(_num_particles, _model_mets->size());
-                Y_orig = Mat2D::Zero(_num_particles, _model_pars->size());
-                _populate_particles( t, X_orig, Y_orig );
+                //X_orig = Mat2D::Zero(_num_particles, _model_mets->size());
+                //Y_orig = Mat2D::Zero(_num_particles, _model_pars->size());
+cerr << "Sampling\n";
+                //_populate_particles( t, X_orig, Y_orig );
+                _populate_particles( t, _particle_metrics[t], _particle_parameters[t]);
+cerr << "Done\n";
                 // Write out particles
 
                 // Select best scoring particles
-                vector<int> sample = _filter_particles( X_orig, Y_orig );
+                // "sample" contains indices (==row #) of best scoring particles
+                _filter_particles( t, _particle_metrics[t], _particle_parameters[t]);
+                //vector<int> sample = _filter_particles( t, X_orig, Y_orig );
 
+cerr << "Calculating weights\n";
+                calculate_predictive_prior_weights( t );
+cerr << "Done\n";
                 // Write out predictive prior
             }
         }
@@ -200,21 +276,26 @@ class AbcSmc {
         ModelMetrics* _model_mets;
         int _num_smc_sets;
         int _num_particles;
-        int _particle_threshold; // fraction of particles that will be used to inform predictive prior
+        int _pls_training_set_size;
+        int _predictive_prior_size; // number of particles that will be used to inform predictive prior
         string _executable_filename;
         string _metrics_filename;
         string _particle_filename;
         string _predictive_prior_filename;
-        vector< vector<Particle*> > _particles;
-        vector< vector<Particle*> > _predictive_prior;
+        vector< Mat2D > _particle_metrics;
+        vector< Mat2D > _particle_parameters;
+        vector< vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
+        //vector< vector<Particle*> > _particles;
+        //vector< vector<Particle*> > _predictive_prior;
+        vector< vector<double> > _weights;
 
         void _populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig) {
             for (int i = 0; i<_num_particles; i++) {
                 if (t == 0) { // sample priors
                     Y_orig.row(i) = sample_priors();
                 } else { // sample predictive priors
-Y_orig.row(i) = sample_priors();
-//                    Y_orig.row(i) = sample_predictive_priors();
+//Y_orig.row(i) = sample_priors();
+                    Y_orig.row(i) = sample_predictive_priors(t);
                 }
 
                 //string output_filename = "tmp_sim_" + toString(t) + "_" + toString(i) + ".out"; 
@@ -238,21 +319,24 @@ Y_orig.row(i) = sample_priors();
             }
         }
 
-        vector<int> _filter_particles (Mat2D &X_orig, Mat2D &Y_orig) {
+        void _filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
+        //vector<int> _filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
             // Run PLS
             //void test_bc( Mat2D );
             //test_bc(Y_orig);
 
-            Mat2D X = colwise_z_scores( X_orig );
+            Row X_sim_means, X_sim_stdev;
+            Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
             Mat2D Y = colwise_z_scores( Y_orig );
+            Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
 
-            PLS_Model plsm;
             int nobs  = X_orig.rows();      // number of observations
             int npred = X_orig.cols();      // number of predictor variables
             int nresp = Y_orig.cols();      // number of response variables
             int ncomp = npar();             // It doesn't make sense to consider more components than model parameters
+            PLS_Model plsm;
             plsm.initialize(npred, nresp, ncomp);
-            plsm.plsr(X, Y, plsm, KERNEL_TYPE1);
+            plsm.plsr(X.topRows(_pls_training_set_size), Y.topRows(_pls_training_set_size), plsm, KERNEL_TYPE1);
 
             // A is number of components to use
             for (int A = 1; A<=ncomp; A++) { 
@@ -263,29 +347,59 @@ Y_orig.row(i) = sample_priors();
                 cout << " SSE: " << plsm.SSE(X,Y,A) <<  endl; 
             }
 
-            cout << "Validation (PRESS):\n";
-            cout << plsm.loo_validation(X, Y, PRESS) << endl;
+            int test_set_size = nobs - _pls_training_set_size;
+            Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
+            int max_num_components = num_components.maxCoeff();
+            cout << "Optimal number of components (NEW DATA):\t" << num_components << endl;
 
-            cout << "Validation (RMSEP):\n";
-            cout << plsm.loo_validation(X, Y, RMSEP) << endl;
+            // Calculate new, orthogonal metrics (==scores) using the pls model
+            // Is casting as real always safe?
+            Row   obs_scores = plsm.scores(obs_met).row(0).real();
+            Mat2D sim_scores = plsm.scores(X).real();
+            Col   distances  = euclidean(obs_scores, sim_scores);
+            vector<int> ranking = ordered(distances);
 
-            cout << "Optimal number of components (LOO):\t" << plsm.optimal_num_components(X, Y, LOO) << endl;
-
-            Row obsmet_orig;
-            obsmet_orig.setZero(2);
-            obsmet_orig(0) = 40; // number of dice
-            obsmet_orig(1) = 10; // number of faces
-            Row = obsmet = colwise_z_scores // transform using mean and sd of simulated data
-
-            cout << "scores:\t" << plsm.scores(obsmet) << endl;
-            //cout << "Optimal number of components (NEW DATA):\t" << plsm.optimal_num_components(X.bottomRows(nobs - nobs*0.6), Y.bottomRows(nobs - nobs*0.6), NEW_DATA) << endl;
+            cout << "scores:\t" << plsm.scores(obs_met) << endl;
             cout << "DONE!!!\n";
-            vector<int> DUMMY;
-            return DUMMY; ////////////////FINISH IMPLEMENTING
+            vector<int>::iterator first = ranking.begin();
+            vector<int>::iterator last  = ranking.begin() + _predictive_prior_size;
+            vector<int> sample(first, last);
+            _predictive_prior[t] = sample;
+
+/*cerr <<  "pred prior:\n";
+            for (unsigned int i=0; i<sample.size(); i++) {
+cerr << "i, sample[i], particle:" << i << " " << sample[i] << " ";
+cerr << _particle_parameters[t].row(sample[i]) << " | " << _particle_metrics[t].row(sample[i]) << endl;
+            }
+cerr <<  "\n";
+*/
+cout << "Worst five:\n";
+for (unsigned int q=ranking.size()-1;q>=ranking.size()-5;q--) {
+    int idx = ranking[q];
+    cout << Y_orig.row(idx) << " | " << X_orig.row(idx) << endl;
+}
+
+cout << "Best five:\n";
+for (int q=0;q<5;q++) {
+    int idx = ranking[q];
+    cout << Y_orig.row(idx) << " | " << X_orig.row(idx) << endl;
+}
+
+cout << "Actual values:\n" << "100 6 | 374 1.71517\n";
+
+            //return sample;
         }
         
-        vector<double> euclidean( Row obsmet, Mat2D simmet ) {
-        
+        Col euclidean( Row obs_met, Mat2D sim_met ) {
+            Col distances = Col::Zero(sim_met.rows());
+            //vector<double> distances(sim_met.rows());
+            for (int r = 0; r<sim_met.rows(); r++) {
+                for (int c = 0; c<sim_met.cols(); c++) {
+                    distances(r) += pow(obs_met(c) - sim_met(r,c), 2);
+                }
+                distances(r) = sqrt( distances(r) );
+            }
+            return distances; 
         }
 
         Row sample_priors() {
@@ -299,50 +413,121 @@ Y_orig.row(i) = sample_priors();
             return par_sample;
         }
 
-        Row sample_predictive_priors() { Row dummy; return dummy; }
+        void calculate_doubled_variances( int t ) {
+            vector<RunningStat> stats(npar());
 
-/*        void sample_predictive_prior(int set_num, vector<Particle> &particles, int sample_size, MTRand* mtrand, int mpi_rank) {
-            // Read in predictive prior from the last set.
+            for (unsigned int i = 0; i < _predictive_prior[t].size(); i++) {
+                for (int j = 0; j < npar(); j++) {
+                    double particle_idx = _predictive_prior[t][i];
+                    //double par_value = _predictive_prior[t][i]->get_parameter_value(j);
+                    double par_value = _particle_parameters[t](particle_idx, j);
+                    stats[j].Push(par_value);
+                }
+            }
+
+            for (int j = 0; j < npar(); j++) {
+                _model_pars->get_parameter(j)->append_doubled_variance( 2 * stats[j].Variance() );
+            }
+        }
+
+        void normalize_weights( vector<double>& weights ) {
+            double total = 0;
+            for (unsigned int i = 0; i< weights.size(); i++) {
+                total += weights[i];
+            }
+
+            for (unsigned int i = 0; i< weights.size(); i++) {
+                weights[i] /= total;
+            }
+        }
+
+        void calculate_predictive_prior_weights(int set_num) {
             // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
-            vector<Particle> predictive_prior = read_predictive_prior_file( set_num - 1 );
-            Doubled_variances sampling_variance = calculate_doubled_variances( predictive_prior );
+            calculate_doubled_variances( set_num );
+            cerr << "pred prior size in calculate_predictive_prior_weights: " << _predictive_prior[set_num].size() << endl;
             
-            vector<double> weights;
-            if (set_num == 1) {
+            if (set_num == 0) {
                 // uniform weights for set 0 predictive prior
-                weights.resize(predictive_prior.size(), 1.0/(double) predictive_prior.size());
-            } else if ( set_num > 1 ) {
+                _weights[set_num].resize(_predictive_prior[set_num].size(), 1.0/(double) _predictive_prior[set_num].size());
+            } else if ( set_num > 0 ) {
                 // weights from set - 2 are needed to calculate weights for set - 1
-                weights = calculate_predictive_prior_weights( predictive_prior, set_num );
-            }
-            if (mpi_rank == 0) write_weights_file( weights, set_num - 1 );
 
-            particles.resize(sample_size);
-            for (int i = 0; i < sample_size; i++) {
-                // Select a particle index j to use from the predictive prior
-                int j = rand_nonuniform_int( weights, mtrand );
-                particles[i].R0 = rand_trunc_normal( predictive_prior[ j ].R0, sampling_variance.R0, R0_hard_min, R0_hard_max, mtrand ); 
-                particles[i].Ih = rand_trunc_normal( predictive_prior[ j ].Ih, sampling_variance.Ih, Ih_hard_min, Ih_hard_max, mtrand ); 
-                particles[i].h  = rand_trunc_normal( predictive_prior[ j ].h,  sampling_variance.h,  h_hard_min,  h_hard_max,  mtrand ); 
-                particles[i].P0 = (int) (rand_trunc_normal( predictive_prior[ j ].P0, sampling_variance.P0, P0_hard_min, P0_hard_max, mtrand ) + 0.5);
+                _weights[set_num].resize( _predictive_prior[set_num].size() );
+                
+                double numerator = 1;
+                for (int j = 0; j<npar(); j++) {
+                    Parameter* par = _model_pars->get_parameter(j);
+                    numerator *= uniform_pdf(par->get_min(), par->get_max());
+                }
+
+                for (unsigned int i = 0; i < _predictive_prior[set_num].size(); i++) {
+                    double denominator = 0.0;
+                    for (int k = 0; k < _predictive_prior[set_num - 1].size(); k++) {
+                        double running_product = _weights[set_num - 1][k];
+                        for (int j = 0; j < npar(); j++) {
+                            //double par_value = _predictive_prior[set_num][i]->get_parameter_value(j);
+                            double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
+                            //double old_par_value = _predictive_prior[set_num-1][k]->get_parameter_value(j);
+                            double old_par_value = _particle_parameters[set_num-1](_predictive_prior[set_num-1][k], j);
+                            double old_doubled_variance = _model_pars->get_parameter(j)->get_doubled_variance(set_num-1);
+
+                            //running_product *= normal_pdf(par_value, old_par_value, old_doubled_variance );
+                            running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_doubled_variance) );
+                        }
+                        denominator += running_product;
+                    }
+                    _weights[set_num][i] = numerator / denominator;
+                }
+
+                normalize_weights( _weights[set_num] );
             }
-            return;
-        }*/
+            //if (mpi_rank == 0) write_weights_file( weights, set_num - 1 );
+        }
+
+        Row sample_predictive_priors(int set_num) {
+            // Select a particle index j to use from the predictive prior
+            Row par_values = Row::Zero(npar());
+            int r = gsl_rng_nonuniform_int(_weights[set_num-1], RNG);
+            for (int j = 0; j<npar(); j++) {
+                int particle_idx = _predictive_prior[set_num-1][r];
+                //double par_value = particle->get_parameter_value(j);
+                double par_value = _particle_parameters[set_num-1](particle_idx, j);
+                Parameter* parameter = _model_pars->get_parameter(j);
+                double doubled_variance = parameter->get_doubled_variance(set_num-1);
+                double par_min = parameter->get_min();
+                double par_max = parameter->get_max();
+                par_values(j) = rand_trunc_normal( par_value, doubled_variance, par_min, par_max, RNG );
+
+                if (parameter->get_numeric_type() == INT) {
+                    par_values(j) = (double) ((int) (par_values(j) + 0.5));
+                }
+            }
+            return par_values;
+        }
+
+        Row _z_transform_observed_metrics(Row& means, Row& stdevs) {
+            Row zmat = Row::Zero(nmet());
+            vector<Metric*> mets = _model_mets->get_metrics();
+            for (int i = 0; i<nmet(); i++) { zmat(i) = (mets[i]->obs_val - means(i)) / stdevs(i); }
+            return zmat;
+        }
 };
 
 int main(int argc, char* argv[]) {
     gsl_rng_set(RNG, time (NULL) * getpid()); // seed the rng using sys time and the process id
     ModelParameters* par = new ModelParameters();
-    par->add_parameter( new Parameter("ndice", UNIFORM, INT, 1, 100) );
-    par->add_parameter( new Parameter("sides", UNIFORM, INT, 1, 100) );
+    par->add_next_parameter( new Parameter("ndice", UNIFORM, INT, 1, 1000) );
+    par->add_next_parameter( new Parameter("sides", UNIFORM, INT, 1, 1000) );
     
     ModelMetrics* met = new ModelMetrics(); // the name and order of summary stats returned by simulator
-    met->add_metric( "sum", INT );
-    met->add_metric( "sd", FLOAT );
+    met->add_next_metric( "sum", INT, 374 );     // are we actually going to use the numeric type attribute?
+    met->add_next_metric( "sd", FLOAT, 1.71517 );
 
     AbcSmc* abc = new AbcSmc(par, met);
-    abc->set_smc_iterations(1); // or have it test for convergence
+    abc->set_smc_iterations(5); // or have it test for convergence
     abc->set_num_samples(1000);
+    abc->set_predictive_prior_fraction(0.1);
+    abc->set_pls_validation_training_fraction(0.5); // fraction of runs to use for training (vs. testing) pls model
     //abc->set_metric_basefilename("summary_stats");
     abc->run("/home/tjhladish/work/abc_cpp/dice_game");  // ./executable_name summary_stats par1val par2val par3val par4val par5val ...
     //abc->run("/home/tjhladish/work/abc_cpp/dice_game.py");  // ./executable_name summary_stats par1val par2val par3val par4val par5val ...
@@ -445,74 +630,8 @@ int main(int argc, char* argv[]) {
 }
 
 
-
-/*
-struct Parameters {
-    string observed_data_file;
-    int network_size, burnin, sample_size, threads;
-    double epsilon, obs_mean, obs_median, obs_max, obs_range, obs_sd, obs_skew, obs_ss, obs_ll, obs_sl, obs_ls;
-};
-
-struct Particle { 
-    double R0, Ih, h; 
-    int P0;
-};
-
-struct Doubled_variances {
-    double R0, Ih, P0, h;
-};*/
-
-/*
-struct ParticleSet { 
-    vector<Particle> particles;
-    Particle back() { return particles.back(); }
-    void resize(const int n) { particles.resize(n); }
-    int size() { return (int) particles.size(); }
-    Particle& operator[] ( const int nIndex) { return particles[nIndex]; }
-};
-*/
-
-//vector<ParticleSet> theta; 
-
-// Define ABC parameters
-/*const double R0_min = 1.0;
-const double R0_max = 8.0;
-const double Ih_min = 1.0/12.0;
-const double Ih_max = 100.0;
-const int P0_min = 1;
-const int P0_max = 256;
-const double h_min  = 0.0;
-const double h_max  = 1.0;
-
-// Don't consider values outside of these bounds
-// (because they would be nonsensical or would cause simulator to crash)
-const double R0_hard_min = 0.0;
-const double R0_hard_max = 1000.0;
-const double Ih_hard_min = 0.00001;
-const double Ih_hard_max = 10000.0;
-const int P0_hard_min = 1;
-const int P0_hard_max = 1000;
-const double h_hard_min  = 0.0;
-const double h_hard_max  = 1.0;
-*/
-
 /*void load_observed_data(string filename, char sep, map<string, vector<float> > &data);
-Doubled_variances calculate_doubled_variances( vector<Particle> particle_set );
-vector<double> calculate_predictive_prior_weights(vector<Particle> predictive_prior, int set_num); 
-double uniform_pdf(double a, double b) { return 1.0 / fabs(b-a); }
 
-vector<float> flatten_map(map<string, vector<float> > data) {
-    vector<float> flat;
-    map<string, vector<float> >::iterator it;
-
-    for ( it = data.begin(); it != data.end(); it++ ) {
-        string loc = it->first;
-        for (unsigned int i = 0; i < data[loc].size(); i++) {
-            flat.push_back(data[loc][i]);
-        }
-    }
-    return flat;
-}
 
 void process_config_file (string config_filename, Parameters &p) {
 
@@ -644,117 +763,7 @@ void write_weights_file(vector<double> weights, int set_num) {
 }
 
 
-int determine_set_number() {
-    bool found_file = true;
-    int set_num = 0;
-    while (found_file) {
-        stringstream ss;
-        ss << "predictive_prior." << set_num;
-        if ( fileExists(ss.str()) ) {
-            set_num++;
-        } else {
-            found_file = false;
-        }
-    }
-    return set_num;
-}
 
-
-double rand_trunc_normal(double mu, double sigma_squared, double min, double max, MTRand* mtrand) {
-    double sigma = sqrt(sigma_squared);
-    // Don't like this, but it should work
-    while (1) {
-        double dev = mtrand->randNorm(mu, sigma);
-        if (dev >= min and dev <= max) {
-            return dev;
-        }
-    }
-}
-                                
-
-void sample_predictive_prior(int set_num, vector<Particle> &particles, int sample_size, MTRand* mtrand, int mpi_rank) {
-    // Read in predictive prior from the last set.
-    // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
-    vector<Particle> predictive_prior = read_predictive_prior_file( set_num - 1 );
-    Doubled_variances sampling_variance = calculate_doubled_variances( predictive_prior );
-    
-    vector<double> weights;
-    if (set_num == 1) {
-        // uniform weights for set 0 predictive prior
-        weights.resize(predictive_prior.size(), 1.0/(double) predictive_prior.size());
-    } else if ( set_num > 1 ) {
-        // weights from set - 2 are needed to calculate weights for set - 1
-        weights = calculate_predictive_prior_weights( predictive_prior, set_num );
-    }
-    if (mpi_rank == 0) write_weights_file( weights, set_num - 1 );
-
-    particles.resize(sample_size);
-    for (int i = 0; i < sample_size; i++) {
-        // Select a particle index j to use from the predictive prior
-        int j = rand_nonuniform_int( weights, mtrand );
-        particles[i].R0 = rand_trunc_normal( predictive_prior[ j ].R0, sampling_variance.R0, R0_hard_min, R0_hard_max, mtrand ); 
-        particles[i].Ih = rand_trunc_normal( predictive_prior[ j ].Ih, sampling_variance.Ih, Ih_hard_min, Ih_hard_max, mtrand ); 
-        particles[i].h  = rand_trunc_normal( predictive_prior[ j ].h,  sampling_variance.h,  h_hard_min,  h_hard_max,  mtrand ); 
-        particles[i].P0 = (int) (rand_trunc_normal( predictive_prior[ j ].P0, sampling_variance.P0, P0_hard_min, P0_hard_max, mtrand ) + 0.5);
-    }
-    return;
-}
-
-
-Doubled_variances calculate_doubled_variances( vector<Particle> particle_set ) {
-    int set_size = particle_set.size();
-    vector<double> R0_vec( set_size );
-    vector<double> Ih_vec( set_size );
-    vector<double> h_vec( set_size );
-    vector<double> P0_vec( set_size );
-
-    for (int i = 0; i < set_size; i++) {
-        R0_vec[i] = particle_set[i].R0;
-        Ih_vec[i] = particle_set[i].Ih;
-        h_vec[i]  = particle_set[i].h;
-        P0_vec[i] = particle_set[i].P0;
-    }
-
-    Doubled_variances doubled_var;
-    doubled_var.R0 = 2 * variance( R0_vec );
-    doubled_var.Ih = 2 * variance( Ih_vec );
-    doubled_var.P0 = 2 * variance( P0_vec );
-    doubled_var.h  = 2 * variance( h_vec );
-
-    return doubled_var;
-}
-
-
-vector<double> calculate_predictive_prior_weights(vector<Particle> predictive_prior, int set_num) {
-
-    const int prior_size = predictive_prior.size();
-    vector<double> predictive_prior_weights( prior_size );
-    const double numerator = uniform_pdf(R0_min, R0_max)
-                           * uniform_pdf(Ih_min, Ih_max)
-                           * uniform_pdf(P0_min, P0_max)
-                           * uniform_pdf(h_min, h_max);
-
-    vector <double>   old_predictive_prior_weights = read_weights_file( set_num - 2 ); 
-    vector<Particle>  old_predictive_prior         = read_predictive_prior_file( set_num - 2 );
-    const int old_prior_size                       = old_predictive_prior.size();
-    Doubled_variances old_par_2var                 = calculate_doubled_variances( old_predictive_prior );
-
-
-    for (int i = 0; i < prior_size; i++) {
-        double denominator = 0.0;
-        for (int j = 0; j < old_prior_size; j++) {
-            denominator += old_predictive_prior_weights[j]
-                           //double normal_pdf(double x, double mu, double var) {
-                           * normal_pdf(predictive_prior[i].R0, old_predictive_prior[j].R0, old_par_2var.R0)
-                           * normal_pdf(predictive_prior[i].Ih, old_predictive_prior[j].Ih, old_par_2var.Ih)
-                           * normal_pdf(predictive_prior[i].P0, old_predictive_prior[j].P0, old_par_2var.P0)
-                           * normal_pdf(predictive_prior[i].h,  old_predictive_prior[j].h,  old_par_2var.h);
-        }
-        predictive_prior_weights[i] = numerator / denominator;
-    }
-
-    return normalize_dist( predictive_prior_weights );
-}
 
 void report_particles(int rank, int run, Particle &particle, map<string, vector<float> > sim, map<string, vector<float> > Re_values) {
     // obs_mean, obs_median, obs_max, obs_range, obs_sd, obs_skew, obs_ss, obs_ll, obs_sl, obs_ls

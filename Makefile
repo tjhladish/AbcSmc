@@ -1,4 +1,5 @@
 CC=g++
+#CFLAGS = -g -std=c++0x
 CFLAGS = -O2 -std=c++0x
 INCLUDE = -I$(HOME)/work/lib/eigen/
 #LDFLAGS = $(HOME)/work/EpiFire/src/*.o
