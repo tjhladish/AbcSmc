@@ -2,12 +2,9 @@
 #define UTILITY_H
 
 #include <iostream>
-//#include <cstdlib>
 #include <sstream>
 #include <vector>
-//#include <algorithm>
 #include <assert.h>
-//#include <iterator>
 #include <iomanip>
 #include <fstream>
 #include <Eigen/Core>

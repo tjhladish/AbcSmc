@@ -1,22 +1,10 @@
 #include "AbcSmc.h"
-#include <stdio.h>
-#include <time.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <vector>
-#include <float.h>
-#include <limits.h>
-#include <string>
-#include <sstream>
-#include <math.h>
-#include <iostream>
-#include <gsl/gsl_rng.h>
-#include <gsl/gsl_randist.h>
 #include "pls.h"
 #include "RunningStat.h"
 
-
-using namespace std;
+using std::vector;
+using std::string;
+using std::stringstream;
 
 /*
 class Parameter {
@@ -356,8 +344,6 @@ Row AbcSmc::_z_transform_observed_metrics(Row& means, Row& stdevs) {
     for (int i = 0; i<nmet(); i++) { zmat(i) = (mets[i]->obs_val - means(i)) / stdevs(i); }
     return zmat;
 }
-
-
 
 
 /*void load_observed_data(string filename, char sep, map<string, vector<float> > &data);

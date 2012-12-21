@@ -1,24 +1,9 @@
 #ifndef ABCSMC_H
 #define ABCSMC_H
 
-#include <stdio.h>
-#include <time.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <vector>
-#include <float.h>
-#include <limits.h>
-#include <string>
-#include <sstream>
-#include <math.h>
-#include <iostream>
-#include <gsl/gsl_rng.h>
-#include <gsl/gsl_randist.h>
-#include "pls.h"
-#include "RunningStat.h"
-
-
-using namespace std;
+//#include <sys/stat.h>
+//#include <math.h>
+#include "utility.h"
 
 enum PriorType {UNIFORM, NORMAL};
 enum NumericType {INT, FLOAT};
@@ -27,7 +12,7 @@ class Parameter {
     public:
         Parameter() {};
 
-        Parameter( string s, PriorType p, NumericType n, double val1, double val2 ) : name(s), ptype(p), ntype(n) {
+        Parameter( std::string s, PriorType p, NumericType n, double val1, double val2 ) : name(s), ptype(p), ntype(n) {
             assert(ptype == UNIFORM);
             if (ptype == UNIFORM) {
                 fmin = val1;
@@ -58,12 +43,12 @@ class Parameter {
         NumericType get_numeric_type() { return ntype; }
 
     private:
-        string name;
+        std::string name;
         PriorType ptype;
         NumericType ntype;
         //int imin, imax;
         double fmin, fmax, mean, stdev;
-        vector<double> doubled_variance;
+        std::vector<double> doubled_variance;
 };
 
 class ModelParameters {
@@ -74,23 +59,23 @@ class ModelParameters {
 
         void add_next_parameter(Parameter* p) { _pars.push_back(p); }
 
-        void add_next_parameter(string name, PriorType ptype, NumericType ntype, double val1, double val2) {
+        void add_next_parameter(std::string name, PriorType ptype, NumericType ntype, double val1, double val2) {
             Parameter* p = new Parameter(name, ptype, ntype, val1, val2);
             _pars.push_back(p);
         }
 
-        vector<Parameter*> get_parameters() { return _pars; }
+        std::vector<Parameter*> get_parameters() { return _pars; }
         Parameter* get_parameter(int i) { return _pars[i]; }
 
     private:
-        vector<Parameter*> _pars;
+        std::vector<Parameter*> _pars;
 };
 
 
 struct Metric {
     Metric() {};
-    Metric(string n, NumericType nt, double val) : name(n), ntype(nt), obs_val(val) {};
-    string name;
+    Metric(std::string n, NumericType nt, double val) : name(n), ntype(nt), obs_val(val) {};
+    std::string name;
     NumericType ntype;
     double obs_val;
 };
@@ -98,12 +83,12 @@ struct Metric {
 
 class ModelMetrics {
     public:
-        void add_next_metric(string met, NumericType ntype, double obs_val) { _mets.push_back(new Metric(met, ntype, obs_val)); }
-        vector<Metric*> get_metrics() { return _mets; }
+        void add_next_metric(std::string met, NumericType ntype, double obs_val) { _mets.push_back(new Metric(met, ntype, obs_val)); }
+        std::vector<Metric*> get_metrics() { return _mets; }
         int size() { return _mets.size(); }
 
     private:
-        vector<Metric*> _mets;
+        std::vector<Metric*> _mets;
 };
 
 
@@ -117,12 +102,12 @@ class AbcSmc {
         void set_predictive_prior_size(int n) { assert(n > 0); assert(n <= _num_particles); _predictive_prior_size = n; }
         void set_predictive_prior_fraction(float f)        { assert(f > 0); assert(f <= 1); _predictive_prior_size = _num_particles * f; }
         void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
-        void set_metric_basefilename( string name ) { _metrics_filename = name; }
-        //void set_executable_filename( string name ) { _executable_filename = name; }
-        //void set_particle_basefilename( string name ) { _particle_filename = name; }
-        //void set_predictive_prior_basefilename( string name ) { _predictive_prior_filename = name; }
+        void set_metric_basefilename( std::string name ) { _metrics_filename = name; }
+        //void set_executable_filename( std::string name ) { _executable_filename = name; }
+        //void set_particle_basefilename( std::string name ) { _particle_filename = name; }
+        //void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
         
-        void run(string executable, const gsl_rng* RNG); 
+        void run(std::string executable, const gsl_rng* RNG); 
 
         int npar() { return _model_pars->size(); }
         int nmet() { return _model_mets->size(); }
@@ -136,14 +121,14 @@ class AbcSmc {
         int _num_particles;
         int _pls_training_set_size;
         int _predictive_prior_size; // number of particles that will be used to inform predictive prior
-        string _executable_filename;
-        string _metrics_filename;
-        string _particle_filename;
-        string _predictive_prior_filename;
-        vector< Mat2D > _particle_metrics;
-        vector< Mat2D > _particle_parameters;
-        vector< vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
-        vector< vector<double> > _weights;
+        std::string _executable_filename;
+        std::string _metrics_filename;
+        std::string _particle_filename;
+        std::string _predictive_prior_filename;
+        std::vector< Mat2D > _particle_metrics;
+        std::vector< Mat2D > _particle_parameters;
+        std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
+        std::vector< std::vector<double> > _weights;
 
         void _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
 
@@ -155,7 +140,7 @@ class AbcSmc {
 
         void calculate_doubled_variances( int t ); 
 
-        void normalize_weights( vector<double>& weights ); 
+        void normalize_weights( std::vector<double>& weights ); 
 
         void calculate_predictive_prior_weights( int set_num ); 
 
