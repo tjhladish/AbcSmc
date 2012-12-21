@@ -12,6 +12,8 @@
 #include <fstream>
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
+#include <gsl/gsl_rng.h>
+#include <gsl/gsl_randist.h>
 
 //using namespace std;
 using namespace Eigen;
@@ -67,6 +69,8 @@ float optimize_box_cox (const Col data, float lambda_min, float lambda_max, floa
 
 float optimize_box_cox (const Col data);
 
+std::string exec(std::string cmd);
+
 template <typename T>
 inline void cerr_vector(std::vector<T> & my_vector, std::string sep = " ") {
     for (int i = 0; i < my_vector.size() - 1; i++ ) std::cerr << my_vector[i] << sep;
@@ -78,5 +82,20 @@ inline void cout_vector(std::vector<T> & my_vector, std::string sep = " ") {
     for (int i = 0; i < my_vector.size() - 1; i++ ) std::cout << my_vector[i] << sep;
     std::cout << my_vector.back();
 }
+
+
+template <typename T>
+inline std::string toString (const T& t) {
+    std::stringstream ss;
+    ss << t;
+    return ss.str();
+}
+
+inline double uniform_pdf(double a, double b) { return 1.0 / fabs(b-a); }
+
+int gsl_rng_nonuniform_int(std::vector<double>& weights, const gsl_rng* rng);
+
+double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng); 
+ 
 
 #endif

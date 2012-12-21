@@ -302,4 +302,42 @@ float optimize_box_cox (const Col data) {
     return optimize_box_cox(data, -5, 5, 0.1);
 }
 
+std::string exec(std::string cmd) {
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "ERROR";
+    char buffer[512];
+    std::string result = "";
+    while(!feof(pipe)) {
+        if(fgets(buffer, 512, pipe) != NULL)
+            result += buffer;
+    }
+    pclose(pipe);
+    return result;
+}
+
+int gsl_rng_nonuniform_int(vector<double>& weights, const gsl_rng* rng) {
+    // Weights must sum to 1!!
+    double running_sum = 0;
+    double r = gsl_rng_uniform(rng);
+    for (unsigned int i = 0; i<weights.size(); i++) {
+        running_sum += weights[i];
+        if (r<=running_sum) return i;
+    }
+    cerr << "Weights may not be normalized\n";
+    exit(100);
+}
+
+double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng) {
+    double sigma = sqrt(sigma_squared);
+    // Don't like this, but it will work
+    // as long as min and max are reasonable
+    // (relative to the pdf)
+    while (1) {
+        double dev = gsl_ran_gaussian(rng, sigma) + mu; 
+        if (dev >= min and dev <= max) {
+            return dev;
+        }
+    }
+}
+ 
 
