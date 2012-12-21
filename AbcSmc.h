@@ -1,8 +1,6 @@
 #ifndef ABCSMC_H
 #define ABCSMC_H
 
-//#include <sys/stat.h>
-//#include <math.h>
 #include "utility.h"
 
 enum PriorType {UNIFORM, NORMAL};
@@ -27,14 +25,14 @@ class Parameter {
             }*/
         }
 
-        double sample(const gsl_rng* RNG);/* { 
+        double sample(const gsl_rng* RNG) { 
             if (ntype == INT) {
                  // + 1 makes it out of [fmin, fmax], instead of [fmin, fmax)
                 return gsl_rng_uniform_int(RNG, fmax-fmin + 1) + fmin;
             } else { 
                 return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
             }
-        }*/
+        }
 
         double get_doubled_variance(int t) { return doubled_variance[t]; }
         void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
@@ -51,27 +49,6 @@ class Parameter {
         std::vector<double> doubled_variance;
 };
 
-class ModelParameters {
-    public:
-        ModelParameters() {};
-
-        int size() { return _pars.size(); }
-
-        void add_next_parameter(Parameter* p) { _pars.push_back(p); }
-
-        void add_next_parameter(std::string name, PriorType ptype, NumericType ntype, double val1, double val2) {
-            Parameter* p = new Parameter(name, ptype, ntype, val1, val2);
-            _pars.push_back(p);
-        }
-
-        std::vector<Parameter*> get_parameters() { return _pars; }
-        Parameter* get_parameter(int i) { return _pars[i]; }
-
-    private:
-        std::vector<Parameter*> _pars;
-};
-
-
 struct Metric {
     Metric() {};
     Metric(std::string n, NumericType nt, double val) : name(n), ntype(nt), obs_val(val) {};
@@ -81,21 +58,10 @@ struct Metric {
 };
 
 
-class ModelMetrics {
-    public:
-        void add_next_metric(std::string met, NumericType ntype, double obs_val) { _mets.push_back(new Metric(met, ntype, obs_val)); }
-        std::vector<Metric*> get_metrics() { return _mets; }
-        int size() { return _mets.size(); }
-
-    private:
-        std::vector<Metric*> _mets;
-};
-
-
 class AbcSmc {
     public:
         AbcSmc() {};
-        AbcSmc(ModelParameters* pars, ModelMetrics* mets) { _model_pars = pars; _model_mets = mets; }
+        //AbcSmc(ModelParameters* pars, ModelMetrics* mets) { _model_pars = pars; _model_mets = mets; }
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
         void set_num_samples(int n) { _num_particles = n; }
@@ -106,17 +72,23 @@ class AbcSmc {
         //void set_executable_filename( std::string name ) { _executable_filename = name; }
         //void set_particle_basefilename( std::string name ) { _particle_filename = name; }
         //void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
+        void add_next_metric(std::string name, NumericType ntype, double obs_val) { 
+            _model_mets.push_back(new Metric(name, ntype, obs_val)); 
+        }
+        void add_next_parameter(std::string name, PriorType ptype, NumericType ntype, double val1, double val2) {
+            _model_pars.push_back(new Parameter(name, ptype, ntype, val1, val2));
+        }
         
         void run(std::string executable, const gsl_rng* RNG); 
 
-        int npar() { return _model_pars->size(); }
-        int nmet() { return _model_mets->size(); }
+        int npar() { return _model_pars.size(); }
+        int nmet() { return _model_mets.size(); }
 
     private:
         Mat2D X_orig;
         Mat2D Y_orig;
-        ModelParameters* _model_pars;
-        ModelMetrics* _model_mets;
+        std::vector<Parameter*> _model_pars;
+        std::vector<Metric*> _model_mets;
         int _num_smc_sets;
         int _num_particles;
         int _pls_training_set_size;
