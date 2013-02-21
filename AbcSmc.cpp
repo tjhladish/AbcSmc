@@ -2,9 +2,93 @@
 #include "pls.h"
 #include "RunningStat.h"
 
+#include <iostream>
+#include <cstdio>
+#include <cstring>
+#include "jsoncpp/json/json.h"
+#include <string>
+#include <sstream>
+#include <fstream>
+
+
 using std::vector;
 using std::string;
 using std::stringstream;
+using std::setw;
+
+const string double_bar = "=========================================================================================";
+
+bool AbcSmc::parse_config(string conf_filename) {
+    Json::Value par;   // will contains the par value after parsing.
+    Json::Reader reader;
+    string json_data = slurp(conf_filename);
+
+    bool parsingSuccessful = reader.parse( json_data, par );
+    if ( !parsingSuccessful ) {
+        // report to the user the failure and their locations in the document.
+        std::cout  << "Failed to parse configuration\n"
+            << reader.getFormattedErrorMessages();
+        return false;
+    }
+
+    // Parse model parameters
+    const Json::Value model_par = par["parameters"];
+    for ( int i = 0; i < model_par.size(); ++i )  {// Iterates over the sequence elements.
+        //cerr << model_par[i] << endl;
+
+        string name = model_par[i]["name"].asString();
+
+        PriorType ptype; 
+        string ptype_str = model_par[i]["dist_type"].asString();
+        if (ptype_str == "UNIFORM") {
+            ptype = UNIFORM;
+        } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
+            ptype = NORMAL;
+        }
+
+        NumericType ntype; 
+        string ntype_str = model_par[i]["num_type"].asString();
+        if (ntype_str == "INT") {
+            ntype = INT;
+        } else if (ntype_str == "FLOAT") {
+            ntype = FLOAT;
+        }
+
+        double par1 = model_par[i]["par1"].asDouble();
+        double par2 = model_par[i]["par2"].asDouble();
+
+        add_next_parameter( name, ptype, ntype, par1, par2);
+    }
+
+    // Parse model metrics 
+    const Json::Value model_met = par["metrics"];
+    for ( int i = 0; i < model_met.size(); ++i )  {// Iterates over the sequence elements.
+        //cerr << model_met[i] << endl;
+
+        string name = model_met[i]["name"].asString();
+
+        NumericType ntype; 
+        string ntype_str = model_met[i]["num_type"].asString();
+        if (ntype_str == "INT") {
+            ntype = INT;
+        } else if (ntype_str == "FLOAT") {
+            ntype = FLOAT;
+        }
+
+        double val = model_met[i]["value"].asDouble();
+
+        add_next_metric( name, ntype, val);
+    }
+    set_smc_iterations( par["smc_iterations"].asInt() ); // or have it test for convergence
+    set_num_samples( par["num_samples"].asInt() );
+    set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
+    set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
+    set_executable( par["executable"].asString() );
+    
+    return true;
+
+}
+
 
 void AbcSmc::run(string executable, const gsl_rng* RNG ) {
     // NEED TO ADD SANITY CHECKS HERE
@@ -21,18 +105,64 @@ void AbcSmc::run(string executable, const gsl_rng* RNG ) {
     _predictive_prior.resize(_num_smc_sets);
 
     for (int t = 0; t<_num_smc_sets; t++) {
-        _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );
-        // Write out particles
+        cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
+        bool success = _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );
+        if (!success) { cerr << "Failed while generating particles.  Aborting." << endl; break;}
+        // Write out particles -- TODO
 
         // Select best scoring particles
         _filter_particles( t, _particle_metrics[t], _particle_parameters[t]);
 
         calculate_predictive_prior_weights( t );
-        // Write out predictive prior
+
+        if (t > 0) {
+            report_convergence_data(t);
+        }
+
+        // Write out predictive prior -- TODO
+        cerr << endl << endl;
     }
 }
 
-void AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+
+void AbcSmc::report_convergence_data(int t) {
+    vector<double> last_means( npar() );
+    vector<double> current_means( npar() );
+
+    for (int j = 0; j < npar(); j++) {
+        int N = _predictive_prior[t].size();
+        for (int i = 0; i < N; i++) {
+            double particle_idx = _predictive_prior[t][i];
+            double par_value = _particle_parameters[t](particle_idx, j);
+            current_means[j] += par_value;
+        }
+        current_means[j] /= N;
+
+        int N2 = _predictive_prior[t-1].size();
+        for (int i = 0; i < N2; i++) {
+            double particle_idx = _predictive_prior[t-1][i];
+            double par_value = _particle_parameters[t-1](particle_idx, j);
+            last_means[j] += par_value;
+        }
+        last_means[j] /= N2;
+    }
+
+    cerr << double_bar << endl;
+    cerr << "Convergence data for predictive priors:\n";
+    for (unsigned int i = 0; i < _model_pars.size(); i++) {
+        double current_stdev = sqrt(_model_pars[i]->get_doubled_variance(t)/2.0);
+        double last_stdev    = sqrt(_model_pars[i]->get_doubled_variance(t-1)/2.0);
+
+        cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
+        cerr << "    Last mean,  current mean  (delta): " << setw(9) << last_means[i] 
+            << ", " << setw(9) << current_means[i] << " (" << setw(9) << current_means[i]-last_means[i] << ")\n";
+        cerr << "    Last stdev, current stdev (delta): " << setw(9) << last_stdev 
+            << ", " << setw(9) << current_stdev << " (" << setw(9) << current_stdev-last_stdev << ")\n";
+    }
+}
+
+
+bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
     for (int i = 0; i<_num_particles; i++) {
         if (t == 0) { // sample priors
             Y_orig.row(i) = sample_priors(RNG);
@@ -50,6 +180,10 @@ void AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
 
         //std::cerr << command << endl;
         string retval = exec(command);
+        if (retval == "ERROR" or retval == "") {
+            cerr << _executable_filename << " does not exist or appears to be an invalid simulator." << endl;
+            return false;
+        }
         stringstream ss;
         ss.str(retval);
     
@@ -57,6 +191,7 @@ void AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
             ss >> X_orig(i, j);
         }
     }
+    return true;
 }
 
 void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
@@ -104,17 +239,30 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     vector<int> sample(first, last);
     _predictive_prior[t] = sample;
 
-    cout << "Worst five:\n";
-    for (unsigned int q=ranking.size()-1;q>=ranking.size()-5;q--) {
+    cout << "Best five:\n";
+    for (int i = 0; i<npar(); i++) { cout << setw(9) << _model_pars[i]->get_name(); } cout << " | ";
+    for (int i = 0; i<nmet(); i++) { cout << setw(9) << _model_mets[i]->name; } cout << endl;
+    for (int q=0; q<5; q++) {
         int idx = ranking[q];
-        cout << Y_orig.row(idx) << " | " << X_orig.row(idx) << endl;
+        for (int i = 0; i < Y_orig.cols(); i++) { cout << setw(9) << Y_orig(idx, i); } 
+        cout << " | ";
+        for (int i = 0; i < X_orig.cols(); i++) { cout << setw(9) << X_orig(idx, i); } 
+        cout << endl;
     }
 
-    cout << "Best five:\n";
-    for (int q=0;q<5;q++) {
+    cout << "Worst five:\n";
+    for (int i = 0; i<npar(); i++) { cout << setw(9) << _model_pars[i]->get_name(); } cout << " | ";
+    for (int i = 0; i<nmet(); i++) { cout << setw(9) << _model_mets[i]->name; } cout << endl;
+    for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
         int idx = ranking[q];
-        cout << Y_orig.row(idx) << " | " << X_orig.row(idx) << endl;
+        for (int i = 0; i < Y_orig.cols(); i++) { cout << setw(9) << Y_orig(idx, i); } 
+        cout << " | ";
+        for (int i = 0; i < X_orig.cols(); i++) { cout << setw(9) << X_orig(idx, i); } 
+        cout << endl;
     }
+
+//        int idx = ranking[q];
+//        cout << setw(9) << Y_orig.row(idx) << " | " << setw(9) << X_orig.row(idx) << endl;
 }
 
 Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
@@ -192,7 +340,12 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
                     double old_par_value = _particle_parameters[set_num-1](_predictive_prior[set_num-1][k], j);
                     double old_doubled_variance = _model_pars[j]->get_doubled_variance(set_num-1);
 
-                    running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_doubled_variance) );
+// This handles the (often improbable) case where a parameter has completely converged.
+// It allows ABC to continue exploring other parameters, rather than causing the math
+// to fall apart because the density at the converged value is infinite.
+if (old_doubled_variance != 0 or par_value != old_par_value) {
+                        running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_doubled_variance) );
+}
                 }
                 denominator += running_product;
             }

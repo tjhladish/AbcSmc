@@ -23,6 +23,15 @@ void split(const string& s, char c, vector<string>& v) {
 }
 
 
+string slurp(string filename) {
+    ifstream ifs(filename.c_str());
+
+    stringstream sstr;
+    sstr << ifs.rdbuf();
+    return sstr.str();
+}
+
+
 Mat2D read_matrix_file(string filename, char sep) {
     cerr << "Loading " << filename << endl;
     ifstream myfile(filename.c_str());
@@ -323,7 +332,7 @@ int gsl_rng_nonuniform_int(vector<double>& weights, const gsl_rng* rng) {
         running_sum += weights[i];
         if (r<=running_sum) return i;
     }
-    cerr << "Weights may not be normalized\n";
+    cerr << "Weights may not be normalized\n\t Weights summed to: " << running_sum << endl;
     exit(100);
 }
 

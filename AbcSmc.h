@@ -38,6 +38,7 @@ class Parameter {
         void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
         double get_min() { return fmin; }
         double get_max() { return fmax; }
+        std::string get_name() {return name; }
         NumericType get_numeric_type() { return ntype; }
 
     private:
@@ -69,7 +70,7 @@ class AbcSmc {
         void set_predictive_prior_fraction(float f)        { assert(f > 0); assert(f <= 1); _predictive_prior_size = _num_particles * f; }
         void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
         void set_metric_basefilename( std::string name ) { _metrics_filename = name; }
-        //void set_executable_filename( std::string name ) { _executable_filename = name; }
+        void set_executable( std::string name ) { _executable_filename = name; }
         //void set_particle_basefilename( std::string name ) { _particle_filename = name; }
         //void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
         void add_next_metric(std::string name, NumericType ntype, double obs_val) { 
@@ -79,6 +80,10 @@ class AbcSmc {
             _model_pars.push_back(new Parameter(name, ptype, ntype, val1, val2));
         }
         
+        bool parse_config(std::string conf_filename);
+        void report_convergence_data(int);
+
+        void run(const gsl_rng* RNG) { run(_executable_filename, RNG); }; 
         void run(std::string executable, const gsl_rng* RNG); 
 
         int npar() { return _model_pars.size(); }
@@ -102,7 +107,7 @@ class AbcSmc {
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
         std::vector< std::vector<double> > _weights;
 
-        void _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
+        bool _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
 
         void _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig); 
         

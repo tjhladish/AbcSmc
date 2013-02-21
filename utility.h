@@ -35,6 +35,8 @@ void split(const std::string& s, char c, std::vector<std::string>& v);
 
 inline double string2double(const std::string& s){ std::istringstream i(s); double x = 0; i >> x; return x; }
 
+std::string slurp(std::string filename);
+
 inline Row col_means( Mat2D mat ) { return mat.colwise().sum() / mat.rows(); }
 
 //int _sgn(float_type val) { return (0 < val) - (val < 0); }
