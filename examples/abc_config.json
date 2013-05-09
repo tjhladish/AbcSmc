@@ -3,7 +3,7 @@
     "num_samples"    : 500,
     "predictive_prior_fraction" : 0.1,
     "pls_training_fraction"     : 0.5,
-    "executable"                : "/home/tjhladish/work/abc_cpp/examples/dice_game",
+    "executable"                : "./dice_game",
 
     "parameters" : [
         {"name"      : "ndice",
