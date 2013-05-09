@@ -47,7 +47,7 @@ Mat2D read_matrix_file(string filename, char sep) {
             split(line, sep, fields);
 
             vector<double>row(fields.size());
-            for( int i=0; i < fields.size(); i++ ) {
+            for( unsigned int i=0; i < fields.size(); i++ ) {
                 row[i] = string2double(fields[i]);
             }
             M.push_back(row);
@@ -55,8 +55,8 @@ Mat2D read_matrix_file(string filename, char sep) {
     }
 
     Mat2D X( (int) M.size(), (int) M[0].size() );
-    for(int i=0; i < M.size(); i++ ) {
-        for(int j=0; j < M[i].size(); j++ ) {  
+    for( unsigned int i=0; i < M.size(); i++ ) {
+        for( unsigned int j=0; j < M[i].size(); j++ ) {  
             X(i,j)=M[i][j]; 
         }
     }

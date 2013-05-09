@@ -152,7 +152,7 @@ class PLS_Model {
         }
         if ( out_type == PRESS ) {
             return SSEv;
-        } else if ( out_type = RMSEP ) {
+        } else if ( out_type == RMSEP ) {
             SSEv /= X.rows();
             return SSEv.cwiseSqrt();
         }

@@ -1,7 +1,7 @@
 CC=g++
 #CFLAGS = -g -std=c++0x
-#CFLAGS = -O2 -std=c++0x -Wall --pedantic
-CFLAGS = -O2 -std=c++0x
+CFLAGS = -O2 -std=c++0x -Wall --pedantic
+#CFLAGS = -O2 -std=c++0x
 ABCDIR = $(HOME)/work/AbcSmc
 INCLUDE = -I/usr/include/eigen3/ -I$(ABCDIR)
 LIBS    = -lm -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
