@@ -33,12 +33,12 @@ bool AbcSmc::parse_config(string conf_filename) {
 
     // Parse model parameters
     const Json::Value model_par = par["parameters"];
-    for ( int i = 0; i < model_par.size(); ++i )  {// Iterates over the sequence elements.
+    for ( unsigned int i = 0; i < model_par.size(); ++i )  {// Iterates over the sequence elements.
         //cerr << model_par[i] << endl;
 
         string name = model_par[i]["name"].asString();
 
-        PriorType ptype; 
+        PriorType ptype = UNIFORM; 
         string ptype_str = model_par[i]["dist_type"].asString();
         if (ptype_str == "UNIFORM") {
             ptype = UNIFORM;
@@ -46,7 +46,7 @@ bool AbcSmc::parse_config(string conf_filename) {
             ptype = NORMAL;
         }
 
-        NumericType ntype; 
+        NumericType ntype = INT; 
         string ntype_str = model_par[i]["num_type"].asString();
         if (ntype_str == "INT") {
             ntype = INT;
@@ -62,12 +62,12 @@ bool AbcSmc::parse_config(string conf_filename) {
 
     // Parse model metrics 
     const Json::Value model_met = par["metrics"];
-    for ( int i = 0; i < model_met.size(); ++i )  {// Iterates over the sequence elements.
+    for ( unsigned int i = 0; i < model_met.size(); ++i )  {// Iterates over the sequence elements.
         //cerr << model_met[i] << endl;
 
         string name = model_met[i]["name"].asString();
 
-        NumericType ntype; 
+        NumericType ntype = INT; 
         string ntype_str = model_met[i]["num_type"].asString();
         if (ntype_str == "INT") {
             ntype = INT;
@@ -224,7 +224,7 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
 
     int test_set_size = nobs - _pls_training_set_size;
     Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
-    int max_num_components = num_components.maxCoeff();
+    //int max_num_components = num_components.maxCoeff();
     cout << "Optimal number of components (NEW DATA):\t" << num_components << endl;
 
     // Calculate new, orthogonal metrics (==scores) using the pls model
@@ -333,7 +333,7 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
 
         for (unsigned int i = 0; i < _predictive_prior[set_num].size(); i++) {
             double denominator = 0.0;
-            for (int k = 0; k < _predictive_prior[set_num - 1].size(); k++) {
+            for (unsigned int k = 0; k < _predictive_prior[set_num - 1].size(); k++) {
                 double running_product = _weights[set_num - 1][k];
                 for (int j = 0; j < npar(); j++) {
                     double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);

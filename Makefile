@@ -1,10 +1,10 @@
 CC=g++
 #CFLAGS = -g -std=c++0x
-#CFLAGS = -O2 -std=c++0x -Wall --pedantic
-CFLAGS = -O2 -std=c++0x
-#INCLUDE = -I$(HOME)/work/lib/eigen/
-INCLUDE = -I/usr/include/eigen3/ -I/usr/include
-LIBS    = -lm -lgsl -lgslcblas -ljsoncpp
+CFLAGS = -O2 -std=c++0x -Wall --pedantic
+#CFLAGS = -O2 -std=c++0x
+ABCDIR = $(HOME)/work/AbcSmc
+INCLUDE = -I/usr/include/eigen3/ -I$(ABCDIR)
+LIBS    = -lm -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
 SOURCES= AbcSmc.cpp utility.cpp 
 
 LIB=libabc.a
@@ -20,7 +20,7 @@ $(LIB): $(OBJECTS)
 	$(CC) $(CFLAGS) -c $(INCLUDE) $< -o $@ 
 
 abc: main.cpp
-	$(CC) $(CFLAGS) $(INCLUDE) $(LDFLAGS) main.cpp AbcSmc.cpp utility.cpp -o abc $(LIBS) 
+	$(CC) $(CFLAGS) $(INCLUDE) $(LDFLAGS) main.cpp -o abc $(LIBS) 
 
 dice: dice_game.cpp
 	$(CC) $(CFLAGS) $(INCLUDE) $(LDFLAGS) dice_game.cpp -o dice_game $(LIBS)
