@@ -2,7 +2,7 @@ CC=g++
 #CFLAGS = -g -std=c++0x
 CFLAGS = -O2 -std=c++0x
 HOME = /home/tjhladish/
-ABCDIR = $(HOME)/work/abc_cpp/
+ABCDIR = $(HOME)/work/AbcSmc/
 #INCLUDE = -I$(HOME)/work/lib/eigen/
 INCLUDE = -I/usr/include/eigen3/ -I$(ABCDIR)
 #LDFLAGS = $(HOME)/work/EpiFire/src/*.o
