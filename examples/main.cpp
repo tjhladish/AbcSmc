@@ -14,7 +14,6 @@ int main(int argc, char* argv[]) {
 
     AbcSmc* abc = new AbcSmc();
     abc->parse_config(string(argv[1]));
-    //abc->parse_config("abc.json");
     abc->run(RNG);
 
     return 0;
