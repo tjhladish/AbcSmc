@@ -9,6 +9,8 @@ using std::endl;
 using std::stringstream;
 using std::ifstream;
 using std::pow;
+using std::pair;
+using std::make_pair;
 
 void split(const string& s, char c, vector<string>& v) {
     string::size_type i = 0;
@@ -156,13 +158,18 @@ vector<size_t> ordered(vector<T> const& values) {
 
 // Take a list of values, return original indices sorted by value
 vector<int> ordered(Col const& values) {
-    vector<int> indices(values.size());
-    std::iota(begin(indices), end(indices), static_cast<size_t>(0));
 
-    std::sort(
-        begin(indices), end(indices),
-        [&](int a, int b) { return values[a] < values[b]; }
-    );
+    vector<pair<float_type,int> > pairs(values.size()); 
+    for(unsigned int pos=0; pos<values.size(); pos++) {
+        pairs[pos] = make_pair(values[pos],pos);
+    }
+
+    //bool comparator ( const mypair& l, const mypair& r) { return l.first < r.first; }
+
+    std::sort( pairs.begin(), pairs.end());
+    vector<int> indices(values.size());
+    for(unsigned int i=0; i < pairs.size(); i++) indices[i] = pairs[i].second;
+
     return indices;
 }
 

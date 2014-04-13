@@ -1,6 +1,8 @@
 #ifndef ABCSMC_H
 #define ABCSMC_H
 
+#define mpi_root 0
+
 #include "utility.h"
 
 enum PriorType {UNIFORM, NORMAL};
@@ -61,7 +63,7 @@ struct Metric {
 
 class AbcSmc {
     public:
-        AbcSmc() {};
+        AbcSmc() { useMPI = false; _mp = NULL; };
         //AbcSmc(ModelParameters* pars, ModelMetrics* mets) { _model_pars = pars; _model_mets = mets; }
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
@@ -85,7 +87,8 @@ class AbcSmc {
 
         void run(const gsl_rng* RNG) { run(_executable_filename, RNG); }; 
         void run(std::string executable, const gsl_rng* RNG); 
-
+           
+        void use_MPI( MPI_par& mp ) { bool useMPI=true; _mp = &mp; } 
         int npar() { return _model_pars.size(); }
         int nmet() { return _model_mets.size(); }
 
@@ -107,7 +110,12 @@ class AbcSmc {
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
         std::vector< std::vector<double> > _weights;
 
+        //mpi specific variables
+        bool useMPI;
+        MPI_par *_mp;
+
         bool _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
+        //bool _populate_particles_MPI( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
 
         void _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig); 
         

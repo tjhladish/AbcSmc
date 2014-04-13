@@ -12,6 +12,20 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
+#ifdef USING_MPI
+#include <mpi.h>
+struct MPI_par {
+    MPI_Comm comm;
+    MPI_Info info;
+    int mpi_size, mpi_rank;
+};
+#else
+struct MPI_par {
+    const static int mpi_size = 1;
+    const static int mpi_rank = 0;
+};
+#endif
+
 //using namespace std;
 using namespace Eigen;
 

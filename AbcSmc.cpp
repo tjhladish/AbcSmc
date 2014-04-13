@@ -5,7 +5,7 @@
 #include <iostream>
 #include <cstdio>
 #include <cstring>
-#include "jsoncpp/json/json.h"
+#include <json/json.h>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -26,7 +26,7 @@ bool AbcSmc::parse_config(string conf_filename) {
     bool parsingSuccessful = reader.parse( json_data, par );
     if ( !parsingSuccessful ) {
         // report to the user the failure and their locations in the document.
-        std::cout  << "Failed to parse configuration\n"
+        std::cerr  << "Failed to parse configuration\n"
             << reader.getFormattedErrorMessages();
         return false;
     }
@@ -85,42 +85,48 @@ bool AbcSmc::parse_config(string conf_filename) {
     set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
     set_executable( par["executable"].asString() );
     
+    
     return true;
 
 }
 
 
-void AbcSmc::run(string executable, const gsl_rng* RNG ) {
+void AbcSmc::run(string executable, const gsl_rng* RNG) {
     // NEED TO ADD SANITY CHECKS HERE
     _executable_filename = executable;
     _particle_parameters.clear();
     _particle_metrics.clear();
     _weights.clear();
 
-    _particle_parameters.resize( _num_smc_sets, Mat2D::Zero(_num_particles, npar()) );
-    _particle_metrics.resize( _num_smc_sets, Mat2D::Zero(_num_particles, nmet()) );
-    _weights.resize(_num_smc_sets);
+    if (_mp->mpi_rank == 0) {
+        _particle_parameters.resize( _num_smc_sets, Mat2D::Zero(_num_particles, npar()) );
+        _particle_metrics.resize( _num_smc_sets, Mat2D::Zero(_num_particles, nmet()) );
+        _weights.resize(_num_smc_sets);
+    }
 
     _predictive_prior.clear();
     _predictive_prior.resize(_num_smc_sets);
 
     for (int t = 0; t<_num_smc_sets; t++) {
-        cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
+        //bool success = _populate_particles_MPI( t, _particle_metrics[t], _particle_parameters[t], RNG );
         bool success = _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );
-        if (!success) { cerr << "Failed while generating particles.  Aborting." << endl; break;}
+        if (!success) { cerr << "MPI rank" << _mp->mpi_rank << " failed while generating particles.  Aborting." << endl; break;}
         // Write out particles -- TODO
 
         // Select best scoring particles
-        _filter_particles( t, _particle_metrics[t], _particle_parameters[t]);
+        if (_mp->mpi_rank == mpi_root) {
+            cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
+            _filter_particles( t, _particle_metrics[t], _particle_parameters[t]);
 
-        calculate_predictive_prior_weights( t );
+            calculate_predictive_prior_weights( t );
 
-        if (t > 0) {
-            report_convergence_data(t);
+            if (t > 0) {
+                report_convergence_data(t);
+            }
+
+            // Write out predictive prior -- TODO
+            cerr << endl << endl;
         }
-
-        // Write out predictive prior -- TODO
-        cerr << endl << endl;
     }
 }
 
@@ -163,6 +169,113 @@ void AbcSmc::report_convergence_data(int t) {
 
 
 bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+    bool success = true;
+    long double *send_data, *local_Y_data, *rec_data, *local_X_data;
+    int particles_per_rank = _num_particles % _mp->mpi_size == 0 ? _num_particles / _mp->mpi_size : 1 + (_num_particles / _mp->mpi_size);
+    int send_count = npar() * particles_per_rank; 
+    int rec_count  = nmet() * particles_per_rank; 
+
+    // If the desired number of particles is not divisible by the number of threads (mpi_size),
+    // then we will end up calculating somewhat more than we need and throwing out the extras.
+    // That's why we use both particles_per_rank and _num_particles.
+    if (_mp->mpi_rank == mpi_root) {
+        send_data = new long double[send_count * _mp->mpi_size];
+        rec_data  = new long double[rec_count  * _mp->mpi_size];
+        Row par_row;
+        for (int i = 0; i<particles_per_rank * _mp->mpi_size; i++) {
+            if (t == 0) { // sample priors
+                par_row = sample_priors(RNG);
+                if (i<_num_particles) Y_orig.row(i) = par_row;
+            } else { // sample predictive priors
+                par_row = sample_predictive_priors(t, RNG);
+                if (i<_num_particles) Y_orig.row(i) = par_row;
+            }
+            for (int j = 0; j<npar(); j++) { send_data[i*npar() + j] = par_row(j); }
+//cerr << par_row << "|"; 
+        }
+//cerr << endl;
+    }
+   
+    local_Y_data = new long double[send_count];
+    local_X_data = new long double[rec_count];
+
+#ifdef USING_MPI
+//    cerr << "Using MPI, scattering\n";
+    MPI_Scatter(send_data,        // send buffer 
+                send_count,       // send count
+                MPI_LONG_DOUBLE,  // send type
+                local_Y_data,     // receive buffer
+                send_count,       // receive count
+                MPI_LONG_DOUBLE,  // receive type
+                mpi_root,         // rank of sending process
+                _mp->comm         // communicator handle
+                );
+//    cerr << "Done scattering\n";
+#endif
+
+    for (int i = 0; i<particles_per_rank; i++) {
+        string command = _executable_filename;
+//cerr << _mp->mpi_rank << ":" << toString(local_Y_data[i*npar() + 0]) << "," << toString(local_Y_data[i*npar() + 1]) << " ";
+        for (int j = 0; j<npar(); j++) {
+            //command += " " + toString(Y_orig(i,j));
+            command += " " + toString(local_Y_data[i*npar() + j]);
+        }
+        // ./executable_name summary_stats par1val par2val par3val par4val par5val ... 
+
+        string retval = exec(command);
+        if (retval == "ERROR" or retval == "") {
+            cerr << command << " does not exist or appears to be an invalid simulator on MPI rank" << _mp->mpi_rank << endl;
+            //cerr << _executable_filename << " does not exist or appears to be an invalid simulator." << endl;
+            success = false;
+            break;
+        }
+        stringstream ss;
+        ss.str(retval);
+    
+        for (int j = 0; j<nmet(); j++) {
+            ss >> local_X_data[i*nmet() + j];
+            //ss >> X_orig(i, j);
+        }
+//command += "|" + toString(local_X_data[i*npar() + 0]) + " " + toString(local_X_data[i*npar() + 0]) + "\n";
+//cerr << command;
+    }
+//cerr << endl;
+
+#ifdef USING_MPI
+//    cerr << "Using MPI, gathering, stupid!!\n";
+    MPI_Gather(local_X_data,        // send buffer 
+               rec_count,           // send count
+               MPI_LONG_DOUBLE,     // send type
+               rec_data,            // receive buffer
+               rec_count,           // receive count
+               MPI_LONG_DOUBLE,     // receive type
+               mpi_root,            // rank of receiving process
+               _mp->comm            // communicator handle
+               );
+//     cerr << "Done gathering\n";
+#endif
+
+    if (_mp->mpi_rank == mpi_root) {
+//        cerr << "Root is copying data\n";
+        for (int i = 0; i<particles_per_rank * _mp->mpi_size; i++) {
+            for (int j = 0; j<nmet(); j++) {
+                if (i<_num_particles) X_orig(i,j) = rec_data[i*nmet() + j];
+            }
+        }
+        delete[] send_data;
+        delete[] rec_data;
+    }
+
+//    cerr << "Done copying data\n";
+
+    delete[] local_Y_data;
+    delete[] local_X_data;
+
+    return success;
+}
+
+/*
+bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
     for (int i = 0; i<_num_particles; i++) {
         if (t == 0) { // sample priors
             Y_orig.row(i) = sample_priors(RNG);
@@ -170,8 +283,6 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
             Y_orig.row(i) = sample_predictive_priors(t, RNG);
         }
 
-        //string output_filename = "tmp_sim_" + toString(t) + "_" + toString(i) + ".out"; 
-        //string command = executable + " " + output_filename;
         string command = _executable_filename;
         for (int j = 0; j<npar(); j++) {
             command += " " + toString(Y_orig(i,j));
@@ -193,6 +304,7 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
     }
     return true;
 }
+*/
 
 void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     // Run PLS
@@ -216,16 +328,16 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     // A is number of components to use
     for (int A = 1; A<=ncomp; A++) { 
         // How well did we do with this many components?
-        cout << A << " components\t";
-        cout << "explained variance: " << plsm.explained_variance(X, Y, A);
-        //cout << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
-        cout << " SSE: " << plsm.SSE(X,Y,A) <<  endl; 
+        cerr << A << " components\t";
+        cerr << "explained variance: " << plsm.explained_variance(X, Y, A);
+        //cerr << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
+        cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl; 
     }
 
     int test_set_size = nobs - _pls_training_set_size;
     Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
     //int max_num_components = num_components.maxCoeff();
-    cout << "Optimal number of components (NEW DATA):\t" << num_components << endl;
+    cerr << "Optimal number of components (NEW DATA):\t" << num_components << endl;
 
     // Calculate new, orthogonal metrics (==scores) using the pls model
     // Is casting as real always safe?
@@ -239,30 +351,30 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     vector<int> sample(first, last);
     _predictive_prior[t] = sample;
 
-    cout << "Best five:\n";
-    for (int i = 0; i<npar(); i++) { cout << setw(9) << _model_pars[i]->get_name(); } cout << " | ";
-    for (int i = 0; i<nmet(); i++) { cout << setw(9) << _model_mets[i]->name; } cout << endl;
+    cerr << "Best five:\n";
+    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_name(); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->name; } cerr << endl;
     for (int q=0; q<5; q++) {
         int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cout << setw(9) << Y_orig(idx, i); } 
-        cout << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cout << setw(9) << X_orig(idx, i); } 
-        cout << endl;
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
+        cerr << " | ";
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(9) << X_orig(idx, i); } 
+        cerr << endl;
     }
 
-    cout << "Worst five:\n";
-    for (int i = 0; i<npar(); i++) { cout << setw(9) << _model_pars[i]->get_name(); } cout << " | ";
-    for (int i = 0; i<nmet(); i++) { cout << setw(9) << _model_mets[i]->name; } cout << endl;
+    cerr << "Worst five:\n";
+    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_name(); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->name; } cerr << endl;
     for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
         int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cout << setw(9) << Y_orig(idx, i); } 
-        cout << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cout << setw(9) << X_orig(idx, i); } 
-        cout << endl;
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
+        cerr << " | ";
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(9) << X_orig(idx, i); } 
+        cerr << endl;
     }
 
 //        int idx = ranking[q];
-//        cout << setw(9) << Y_orig.row(idx) << " | " << setw(9) << X_orig.row(idx) << endl;
+//        cerr << setw(9) << Y_orig.row(idx) << " | " << setw(9) << X_orig.row(idx) << endl;
 }
 
 Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {

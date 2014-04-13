@@ -1,9 +1,9 @@
 {
-    "smc_iterations" : 50,
+    "smc_iterations" : 20,
     "num_samples"    : 500,
-    "predictive_prior_fraction" : 0.1,
+    "predictive_prior_fraction" : 0.2,
     "pls_training_fraction"     : 0.5,
-    "executable"                : "./dice_game",
+    "executable"                : "dice_game",
 
     "parameters" : [
         {"name"      : "ndice",
@@ -22,9 +22,10 @@
     "metrics" : [
         {"name"      : "sum",
          "num_type"  : "INT",
-         "value"     : 374},
+         "value"     : 350},
+
         {"name"      : "sd",
          "num_type"  : "FLOAT",
-         "value"     : 1.71517}
+         "value"     : 1.707}
     ]
 }
