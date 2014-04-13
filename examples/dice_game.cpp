@@ -6,7 +6,11 @@
 using namespace std;
 
 int main(int argc, char** argv) {
-    const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
+    if (argc != 3) {
+        cerr << "\n\tUsage: ./dice_game number_of_dice number_of_sides\n\n";
+        return 100;
+    }
+     const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
     gsl_rng_set(RNG, time (NULL) * getpid());
     int par1 = atoi(argv[1]); // number of dice
     int par2 = atoi(argv[2]); // number of sides on dice
