@@ -10,10 +10,10 @@
 #include <sstream>
 #include <fstream>
 
-
 using std::vector;
 using std::string;
 using std::stringstream;
+using std::ofstream;
 using std::setw;
 
 const string double_bar = "=========================================================================================";
@@ -84,10 +84,62 @@ bool AbcSmc::parse_config(string conf_filename) {
     set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
     set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
     set_executable( par["executable"].asString() );
-    
+    set_particle_basefilename( par["particle_basefilename"].asString() );
+    set_predictive_prior_basefilename( par["predictive_prior_basefilename"].asString() );
     
     return true;
 
+}
+
+
+void AbcSmc::write_particle_file( const int t ) {
+    ofstream particle_file;
+    string pad = t < 10 ? "0" : "";
+    particle_file.open( (_particle_filename + "." + pad + toString(t)).c_str() );
+    if (particle_file.fail()) {
+       cerr << "ERROR: Particle file '" << _particle_filename << "' cannot be open for writing." << endl;
+       exit(-1);
+    }
+
+    // write header
+    particle_file << "iteration sample ";
+    for (int i = 0; i<npar(); i++) { particle_file << _model_pars[i]->get_name() << " "; }
+    for (int i = 0; i<nmet(); i++) { particle_file << _model_mets[i]->name << " "; } 
+    particle_file << endl;
+
+    for (int i = 0; i < _num_particles; i++) {
+        particle_file << t << " " << i;
+        for (int j = 0; j < npar(); j++) { particle_file << " " << _particle_parameters[t](i,j); }
+        for (int j = 0; j < nmet(); j++) { particle_file << " " << _particle_metrics[t](i,j); }
+        particle_file << endl;
+    }
+    particle_file.close();
+}
+
+
+void AbcSmc::write_predictive_prior_file( const int t ) {
+    ofstream predictive_prior_file;
+    string pad = t < 10 ? "0" : "";
+    predictive_prior_file.open( (_predictive_prior_filename + "." + pad + toString(t)).c_str() );
+    if (predictive_prior_file.fail()) {
+       cerr << "ERROR: predictive prior file '" << _predictive_prior_filename << "' cannot be open for writing." << endl;
+       exit(-1);
+    }
+
+    // write header
+    predictive_prior_file << "iteration rank sample ";
+    for (int i = 0; i<npar(); i++) { predictive_prior_file << _model_pars[i]->get_name() << " "; }
+    for (int i = 0; i<nmet(); i++) { predictive_prior_file << _model_mets[i]->name << " "; } 
+    predictive_prior_file << endl;
+
+    for (int rank = 0; rank < _predictive_prior_size; rank++) {
+        const int idx = _predictive_prior[t][rank];
+        predictive_prior_file << t << " " << rank << " " << idx;
+        for (int j = 0; j < npar(); j++) { predictive_prior_file << " " << _particle_parameters[t](idx, j); } 
+        for (int j = 0; j < nmet(); j++) { predictive_prior_file << " " << _particle_metrics[t](idx, j); } 
+        predictive_prior_file << endl;
+    }
+    predictive_prior_file.close();
 }
 
 
@@ -111,10 +163,10 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
         //bool success = _populate_particles_MPI( t, _particle_metrics[t], _particle_parameters[t], RNG );
         bool success = _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );
         if (!success) { cerr << "MPI rank" << _mp->mpi_rank << " failed while generating particles.  Aborting." << endl; break;}
-        // Write out particles -- TODO
-
-        // Select best scoring particles
         if (_mp->mpi_rank == mpi_root) {
+            write_particle_file(t);
+
+            // Select best scoring particles
             cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
             _filter_particles( t, _particle_metrics[t], _particle_parameters[t]);
 
@@ -123,9 +175,9 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
             if (t > 0) {
                 report_convergence_data(t);
             }
-
-            // Write out predictive prior -- TODO
             cerr << endl << endl;
+
+            write_predictive_prior_file(t);
         }
     }
 }
@@ -171,7 +223,7 @@ void AbcSmc::report_convergence_data(int t) {
 bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
     bool success = true;
     long double *send_data, *local_Y_data, *rec_data, *local_X_data;
-    int particles_per_rank = _num_particles % _mp->mpi_size == 0 ? _num_particles / _mp->mpi_size : 1 + (_num_particles / _mp->mpi_size);
+    int particles_per_rank = (_num_particles % _mp->mpi_size) == 0 ? _num_particles / _mp->mpi_size : 1 + (_num_particles / _mp->mpi_size);
     int send_count = npar() * particles_per_rank; 
     int rec_count  = nmet() * particles_per_rank; 
 
@@ -257,9 +309,9 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
 
     if (_mp->mpi_rank == mpi_root) {
 //        cerr << "Root is copying data\n";
-        for (int i = 0; i<particles_per_rank * _mp->mpi_size; i++) {
+        for (int i = 0; i<particles_per_rank * _mp->mpi_size and i<_num_particles; i++) {
             for (int j = 0; j<nmet(); j++) {
-                if (i<_num_particles) X_orig(i,j) = rec_data[i*nmet() + j];
+                X_orig(i,j) = rec_data[i*nmet() + j];
             }
         }
         delete[] send_data;
@@ -308,7 +360,7 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
 
 void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     // Run PLS
-    // Box-Cox transform data?
+    // Box-Cox transform data -- TODO?
     //void test_bc( Mat2D );
     //test_bc(Y_orig);
 
@@ -334,7 +386,7 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
         cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl; 
     }
 
-    int test_set_size = nobs - _pls_training_set_size;
+    const int test_set_size = nobs - _pls_training_set_size;
     Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
     //int max_num_components = num_components.maxCoeff();
     cerr << "Optimal number of components (NEW DATA):\t" << num_components << endl;
@@ -355,7 +407,7 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_name(); } cerr << " | ";
     for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->name; } cerr << endl;
     for (int q=0; q<5; q++) {
-        int idx = ranking[q];
+        const int idx = ranking[q];
         for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
         cerr << " | ";
         for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(9) << X_orig(idx, i); } 
@@ -366,15 +418,12 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_name(); } cerr << " | ";
     for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->name; } cerr << endl;
     for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
-        int idx = ranking[q];
+        const int idx = ranking[q];
         for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
         cerr << " | ";
         for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(9) << X_orig(idx, i); } 
         cerr << endl;
     }
-
-//        int idx = ranking[q];
-//        cerr << setw(9) << Y_orig.row(idx) << " | " << setw(9) << X_orig.row(idx) << endl;
 }
 
 Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
@@ -452,12 +501,12 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
                     double old_par_value = _particle_parameters[set_num-1](_predictive_prior[set_num-1][k], j);
                     double old_doubled_variance = _model_pars[j]->get_doubled_variance(set_num-1);
 
-// This handles the (often improbable) case where a parameter has completely converged.
-// It allows ABC to continue exploring other parameters, rather than causing the math
-// to fall apart because the density at the converged value is infinite.
-if (old_doubled_variance != 0 or par_value != old_par_value) {
+                    // This handles the (often improbable) case where a parameter has completely converged.
+                    // It allows ABC to continue exploring other parameters, rather than causing the math
+                    // to fall apart because the density at the converged value is infinite.
+                    if (old_doubled_variance != 0 or par_value != old_par_value) {
                         running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_doubled_variance) );
-}
+                    }
                 }
                 denominator += running_product;
             }

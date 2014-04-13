@@ -1,9 +1,12 @@
 {
-    "smc_iterations" : 20,
-    "num_samples"    : 500,
-    "predictive_prior_fraction" : 0.2,
+    "smc_iterations" : 12,
+    "num_samples"    : 5000,
+    "predictive_prior_fraction" : 0.1,
     "pls_training_fraction"     : 0.5,
-    "executable"                : "dice_game",
+
+    "executable"                    : "dice_game",
+    "particle_basefilename"         : "dice_particles",
+    "predictive_prior_basefilename" : "dice_predictive_prior",
 
     "parameters" : [
         {"name"      : "ndice",

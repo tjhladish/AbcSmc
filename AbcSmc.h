@@ -71,10 +71,12 @@ class AbcSmc {
         void set_predictive_prior_size(int n) { assert(n > 0); assert(n <= _num_particles); _predictive_prior_size = n; }
         void set_predictive_prior_fraction(float f)        { assert(f > 0); assert(f <= 1); _predictive_prior_size = _num_particles * f; }
         void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
-        void set_metric_basefilename( std::string name ) { _metrics_filename = name; }
+        //void set_metric_basefilename( std::string name ) { _metrics_filename = name; }
         void set_executable( std::string name ) { _executable_filename = name; }
-        //void set_particle_basefilename( std::string name ) { _particle_filename = name; }
-        //void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
+        void set_particle_basefilename( std::string name ) { _particle_filename = name; }
+        void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
+        void write_particle_file( const int t );
+        void write_predictive_prior_file( const int t );
         void add_next_metric(std::string name, NumericType ntype, double obs_val) { 
             _model_mets.push_back(new Metric(name, ntype, obs_val)); 
         }
@@ -102,7 +104,7 @@ class AbcSmc {
         int _pls_training_set_size;
         int _predictive_prior_size; // number of particles that will be used to inform predictive prior
         std::string _executable_filename;
-        std::string _metrics_filename;
+        //std::string _metrics_filename;
         std::string _particle_filename;
         std::string _predictive_prior_filename;
         std::vector< Mat2D > _particle_metrics;
@@ -115,7 +117,6 @@ class AbcSmc {
         MPI_par *_mp;
 
         bool _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
-        //bool _populate_particles_MPI( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
 
         void _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig); 
         
