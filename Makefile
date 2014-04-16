@@ -1,32 +1,44 @@
-CC=mpicxx
-#CC=g++
-#CFLAGS = -g -std=c++0x
-#CFLAGS = -O2 -std=c++0x -Wall --pedantic
-#CFLAGS = -O2 -std=c++0x
-CFLAGS =  -w0 -std=c++11 -O2 -D USING_MPI
-ABCDIR = $(HOME)/AbcSmc
+CC = g++
+MPICC = mpicxx
+
+CFLAGS = -O2
+ABCDIR = $(HOME)/work/AbcSmc
+
 #INCLUDE = -I/usr/include/eigen3/ -I$(ABCDIR)
-INCLUDE = -I$(HOME)/eigen -I$(ABCDIR) -I$$TACC_GSL_INC -I$(HOME)/jsoncpp/include
-LIBS    = -lm -L$$TACC_GSL_LIB/ -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
-SOURCES= AbcSmc.cpp utility.cpp 
+#INCLUDE = -I. -I$(ABCDIR) -I$$TACC_GSL_INC -I$(HOME)/jsoncpp/include 
+INCLUDE = -I. -I$(ABCDIR) -I$(HPC_GSL_INC) -I$(ABCDIR)/jsoncpp/include 
 
-LIB=libabc.a
+#LIBS = -lm -L$$TACC_GSL_LIB/ -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
+LIBS = -lm -L$(HPC_GSL_LIB/) -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
 
-all: $(SOURCES) $(LIB) #abc
+SOURCES =  AbcSmc.cpp utility.cpp 
+JSONDIR = $(ABCDIR)/jsoncpp/src
+JSONSOURCES = $(JSONDIR)/json_reader.cpp $(JSONDIR)/json_value.cpp $(JSONDIR)/json_writer.cpp
 
-OBJECTS=$(SOURCES:.cpp=.o)
-	
-$(LIB): $(OBJECTS) 
-	$(AR) -rv $(LIB) $(OBJECTS) 
+LIBABC = libabc.a
+LIBJSON = libjsoncpp.a
+
+OBJECTS = $(SOURCES:.cpp=.o)
+JSONOBJECTS = $(JSONSOURCES:.cpp=.o)
+
+default: all_no_mpi
+.all:  $(LIBJSON) $(SOURCES) $(LIBABC)
+
+all_no_mpi: CFLAGS += -Wall -std=c++0x --pedantic
+all_no_mpi: .all
+
+all_mpi: CC = $(MPICC)
+all_mpi: CFLAGS += -w0 -std=c++0x -cxx=icc -D USING_MPI -D MPICH_IGNORE_CXX_SEEK -D MPICH_SKIP_MPICXX
+all_mpi: .all
+
+$(LIBABC): $(OBJECTS) 
+	$(AR) -rv $(LIBABC) $(OBJECTS) 
+
+$(LIBJSON): $(JSONOBJECTS)
+	$(AR) -rv $(LIBJSON) $(JSONOBJECTS)
 
 .cpp.o:
 	$(CC) $(CFLAGS) -c $(INCLUDE) $< -o $@ 
 
-#abc: main.cpp
-#	$(CC) $(CFLAGS) $(INCLUDE) $(LDFLAGS) main.cpp -o abc $(LIBS) 
-
-#dice: dice_game.cpp
-#	$(CC) $(CFLAGS) $(INCLUDE) $(LDFLAGS) dice_game.cpp -o dice_game $(LIBS)
-
 clean:
-	rm $(OBJECTS) $(LIB)
+	rm $(OBJECTS) $(JSONOBJECTS) $(LIBABC) $(LIBJSON)
