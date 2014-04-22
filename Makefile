@@ -2,14 +2,18 @@ CC = g++
 MPICC = mpicxx
 
 CFLAGS = -O2
-ABCDIR = $(HOME)/work/AbcSmc
+ABCDIR = $(HOME)/AbcSmc
 
 #INCLUDE = -I/usr/include/eigen3/ -I$(ABCDIR)
-#INCLUDE = -I. -I$(ABCDIR) -I$$TACC_GSL_INC -I$(HOME)/jsoncpp/include 
-INCLUDE = -I. -I$(ABCDIR) -I$(HPC_GSL_INC) -I$(ABCDIR)/jsoncpp/include 
+INCLUDE = -I. -I$(ABCDIR) -I$(ABCDIR)/jsoncpp/include 
+ifdef TACC_GSL_INC
+INCLUDE += -I$$TACC_GSL_INC
+endif
+ifdef HPC_GSL_INC
+INCLUDE += -I$$HPC_GSL_INC
+endif
 
-#LIBS = -lm -L$$TACC_GSL_LIB/ -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
-LIBS = -lm -L$(HPC_GSL_LIB/) -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
+LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
 
 SOURCES =  AbcSmc.cpp utility.cpp 
 JSONDIR = $(ABCDIR)/jsoncpp/src
@@ -38,6 +42,11 @@ $(LIBJSON): $(JSONOBJECTS)
 	$(AR) -rv $(LIBJSON) $(JSONOBJECTS)
 
 .cpp.o:
+ifndef TACC_GSL_INC
+ifndef HPC_GSL_INC
+	@echo "Neither TACC_GSL_INC nor HPC_GSL_INC are defined. Do you need to run 'module load gsl'?"
+endif
+endif
 	$(CC) $(CFLAGS) -c $(INCLUDE) $< -o $@ 
 
 clean:
