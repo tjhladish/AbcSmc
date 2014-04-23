@@ -26,10 +26,8 @@ int main(int argc, char* argv[]) {
     const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
     gsl_rng_set(RNG, time (NULL) * getpid()); // seed the rng using sys time and the process id
 
-    AbcSmc* abc = new AbcSmc();
-    abc->use_MPI(mp);
+    AbcSmc* abc = new AbcSmc( mp );
     abc->parse_config(string(argv[1]));
-    //abc->parse_config("abc.json");
     abc->run(RNG);
 
     MPI_Finalize();

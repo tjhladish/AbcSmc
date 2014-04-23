@@ -12,7 +12,8 @@ class Parameter {
     public:
         Parameter() {};
 
-        Parameter( std::string s, PriorType p, NumericType n, double val1, double val2 ) : name(s), ptype(p), ntype(n) {
+        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2 ) 
+            : name(s), short_name(ss), ptype(p), ntype(n) {
             assert(ptype == UNIFORM);
             if (ptype == UNIFORM) {
                 fmin = val1;
@@ -36,15 +37,17 @@ class Parameter {
             }
         }
 
-        double get_doubled_variance(int t) { return doubled_variance[t]; }
+        double get_doubled_variance(int t) const { return doubled_variance[t]; }
         void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
-        double get_min() { return fmin; }
-        double get_max() { return fmax; }
-        std::string get_name() {return name; }
-        NumericType get_numeric_type() { return ntype; }
+        double get_min() const { return fmin; }
+        double get_max() const { return fmax; }
+        std::string get_name() const { return name; }
+        std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
+        NumericType get_numeric_type() const { return ntype; }
 
     private:
         std::string name;
+        std::string short_name;
         PriorType ptype;
         NumericType ntype;
         //int imin, imax;
@@ -52,18 +55,28 @@ class Parameter {
         std::vector<double> doubled_variance;
 };
 
-struct Metric {
-    Metric() {};
-    Metric(std::string n, NumericType nt, double val) : name(n), ntype(nt), obs_val(val) {};
-    std::string name;
-    NumericType ntype;
-    double obs_val;
+class Metric {
+    public:
+        Metric() {};
+        Metric(std::string s, std::string ss, NumericType n, double val) : name(s), short_name(ss), ntype(n), obs_val(val) {};
+
+        std::string get_name() const { return name; }
+        std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
+        NumericType get_numeric_type() const { return ntype; }
+        double get_obs_val() const { return obs_val; }
+
+    private:
+        std::string name;
+        std::string short_name;
+        NumericType ntype;
+        double obs_val;
 };
 
 
 class AbcSmc {
     public:
-        AbcSmc() { useMPI = false; _mp = NULL; };
+        AbcSmc() { _mp = NULL; };
+        AbcSmc( MPI_par &mp ) { _mp = &mp; };
         //AbcSmc(ModelParameters* pars, ModelMetrics* mets) { _model_pars = pars; _model_mets = mets; }
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
@@ -77,11 +90,11 @@ class AbcSmc {
         void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
-        void add_next_metric(std::string name, NumericType ntype, double obs_val) { 
-            _model_mets.push_back(new Metric(name, ntype, obs_val)); 
+        void add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) { 
+            _model_mets.push_back(new Metric(name, short_name, ntype, obs_val)); 
         }
-        void add_next_parameter(std::string name, PriorType ptype, NumericType ntype, double val1, double val2) {
-            _model_pars.push_back(new Parameter(name, ptype, ntype, val1, val2));
+        void add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2) {
+            _model_pars.push_back(new Parameter(name, short_name, ptype, ntype, val1, val2));
         }
         
         bool parse_config(std::string conf_filename);
@@ -90,7 +103,6 @@ class AbcSmc {
         void run(const gsl_rng* RNG) { run(_executable_filename, RNG); }; 
         void run(std::string executable, const gsl_rng* RNG); 
            
-        void use_MPI( MPI_par& mp ) { bool useMPI=true; _mp = &mp; } 
         int npar() { return _model_pars.size(); }
         int nmet() { return _model_mets.size(); }
 
@@ -113,10 +125,11 @@ class AbcSmc {
         std::vector< std::vector<double> > _weights;
 
         //mpi specific variables
-        bool useMPI;
         MPI_par *_mp;
 
         bool _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
+
+        bool _populate_particles_mpi( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
 
         void _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig); 
         

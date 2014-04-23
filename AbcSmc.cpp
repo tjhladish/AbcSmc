@@ -37,6 +37,7 @@ bool AbcSmc::parse_config(string conf_filename) {
         //cerr << model_par[i] << endl;
 
         string name = model_par[i]["name"].asString();
+        string short_name = model_par[i].get("short_name", "").asString();
 
         PriorType ptype = UNIFORM; 
         string ptype_str = model_par[i]["dist_type"].asString();
@@ -57,7 +58,7 @@ bool AbcSmc::parse_config(string conf_filename) {
         double par1 = model_par[i]["par1"].asDouble();
         double par2 = model_par[i]["par2"].asDouble();
 
-        add_next_parameter( name, ptype, ntype, par1, par2);
+        add_next_parameter( name, short_name, ptype, ntype, par1, par2);
     }
 
     // Parse model metrics 
@@ -66,6 +67,7 @@ bool AbcSmc::parse_config(string conf_filename) {
         //cerr << model_met[i] << endl;
 
         string name = model_met[i]["name"].asString();
+        string short_name = model_met[i].get("short_name", "").asString();
 
         NumericType ntype = INT; 
         string ntype_str = model_met[i]["num_type"].asString();
@@ -77,7 +79,7 @@ bool AbcSmc::parse_config(string conf_filename) {
 
         double val = model_met[i]["value"].asDouble();
 
-        add_next_metric( name, ntype, val);
+        add_next_metric( name, short_name, ntype, val);
     }
     set_smc_iterations( par["smc_iterations"].asInt() ); // or have it test for convergence
     set_num_samples( par["num_samples"].asInt() );
@@ -103,8 +105,8 @@ void AbcSmc::write_particle_file( const int t ) {
 
     // write header
     particle_file << "iteration sample ";
-    for (int i = 0; i<npar(); i++) { particle_file << _model_pars[i]->get_name() << " "; }
-    for (int i = 0; i<nmet(); i++) { particle_file << _model_mets[i]->name << " "; } 
+    for (int i = 0; i<npar(); i++) { particle_file << _model_pars[i]->get_short_name() << " "; }
+    for (int i = 0; i<nmet(); i++) { particle_file << _model_mets[i]->get_short_name() << " "; } 
     particle_file << endl;
 
     for (int i = 0; i < _num_particles; i++) {
@@ -128,8 +130,8 @@ void AbcSmc::write_predictive_prior_file( const int t ) {
 
     // write header
     predictive_prior_file << "iteration rank sample ";
-    for (int i = 0; i<npar(); i++) { predictive_prior_file << _model_pars[i]->get_name() << " "; }
-    for (int i = 0; i<nmet(); i++) { predictive_prior_file << _model_mets[i]->name << " "; } 
+    for (int i = 0; i<npar(); i++) { predictive_prior_file << _model_pars[i]->get_short_name() << " "; }
+    for (int i = 0; i<nmet(); i++) { predictive_prior_file << _model_mets[i]->get_short_name() << " "; } 
     predictive_prior_file << endl;
 
     for (int rank = 0; rank < _predictive_prior_size; rank++) {
@@ -160,9 +162,14 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
     _predictive_prior.resize(_num_smc_sets);
 
     for (int t = 0; t<_num_smc_sets; t++) {
-        //bool success = _populate_particles_MPI( t, _particle_metrics[t], _particle_parameters[t], RNG );
+#ifndef USING_MPI
         bool success = _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );
-        if (!success) { cerr << "MPI rank" << _mp->mpi_rank << " failed while generating particles.  Aborting." << endl; break;}
+#endif
+
+#ifdef USING_MPI
+        bool success = _populate_particles_mpi( t, _particle_metrics[t], _particle_parameters[t], RNG );
+#endif
+        if (!success) { cerr << "MPI rank" << _mp->mpi_rank << " failed while generating particles." << endl;}
         if (_mp->mpi_rank == mpi_root) {
             write_particle_file(t);
 
@@ -210,17 +217,26 @@ void AbcSmc::report_convergence_data(int t) {
     for (unsigned int i = 0; i < _model_pars.size(); i++) {
         double current_stdev = sqrt(_model_pars[i]->get_doubled_variance(t)/2.0);
         double last_stdev    = sqrt(_model_pars[i]->get_doubled_variance(t-1)/2.0);
+        double delta, pct_chg;
 
         cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
-        cerr << "    Last mean,  current mean  (delta): " << setw(9) << last_means[i] 
-            << ", " << setw(9) << current_means[i] << " (" << setw(9) << current_means[i]-last_means[i] << ")\n";
-        cerr << "    Last stdev, current stdev (delta): " << setw(9) << last_stdev 
-            << ", " << setw(9) << current_stdev << " (" << setw(9) << current_stdev-last_stdev << ")\n";
+
+        delta = current_means[i]-last_means[i]; 
+        pct_chg = 100 * delta / last_means[i];
+        cerr << "    Last mean,  current mean  ( delta, % ): " << setw(9) << last_means[i] 
+            << ", " << setw(9) << current_means[i] 
+            << " ( " << setw(9) << delta << ", " << setw(9) << pct_chg  << "% )\n";
+
+        delta = current_stdev-last_stdev; 
+        pct_chg = 100 * delta / last_stdev;
+        cerr << "    Last stdev, current stdev ( delta, % ): " << setw(9) << last_stdev 
+            << ", " << setw(9) << current_stdev 
+            << " ( " << setw(9) << delta << ", " << setw(9) << pct_chg  << "% )\n";
     }
 }
 
 
-bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
     bool success = true;
     long double *send_data, *local_Y_data, *rec_data, *local_X_data;
     int particles_per_rank = (_num_particles % _mp->mpi_size) == 0 ? _num_particles / _mp->mpi_size : 1 + (_num_particles / _mp->mpi_size);
@@ -238,14 +254,12 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
             if (t == 0) { // sample priors
                 par_row = sample_priors(RNG);
                 if (i<_num_particles) Y_orig.row(i) = par_row;
-            } else { // sample predictive priors
+            } else {      // sample predictive priors
                 par_row = sample_predictive_priors(t, RNG);
                 if (i<_num_particles) Y_orig.row(i) = par_row;
             }
             for (int j = 0; j<npar(); j++) { send_data[i*npar() + j] = par_row(j); }
-//cerr << par_row << "|"; 
         }
-//cerr << endl;
     }
    
     local_Y_data = new long double[send_count];
@@ -326,7 +340,7 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
     return success;
 }
 
-/*
+
 bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
     for (int i = 0; i<_num_particles; i++) {
         if (t == 0) { // sample priors
@@ -356,7 +370,7 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
     }
     return true;
 }
-*/
+
 
 void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     // Run PLS
@@ -404,8 +418,8 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     _predictive_prior[t] = sample;
 
     cerr << "Best five:\n";
-    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_name(); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->name; } cerr << endl;
+    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_short_name(); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->get_short_name(); } cerr << endl;
     for (int q=0; q<5; q++) {
         const int idx = ranking[q];
         for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
@@ -415,8 +429,8 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     }
 
     cerr << "Worst five:\n";
-    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_name(); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->name; } cerr << endl;
+    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_short_name(); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->get_short_name(); } cerr << endl;
     for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
         const int idx = ranking[q];
         for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
@@ -501,7 +515,7 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
                     double old_par_value = _particle_parameters[set_num-1](_predictive_prior[set_num-1][k], j);
                     double old_doubled_variance = _model_pars[j]->get_doubled_variance(set_num-1);
 
-                    // This handles the (often improbable) case where a parameter has completely converged.
+                    // This conditional handles the (often improbable) case where a parameter has completely converged.
                     // It allows ABC to continue exploring other parameters, rather than causing the math
                     // to fall apart because the density at the converged value is infinite.
                     if (old_doubled_variance != 0 or par_value != old_par_value) {
@@ -512,7 +526,6 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
             }
             _weights[set_num][i] = numerator / denominator;
         }
-
         normalize_weights( _weights[set_num] );
     }
 }
@@ -524,7 +537,7 @@ Row AbcSmc::sample_predictive_priors(int set_num, const gsl_rng* RNG ) {
     for (int j = 0; j<npar(); j++) {
         int particle_idx = _predictive_prior[set_num-1][r];
         double par_value = _particle_parameters[set_num-1](particle_idx, j);
-        Parameter* parameter = _model_pars[j];
+        const Parameter* parameter = _model_pars[j];
         double doubled_variance = parameter->get_doubled_variance(set_num-1);
         double par_min = parameter->get_min();
         double par_max = parameter->get_max();
@@ -539,7 +552,7 @@ Row AbcSmc::sample_predictive_priors(int set_num, const gsl_rng* RNG ) {
 
 Row AbcSmc::_z_transform_observed_metrics(Row& means, Row& stdevs) {
     Row zmat = Row::Zero(nmet());
-    for (int i = 0; i<nmet(); i++) { zmat(i) = (_model_mets[i]->obs_val - means(i)) / stdevs(i); }
+    for (int i = 0; i<nmet(); i++) { zmat(i) = (_model_mets[i]->get_obs_val() - means(i)) / stdevs(i); }
     return zmat;
 }
 
