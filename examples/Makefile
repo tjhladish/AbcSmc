@@ -29,7 +29,7 @@ libabc_no_mpi:
 libabc_mpi:  
 	$(MAKE) -C $(ABCDIR) -f Makefile all_mpi
 
-abc: main.cpp
+abc: libabc_no_mpi main.cpp
 	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main.cpp -o abc $(ABC_LIB) $(GSL_LIB)
 
 dice: dice_game.cpp
@@ -38,3 +38,5 @@ dice: dice_game.cpp
 abc_mpi: libabc_mpi main_mpi.cpp
 	$(CC) $(CFLAGS) -D USING_MPI $(ABC_INC) $(GSL_INC) main_mpi.cpp -o abc_mpi $(ABC_LIB) $(GSL_LIB)
 
+clean:
+	rm dice_game abc abc_mpi
