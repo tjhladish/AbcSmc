@@ -1,0 +1,71 @@
+{
+    "smc_iterations" : 10,
+    "num_samples"    : 2048,
+    "predictive_prior_fraction" : 0.05,
+    "pls_training_fraction"     : 0.5,
+
+    "executable"                    : "/home1/01856/thladish/dengue/run_dengue.pl",
+    "particle_basefilename"         : "dengue_particles-lm",
+    "predictive_prior_basefilename" : "dengue_predictive_prior-lm",
+
+    "parameters" : [
+        {"name"       : "expansion_factor",
+         "short_name" : "exp_fac",
+         "dist_type"  : "UNIFORM",
+         "num_type"   : "INT",
+         "par1"       : 1,
+         "par2"       : 68},
+                      
+        {"name"       : "mosquito_movement",
+         "short_name" : "mos_mov",
+         "dist_type"  : "UNIFORM",
+         "num_type"   : "FLOAT",
+         "par1"       : 0,
+         "par2"       : 1},
+                      
+        {"name"       : "daily_exposures",
+         "short_name" : "daily_exp",
+         "dist_type"  : "UNIFORM",
+         "num_type"   : "FLOAT",
+         "par1"       : 0.01,
+         "par2"       : 2.0},
+                      
+        {"name"       : "beta_mp",
+         "dist_type"  : "UNIFORM",
+         "num_type"   : "FLOAT",
+         "par1"       : 0.0,
+         "par2"       : 1.0},
+                      
+        {"name"       : "beta_pm",
+         "dist_type"  : "UNIFORM",
+         "num_type"   : "FLOAT",
+         "par1"       : 0.0,
+         "par2"       : 1.0}
+    ],
+
+    "metrics" : [
+        {"name"      : "mean",
+         "num_type"  : "FLOAT",
+         "value"     : 1854.417},
+
+        {"name"      : "stdev",
+         "num_type"  : "FLOAT",
+         "value"     : 2151.492},
+
+        {"name"      : "max",
+         "num_type"  : "INT",
+         "value"     : 6132},
+
+        {"name"      : "slope",
+         "num_type"  : "FLOAT",
+         "value"     : 497.9},
+
+        {"name"      : "intercept",
+         "num_type"  : "FLOAT",
+         "value"     : -1381.8},
+
+        {"name"      : "r_squared",
+         "num_type"  : "FLOAT",
+         "value"     : 0.69618}
+    ]
+}
