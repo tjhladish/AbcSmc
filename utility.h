@@ -12,6 +12,17 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 
+#include <math.h>
+
+using namespace std;
+
+class Fit {
+    public:
+        double m;
+        double b;
+        double rsq;
+};
+
 #ifdef USING_MPI
 #include <mpi.h>
 struct MPI_par {
@@ -110,5 +121,6 @@ int gsl_rng_nonuniform_int(std::vector<double>& weights, const gsl_rng* rng);
 
 double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng); 
  
+Fit* lin_reg(const std::vector<double> &x, const std::vector<double> &y);
 
 #endif
