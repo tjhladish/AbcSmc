@@ -1,8 +1,8 @@
 {
     "smc_iterations" : 10,
-    "num_samples"    : 2048,
-    "predictive_prior_fraction" : 0.05,
-    "pls_training_fraction"     : 0.5,
+    "num_samples"    : 5120,
+    "predictive_prior_fraction" : 0.1,
+    "pls_training_fraction"     : 0.2,
 
     "executable"                    : "/home1/01856/thladish/dengue/run_dengue.pl",
     "particle_basefilename"         : "dengue_particles-lm",
