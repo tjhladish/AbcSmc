@@ -3,11 +3,9 @@ CC=g++
 CFLAGS = -O2
 ABCDIR = $(HOME)/AbcSmc
 ABC_INC = -I$(ABCDIR)
-GSL_INC = -I$$TACC_GSL_INC
-#GSL_INC = -I$$HPC_GSL_INC
+GSL_INC = -I$$TACC_GSL_INC $$HPC_GSL_INC
 ABC_LIB = -L$(ABCDIR) -labc -ljsoncpp   
-GSL_LIB = -lm -L$$TACC_GSL_LIB/ -lgsl -lgslcblas
-#GSL_LIB = -lm -L$$HPC_GSL_LIB/ -lgsl -lgslcblas
+GSL_LIB = -lm -L$$TACC_GSL_LIB/ -L$$HPC_GSL_LIB/ -lgsl -lgslcblas
 
 default: all_no_mpi
 
