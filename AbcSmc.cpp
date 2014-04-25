@@ -280,6 +280,7 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 #endif
 
     for (int i = 0; i<particles_per_rank; i++) {
+        bool particle_success = true;
         string command = _executable_filename;
 //cerr << _mp->mpi_rank << ":" << toString(local_Y_data[i*npar() + 0]) << "," << toString(local_Y_data[i*npar() + 1]) << " ";
         for (int j = 0; j<npar(); j++) {
@@ -290,16 +291,18 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 
         string retval = exec(command);
         if (retval == "ERROR" or retval == "") {
-            cerr << command << " does not exist or appears to be an invalid simulator on MPI rank" << _mp->mpi_rank << endl;
+            cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << endl;
             //cerr << _executable_filename << " does not exist or appears to be an invalid simulator." << endl;
             success = false;
-            break;
+            particle_success = false;
+            //break;
         }
         stringstream ss;
         ss.str(retval);
     
         for (int j = 0; j<nmet(); j++) {
-            ss >> local_X_data[i*nmet() + j];
+            if (particle_success) ss >> local_X_data[i*nmet() + j];
+            if (not particle_success) local_X_data[i*nmet() + j] = -1e1000;
             //ss >> X_orig(i, j);
         }
 //command += "|" + toString(local_X_data[i*npar() + 0]) + " " + toString(local_X_data[i*npar() + 0]) + "\n";
@@ -320,14 +323,20 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
                );
 //     cerr << "Done gathering\n";
 #endif
-
+vector<int> bad_particle_idx;
     if (_mp->mpi_rank == mpi_root) {
 //        cerr << "Root is copying data\n";
         for (int i = 0; i<particles_per_rank * _mp->mpi_size and i<_num_particles; i++) {
             for (int j = 0; j<nmet(); j++) {
+                const double met_val = rec_data[i*nmet() + j];
+                if (met_val < -1e100 or met_val > 1e100) bad_particle_idx.push_back(i);
                 X_orig(i,j) = rec_data[i*nmet() + j];
             }
         }
+for (unsigned int i = 0; i < bad_particle_idx.size(); i++) {
+    X_orig.row(i) = Row::Zero(nmet());
+    Y_orig.row(i) = Row::Zero(npar());
+}
         delete[] send_data;
         delete[] rec_data;
     }
