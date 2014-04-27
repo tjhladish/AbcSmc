@@ -3,7 +3,7 @@
 
 #define mpi_root 0
 
-#include "utility.h"
+#include "AbcUtil.h"
 
 enum PriorType {UNIFORM, NORMAL};
 enum NumericType {INT, FLOAT};

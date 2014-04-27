@@ -15,7 +15,7 @@ endif
 
 LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
 
-SOURCES =  AbcSmc.cpp utility.cpp CCRC32.cpp
+SOURCES =  AbcSmc.cpp AbcUtil.cpp CCRC32.cpp
 JSONDIR = $(ABCDIR)/jsoncpp/src
 JSONSOURCES = $(JSONDIR)/json_reader.cpp $(JSONDIR)/json_value.cpp $(JSONDIR)/json_writer.cpp
 
@@ -28,11 +28,11 @@ JSONOBJECTS = $(JSONSOURCES:.cpp=.o)
 default: all_no_mpi
 .all:  $(LIBJSON) $(SOURCES) $(LIBABC)
 
-all_no_mpi: CFLAGS += -Wall -std=c++0x --pedantic
+all_no_mpi: CFLAGS += -Wall -std=c++11 --pedantic
 all_no_mpi: .all
 
 all_mpi: CC = $(MPICC)
-all_mpi: CFLAGS += -w0 -std=c++0x -cxx=icc -D USING_MPI -D MPICH_IGNORE_CXX_SEEK -D MPICH_SKIP_MPICXX
+all_mpi: CFLAGS += -w0 -std=c++11 -cxx=icc -D USING_MPI -D MPICH_IGNORE_CXX_SEEK -D MPICH_SKIP_MPICXX
 all_mpi: .all
 
 $(LIBABC): $(OBJECTS) 

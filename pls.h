@@ -1,7 +1,7 @@
 #ifndef PLS_H
 #define PLS_H
 
-#include "utility.h"
+#include "AbcUtil.h"
 
 //using namespace std;
 using namespace Eigen;
