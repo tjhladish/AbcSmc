@@ -283,7 +283,7 @@ float_type mean(const Col data) {
 
 float_type variance(const Col data, float_type _mean) {
     if (data.size() < 2) { 
-        cerr << "Variance called with " << data.size() << " data values" << endl;
+        cerr << "WARNING: Variance called with " << data.size() << " data values. Returning 0." << endl;
         return 0;
     } else {
         return (data.array() - _mean).square().sum() / (data.size() - 1);
@@ -320,7 +320,10 @@ float optimize_box_cox (const Col data) {
 
 std::string exec(std::string cmd) {
     FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "ERROR";
+    if (!pipe) {
+        cerr << "ERROR: Unable to create pipe to " << cmd << endl;
+        return "ERROR";
+    }
     char buffer[512];
     std::string result = "";
     while(!feof(pipe)) {
@@ -339,7 +342,7 @@ int gsl_rng_nonuniform_int(vector<double>& weights, const gsl_rng* rng) {
         running_sum += weights[i];
         if (r<=running_sum) return i;
     }
-    cerr << "Weights may not be normalized\n\t Weights summed to: " << running_sum << endl;
+    cerr << "ERROR: Weights may not be normalized\n\t Weights summed to: " << running_sum << endl;
     exit(100);
 }
 

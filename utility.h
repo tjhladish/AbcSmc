@@ -123,4 +123,16 @@ double rand_trunc_normal(double mu, double sigma_squared, double min, double max
  
 Fit* lin_reg(const std::vector<double> &x, const std::vector<double> &y);
 
+inline vector<float_type> as_vector(const Row data) {
+    vector<float_type> vec(data.size());
+    for (int i = 0; i < data.size(); i++) vec[i] = data[i];
+    return vec;
+}
+
+inline Row as_row(const vector<float_type> data) {
+    Row row(data.size());
+    for (unsigned int i = 0; i < data.size(); i++) row[i] = data[i];
+    return row;
+}
+
 #endif

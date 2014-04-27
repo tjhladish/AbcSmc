@@ -81,11 +81,14 @@ bool AbcSmc::parse_config(string conf_filename) {
 
         add_next_metric( name, short_name, ntype, val);
     }
+
+    string executable = par.get("executable", "").asString();
+    if (executable != "") { set_executable( executable ); }
+
     set_smc_iterations( par["smc_iterations"].asInt() ); // or have it test for convergence
     set_num_samples( par["num_samples"].asInt() );
     set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
     set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
-    set_executable( par["executable"].asString() );
     set_particle_basefilename( par["particle_basefilename"].asString() );
     set_predictive_prior_basefilename( par["predictive_prior_basefilename"].asString() );
     
@@ -278,30 +281,13 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 #endif
 
     for (int i = 0; i<particles_per_rank; i++) {
-        bool particle_success = true; // bandaid
-        string command = _executable_filename;
-        for (int j = 0; j<npar(); j++) {
-            //command += " " + toString(Y_orig(i,j));
-            command += " " + toString(local_Y_data[i*npar() + j]);
-        }
-        // ./executable_name summary_stats par1val par2val par3val par4val par5val ... 
+        Row pars(npar());
+        for (int j = 0; j<npar(); j++) { pars[j] = local_Y_data[i*npar() + j]; }
+        Row mets(nmet());
 
-        string retval = exec(command);
-        if (retval == "ERROR" or retval == "") {
-            cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << endl;
-            //cerr << _executable_filename << " does not exist or appears to be an invalid simulator." << endl;
-            success = false;
-            particle_success = false;
-            //break;
-        }
-        stringstream ss;
-        ss.str(retval);
-    
-        for (int j = 0; j<nmet(); j++) {
-            if (particle_success) ss >> local_X_data[i*nmet() + j];
-            if (not particle_success) local_X_data[i*nmet() + j] = -1e1000; // bandaid  
-            //ss >> X_orig(i, j);
-        }
+        _run_simulator(pars, mets);
+        
+        for (int j = 0; j<nmet(); j++) { local_X_data[i*nmet() + j] = mets[j]; }
     }
 
 #ifdef USING_MPI
@@ -330,8 +316,8 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
         
         // experimental bandaid to address corrupted data issue
         for (unsigned int i = 0; i < bad_particle_idx.size(); i++) {
-            X_orig.row(i) = Row::Zero(nmet());
-            Y_orig.row(i) = Row::Zero(npar());
+            X_orig.row(i).fill(numeric_limits<float_type>::min());
+            Y_orig.row(i).fill(numeric_limits<float_type>::min());
         }
 
         delete[] send_data;
@@ -347,6 +333,38 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 }
 
 
+bool AbcSmc::_run_simulator(Row &par, Row &met) {
+    bool particle_success = true;
+    if (use_simulator) {
+        vector<float_type> met_vec = _simulator( as_vector(par) );
+        met = as_row(met_vec);
+    } else if (use_executable) {
+        string command = _executable_filename;
+        for (int j = 0; j<npar(); j++) { command += " " + toString(par[j]); }
+
+        string retval = exec(command);
+        if (retval == "ERROR" or retval == "") {
+            cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << endl;
+            particle_success = false;
+        }
+        stringstream ss;
+        ss.str(retval);
+
+        for (int j = 0; j<nmet(); j++) {
+            if (particle_success) {
+                ss >> met[j];
+            } else {
+                met[j] = numeric_limits<float_type>::min();
+            }
+        }
+    } else {
+        cerr << "ERROR: A pointer to a simulator function (prefered) or an external simulator executable must be defined.\n";
+        particle_success = false;
+    }
+    return particle_success;
+}
+
+
 bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
     for (int i = 0; i<_num_particles; i++) {
         if (t == 0) { // sample priors
@@ -354,25 +372,11 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
         } else { // sample predictive priors
             Y_orig.row(i) = sample_predictive_priors(t, RNG);
         }
-
-        string command = _executable_filename;
-        for (int j = 0; j<npar(); j++) {
-            command += " " + toString(Y_orig(i,j));
-        }
-        // ./executable_name summary_stats par1val par2val par3val par4val par5val ... 
-
-        //std::cerr << command << endl;
-        string retval = exec(command);
-        if (retval == "ERROR" or retval == "") {
-            cerr << _executable_filename << " does not exist or appears to be an invalid simulator." << endl;
-            return false;
-        }
-        stringstream ss;
-        ss.str(retval);
-    
-        for (int j = 0; j<nmet(); j++) {
-            ss >> X_orig(i, j);
-        }
+       
+        Row pars = Y_orig.row(i);
+        Row mets = X_orig.row(i);
+        _run_simulator(pars, mets);
+        X_orig.row(i) = mets;
     }
     return true;
 }

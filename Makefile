@@ -15,7 +15,7 @@ endif
 
 LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp 
 
-SOURCES =  AbcSmc.cpp utility.cpp 
+SOURCES =  AbcSmc.cpp utility.cpp CCRC32.cpp
 JSONDIR = $(ABCDIR)/jsoncpp/src
 JSONSOURCES = $(JSONDIR)/json_reader.cpp $(JSONDIR)/json_value.cpp $(JSONDIR)/json_writer.cpp
 
