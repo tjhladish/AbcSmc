@@ -2,7 +2,7 @@ CC = g++
 MPICC = mpicxx
 
 CFLAGS = -O2
-ABCDIR = $(HOME)/AbcSmc
+ABCDIR = $(HOME)/work/AbcSmc
 
 #INCLUDE = -I/usr/include/eigen3/ -I$(ABCDIR)
 INCLUDE = -I. -I$(ABCDIR) -I$(ABCDIR)/jsoncpp/include 
@@ -30,6 +30,10 @@ default: all_no_mpi
 
 all_no_mpi: CFLAGS += -Wall -std=c++11 --pedantic
 all_no_mpi: .all
+
+all_ubuntu_mpi: CC = $(MPICC)
+all_ubuntu_mpi: CFLAGS += -Wall -std=c++11 -D USING_MPI -D MPICH_IGNORE_CXX_SEEK -D MPICH_SKIP_MPICXX
+all_ubuntu_mpi: .all
 
 all_mpi: CC = $(MPICC)
 all_mpi: CFLAGS += -w0 -std=c++11 -cxx=icc -D USING_MPI -D MPICH_IGNORE_CXX_SEEK -D MPICH_SKIP_MPICXX

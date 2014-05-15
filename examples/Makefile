@@ -1,7 +1,7 @@
 CC=g++
 #CFLAGS = -g -std=c++0x
 CFLAGS = -O2
-ABCDIR = $(HOME)/AbcSmc
+ABCDIR = $(HOME)/work/AbcSmc
 ABC_INC = -I$(ABCDIR)
 
 ifdef TACC_GSL_INC
@@ -11,23 +11,30 @@ ifdef HPC_GSL_INC
 GSL_INC = -I$$HPC_GSL_INC
 endif
 
-ABC_LIB = -L$(ABCDIR) -labc -ljsoncpp   
+ABC_LIB = -L$(ABCDIR) -labc -ljsoncpp
 GSL_LIB = -lm -L$$TACC_GSL_LIB/ -L$$HPC_GSL_LIB/ -lgsl -lgslcblas
 
 default: all_no_mpi
 
 all_no_mpi: CFLAGS += -std=c++0x -Wall
-all_no_mpi: libabc_no_mpi dice abc 
+all_no_mpi: libabc_no_mpi dice abc
 
 all_mpi: CC = mpicxx
 all_mpi: CFLAGS += -cxx=icc -std=c++0x -w0 -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX
-all_mpi: libabc_mpi dice abc_mpi 
+all_mpi: libabc_mpi dice abc_mpi
 
-libabc_no_mpi:  
+all_ubuntu_mpi: CC = mpicxx
+all_ubuntu_mpi: CFLAGS += -std=c++0x -Wall -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX
+all_ubuntu_mpi: libabc_ubuntu_mpi abc_mpi
+
+libabc_no_mpi:
 	$(MAKE) -C $(ABCDIR) -f Makefile all_no_mpi
 
-libabc_mpi:  
+libabc_mpi:
 	$(MAKE) -C $(ABCDIR) -f Makefile all_mpi
+
+libabc_ubuntu_mpi:
+	$(MAKE) -C $(ABCDIR) -f Makefile all_ubuntu_mpi
 
 abc: libabc_no_mpi main.cpp
 	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main.cpp -o abc $(ABC_LIB) $(GSL_LIB)

@@ -58,7 +58,9 @@ typedef Matrix<std::complex<float_type>, Dynamic, 1>  Colc;
 
 void split(const std::string& s, char c, std::vector<std::string>& v);
 
+inline int string2int(const std::string& s){ std::istringstream i(s); int x = 0; i >> x; return x; }
 inline double string2double(const std::string& s){ std::istringstream i(s); double x = 0; i >> x; return x; }
+inline float_type string2float_type(const std::string& s){ std::istringstream i(s); float_type x = 0; i >> x; return x; }
 
 std::string slurp(std::string filename);
 

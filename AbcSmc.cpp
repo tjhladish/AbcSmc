@@ -85,6 +85,13 @@ bool AbcSmc::parse_config(string conf_filename) {
     string executable = par.get("executable", "").asString();
     if (executable != "") { set_executable( executable ); }
 
+    string resume_dir = par.get("resume_directory", "").asString();
+    if (resume_dir != "") {
+        if (_mp->mpi_rank == mpi_root) cerr << "Resuming in directory: " << resume_dir << endl;
+        set_resume_directory( resume_dir );
+        set_resume( true );
+    }
+
     set_smc_iterations( par["smc_iterations"].asInt() ); // or have it test for convergence
     set_num_samples( par["num_samples"].asInt() );
     set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
@@ -155,6 +162,8 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
     _particle_metrics.clear();
     _weights.clear();
 
+    cerr << std::setprecision(5);
+
     if (_mp->mpi_rank == 0) {
         _particle_parameters.resize( _num_smc_sets, Mat2D::Zero(_num_particles, npar()) );
         _particle_metrics.resize( _num_smc_sets, Mat2D::Zero(_num_particles, nmet()) );
@@ -165,20 +174,24 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
     _predictive_prior.resize(_num_smc_sets);
 
     for (int t = 0; t<_num_smc_sets; t++) {
-#ifndef USING_MPI
-        bool success = _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );
-#endif
 
 #ifdef USING_MPI
         bool success = _populate_particles_mpi( t, _particle_metrics[t], _particle_parameters[t], RNG );
+#else
+        bool success = _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );
 #endif
+
         if (!success) { cerr << "MPI rank" << _mp->mpi_rank << " failed while generating particles." << endl;}
         if (_mp->mpi_rank == mpi_root) {
             write_particle_file(t);
 
             // Select best scoring particles
             cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
-            _filter_particles( t, _particle_metrics[t], _particle_parameters[t]);
+            if (resume()) {
+                read_predictive_prior(t);
+            } else {
+                _filter_particles( t, _particle_metrics[t], _particle_parameters[t] );
+            }
 
             calculate_predictive_prior_weights( t );
 
@@ -224,22 +237,127 @@ void AbcSmc::report_convergence_data(int t) {
 
         cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
 
-        delta = current_means[i]-last_means[i]; 
+        delta = current_means[i]-last_means[i];
         pct_chg = 100 * delta / last_means[i];
-        cerr << "    Last mean,  current mean  ( delta, % ): " << setw(9) << last_means[i] 
+        cerr << "    Last mean,  current mean  ( delta, % ): " << setw(9) << last_means[i]
             << ", " << setw(9) << current_means[i] 
             << " ( " << setw(9) << delta << ", " << setw(9) << pct_chg  << "% )\n";
 
-        delta = current_stdev-last_stdev; 
+        delta = current_stdev-last_stdev;
         pct_chg = 100 * delta / last_stdev;
-        cerr << "    Last stdev, current stdev ( delta, % ): " << setw(9) << last_stdev 
+        cerr << "    Last stdev, current stdev ( delta, % ): " << setw(9) << last_stdev
             << ", " << setw(9) << current_stdev 
             << " ( " << setw(9) << delta << ", " << setw(9) << pct_chg  << "% )\n";
     }
 }
 
+bool AbcSmc::read_particle_set(int t, Mat2D &X_orig, Mat2D &Y_orig ) {
+    string pad = t < 10 ? "0" : "";
+    string existing_particle_filename = _particle_filename + "." + pad + toString(t);
+
+    ifstream iss(existing_particle_filename.c_str());
+    if (!iss) {
+        cerr << "WARNING: " << existing_particle_filename << " not found." << endl;
+        cerr << "         This is okay if all existing particle files have been read." << endl;
+        set_resume( false );
+        return false;
+    }
+
+    string buffer;
+    vector<vector<float_type> > fields;
+    int line_num=0;
+    while(std::getline(iss,buffer)){
+        line_num++;
+        vector<string>line;
+        split(buffer,' ',line);
+        // not a header and #fields is correct
+        // first two columns are set num (t) and iteration
+        const int offset = 2;
+        if( line_num > 1 && (signed) line.size() == npar() + nmet() + offset ){
+            vector<float_type> row( npar() + nmet() );
+            for(unsigned int i=0; i < row.size(); i++){
+                row[i] = string2float_type(line[i+offset]);
+            }
+            fields.push_back(row);
+        }
+    }
+    iss.close();
+
+    if(fields.size()  == 0 ) {
+        cerr << "ERROR: " << existing_particle_filename << " missing data." << endl;
+        set_resume( false );
+        return false;
+    }
+
+cerr << "fields size, nmet, npar: " << fields.size() << " " << nmet() << " " << npar() << endl;
+    Y_orig.resize( fields.size(), npar() );
+    X_orig.resize( fields.size(), nmet() );
+    for ( unsigned int i=0; i < fields.size(); i++ ) {
+        for ( int j=0; j < npar(); j++ ) Y_orig(i,j)=fields[i][j];
+        for ( int j=npar(); j < npar()+nmet(); j++ ) X_orig(i,j-npar())=fields[i][j];
+    }
+
+    cerr << "Loaded particle set " << t << endl;
+    return true;
+}
+
+
+bool AbcSmc::read_predictive_prior( int t ) {
+    vector<int> ranking;
+
+    string pad = t < 10 ? "0" : "";
+    string existing_predictive_prior_filename = _predictive_prior_filename + "." + pad + toString(t);
+
+    ifstream iss(existing_predictive_prior_filename.c_str());
+    if (!iss) {
+        cerr << "WARNING: " << existing_predictive_prior_filename << " not found." << endl;
+        cerr << "         It appears a particle file exists for which there is no predictive prior file." << endl;
+        set_resume( false );
+        return false;
+    }
+
+    //iteration rank sample ndice sides sum sd
+    //0 0 953 129 7 525 1.91697
+    //0 1 503 3 10 24 2
+    string buffer;
+    vector<vector<float_type> > fields;
+    int line_num=0;
+    while(std::getline(iss,buffer)){
+        line_num++;
+        vector<string>line;
+        split(buffer,' ',line);
+        // not a header and #fields is correct
+        // first two columns are set num (t) and iteration
+        const int offset = 3;
+        const int sample_idx = 2;
+        if( line_num > 1 && (signed) line.size() == npar() + nmet() + offset ){
+            ranking.push_back( string2int(line[sample_idx]) );
+        }
+    }
+    iss.close();
+
+    if ( ranking.size() == 0 ) {
+        cerr << "ERROR: " << existing_predictive_prior_filename << " missing data." << endl;
+        set_resume( false );
+        return false;
+    }
+
+    _predictive_prior[t] = ranking;
+    cerr << "Loaded predictive prior set " << t << endl;
+    return true;
+}
+
 
 bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+    int continue_flag = (int) true;
+    if (_mp->mpi_rank == mpi_root and resume() and read_particle_set( t, X_orig, Y_orig )) {
+        continue_flag = (int) false;
+    }
+#ifdef USING_MPI
+    MPI_Bcast(&continue_flag, 1, MPI_INT, mpi_root, _mp->comm);
+#endif
+    if (not (bool) continue_flag) return true; // resume was set, reading particles succeeded
+
     bool success = true;
     long double *send_data, *local_Y_data, *rec_data, *local_X_data;
     int particles_per_rank = (_num_particles % _mp->mpi_size) == 0 ? _num_particles / _mp->mpi_size : 1 + (_num_particles / _mp->mpi_size);
@@ -250,8 +368,8 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
     // then we will end up calculating somewhat more than we need and throwing out the extras.
     // That's why we use both particles_per_rank and _num_particles.
     if (_mp->mpi_rank == mpi_root) {
-        send_data = new long double[send_count * _mp->mpi_size];
-        rec_data  = new long double[rec_count  * _mp->mpi_size];
+        send_data = new long double[send_count * _mp->mpi_size]();
+        rec_data  = new long double[rec_count  * _mp->mpi_size]();
         Row par_row;
         for (int i = 0; i<particles_per_rank * _mp->mpi_size; i++) {
             if (t == 0) { // sample priors
@@ -366,6 +484,10 @@ bool AbcSmc::_run_simulator(Row &par, Row &met) {
 
 
 bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+    if (resume() and read_particle_set( t, X_orig, Y_orig )) {
+        return true;
+    }
+
     for (int i = 0; i<_num_particles; i++) {
         if (t == 0) { // sample priors
             Y_orig.row(i) = sample_priors(RNG);
@@ -500,7 +622,7 @@ void AbcSmc::normalize_weights( vector<double>& weights ) {
 void AbcSmc::calculate_predictive_prior_weights(int set_num) {
     // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
     calculate_doubled_variances( set_num );
-    cerr << "pred prior size in calculate_predictive_prior_weights: " << _predictive_prior[set_num].size() << endl;
+    cerr << "predictive prior size (n): " << _predictive_prior[set_num].size() << endl;
     
     if (set_num == 0) {
         // uniform weights for set 0 predictive prior

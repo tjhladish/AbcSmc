@@ -75,8 +75,8 @@ class Metric {
 
 class AbcSmc {
     public:
-        AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; };
-        AbcSmc( MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; };
+        AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
+        AbcSmc( MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
         void set_num_samples(int n) { _num_particles = n; }
@@ -119,6 +119,8 @@ class AbcSmc {
         bool use_simulator;
         std::string _executable_filename;
         bool use_executable;
+        bool resume_flag;
+        std::string resume_directory;
         //std::string _metrics_filename;
         std::string _particle_filename;
         std::string _predictive_prior_filename;
@@ -138,6 +140,12 @@ class AbcSmc {
 
         void _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig); 
         
+        void set_resume( bool res ) { resume_flag = res; }
+        bool resume() { return resume_flag; }
+        void set_resume_directory( std::string res_dir ) { resume_directory = res_dir; }
+        bool read_particle_set( int t, Mat2D &X_orig, Mat2D &Y_orig );
+        bool read_predictive_prior( int t );
+
         Col euclidean( Row obs_met, Mat2D sim_met ); 
 
         Row sample_priors( const gsl_rng* RNG );
