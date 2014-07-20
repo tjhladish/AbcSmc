@@ -21,11 +21,11 @@ all_no_mpi: libabc_no_mpi dice abc
 
 all_mpi: CC = mpicxx
 all_mpi: CFLAGS += -cxx=icc -std=c++0x -w0 -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX
-all_mpi: libabc_mpi dice abc_mpi
+all_mpi: libabc_mpi dice abc_mpi_exec abc_mpi_simptr
 
 all_ubuntu_mpi: CC = mpicxx
 all_ubuntu_mpi: CFLAGS += -std=c++0x -Wall -DMPICH_IGNORE_CXX_SEEK -DMPICH_SKIP_MPICXX
-all_ubuntu_mpi: libabc_ubuntu_mpi abc_mpi
+all_ubuntu_mpi: libabc_ubuntu_mpi abc_mpi_exec abc_mpi_simptr
 
 libabc_no_mpi:
 	$(MAKE) -C $(ABCDIR) -f Makefile all_no_mpi
@@ -42,8 +42,11 @@ abc: libabc_no_mpi main.cpp
 dice: dice_game.cpp
 	$(CC) $(CFLAGS) $(GSL_INC) dice_game.cpp -o dice_game $(GSL_LIB)
 
-abc_mpi: libabc_mpi main_mpi.cpp
-	$(CC) $(CFLAGS) -D USING_MPI $(ABC_INC) $(GSL_INC) main_mpi.cpp -o abc_mpi $(ABC_LIB) $(GSL_LIB)
+abc_mpi_exec: libabc_mpi main_mpi.cpp
+	$(CC) $(CFLAGS) -D USING_MPI $(ABC_INC) $(GSL_INC) main_mpi_exec.cpp -o abc_mpi_exec $(ABC_LIB) $(GSL_LIB)
+
+abc_mpi_simptr: libabc_mpi main_mpi.cpp
+	$(CC) $(CFLAGS) -D USING_MPI $(ABC_INC) $(GSL_INC) main_mpi_simptr.cpp -o abc_mpi_simptr $(ABC_LIB) $(GSL_LIB)
 
 clean:
-	rm dice_game abc abc_mpi
+	rm dice_game abc abc_mpi_exec abc_mpi_simptr
