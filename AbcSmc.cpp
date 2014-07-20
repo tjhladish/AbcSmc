@@ -454,7 +454,7 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 bool AbcSmc::_run_simulator(Row &par, Row &met) {
     bool particle_success = true;
     if (use_simulator) {
-        vector<float_type> met_vec = _simulator( as_vector(par) );
+        vector<float_type> met_vec = _simulator( as_vector(par), _mp );
         met = as_row(met_vec);
     } else if (use_executable) {
         string command = _executable_filename;
