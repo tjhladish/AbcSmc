@@ -2,6 +2,7 @@
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_statistics_double.h>
 #include <math.h>
+#include <unistd.h>
 
 using namespace std;
 
