@@ -42,10 +42,10 @@ abc: libabc_no_mpi main.cpp
 dice: dice_game.cpp
 	$(CC) $(CFLAGS) $(GSL_INC) dice_game.cpp -o dice_game $(GSL_LIB)
 
-abc_mpi_exec: libabc_mpi main_mpi.cpp
+abc_mpi_exec: libabc_mpi main_mpi_exec.cpp
 	$(CC) $(CFLAGS) -D USING_MPI $(ABC_INC) $(GSL_INC) main_mpi_exec.cpp -o abc_mpi_exec $(ABC_LIB) $(GSL_LIB)
 
-abc_mpi_simptr: libabc_mpi main_mpi.cpp
+abc_mpi_simptr: libabc_mpi main_mpi_simptr.cpp
 	$(CC) $(CFLAGS) -D USING_MPI $(ABC_INC) $(GSL_INC) main_mpi_simptr.cpp -o abc_mpi_simptr $(ABC_LIB) $(GSL_LIB)
 
 clean:
