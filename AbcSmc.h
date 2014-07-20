@@ -85,7 +85,7 @@ class AbcSmc {
         void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
         //void set_metric_basefilename( std::string name ) { _metrics_filename = name; }
         void set_executable( std::string name ) { _executable_filename = name; use_executable = true; }
-        void set_simulator(vector<float_type> (*simulator) (vector<float_type>)) { _simulator = simulator; use_simulator = true; }
+        void set_simulator(vector<float_type> (*simulator) (vector<float_type>, const MPI_par*)) { _simulator = simulator; use_simulator = true; }
         void set_particle_basefilename( std::string name ) { _particle_filename = name; }
         void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
         void write_particle_file( const int t );
@@ -115,7 +115,7 @@ class AbcSmc {
         int _num_particles;
         int _pls_training_set_size;
         int _predictive_prior_size; // number of particles that will be used to inform predictive prior
-        vector<float_type> (*_simulator) (vector<float_type>);
+        vector<float_type> (*_simulator) (vector<float_type>, const MPI_par*);
         bool use_simulator;
         std::string _executable_filename;
         bool use_executable;
