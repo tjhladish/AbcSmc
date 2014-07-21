@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 using namespace std;
+const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
 
 void setup_mpi(MPI_par &m, int &argc, char **argv) {
     /* MPI variables */
@@ -24,8 +25,6 @@ void setup_mpi(MPI_par &m, int &argc, char **argv) {
 // must take vector of doubles (ABC paramters) 
 // and return vector of doubles (ABC metrics)
 vector<long double> simulator(vector<long double> args, const MPI_par* mp) {
-    const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
-    gsl_rng_set(RNG, time (NULL) * getpid());
     int par1 = (int) args[0]; // number of dice
     int par2 = (int) args[1]; // number of sides on dice
 
@@ -60,7 +59,6 @@ int main(int argc, char* argv[]) {
         return 100;
     }
 
-    const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
     gsl_rng_set(RNG, time (NULL) * getpid()); // seed the rng using sys time and the process id
 
     AbcSmc* abc = new AbcSmc(mp);
