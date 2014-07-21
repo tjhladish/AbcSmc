@@ -137,6 +137,8 @@ class AbcSmc {
         bool _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
 
         bool _populate_particles_mpi( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
+        void _particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG);
+        void _particle_worker();
 
         void _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig); 
         

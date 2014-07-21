@@ -10,6 +10,10 @@
 #include <sstream>
 #include <fstream>
 
+// need a positive int that is very unlikely 
+// to be less than the number of particles
+#define STOP_TAG INT_MAX - 37
+
 using std::vector;
 using std::string;
 using std::stringstream;
@@ -349,6 +353,7 @@ bool AbcSmc::read_predictive_prior( int t ) {
 
 
 bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+    // this is silly -- only 'true' is ever returned from this function
     int continue_flag = (int) true;
     if (_mp->mpi_rank == mpi_root and resume() and read_particle_set( t, X_orig, Y_orig )) {
         continue_flag = (int) false;
@@ -358,96 +363,151 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 #endif
     if (not (bool) continue_flag) return true; // resume was set, reading particles succeeded
 
-    bool success = true;
-    long double *send_data, *local_Y_data, *rec_data, *local_X_data;
-    int particles_per_rank = (_num_particles % _mp->mpi_size) == 0 ? _num_particles / _mp->mpi_size : 1 + (_num_particles / _mp->mpi_size);
-    int send_count = npar() * particles_per_rank; 
-    int rec_count  = nmet() * particles_per_rank; 
-
-    // If the desired number of particles is not divisible by the number of threads (mpi_size),
-    // then we will end up calculating somewhat more than we need and throwing out the extras.
-    // That's why we use both particles_per_rank and _num_particles.
     if (_mp->mpi_rank == mpi_root) {
-        send_data = new long double[send_count * _mp->mpi_size]();
-        rec_data  = new long double[rec_count  * _mp->mpi_size]();
-        Row par_row;
-        for (int i = 0; i<particles_per_rank * _mp->mpi_size; i++) {
-            if (t == 0) { // sample priors
-                par_row = sample_priors(RNG);
-                if (i<_num_particles) Y_orig.row(i) = par_row;
-            } else {      // sample predictive priors
-                par_row = sample_predictive_priors(t, RNG);
-                if (i<_num_particles) Y_orig.row(i) = par_row;
-            }
-            for (int j = 0; j<npar(); j++) { send_data[i*npar() + j] = par_row(j); }
-        }
+        _particle_scheduler(t, X_orig, Y_orig, RNG);
+    } else {
+        _particle_worker();
     }
-   
-    local_Y_data = new long double[send_count];
-    local_X_data = new long double[rec_count];
+
+    return true;
+}
+
+
+void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+    MPI_Status status;
+    long double *send_data = new long double[npar() * _num_particles](); // all params, flattened array
+    long double *rec_data  = new long double[nmet() * _num_particles](); // all metrics, flattened array
+
+    // sample parameter distributions; copy values into Y matrix and into send_data buffer
+    Row par_row;
+    for (int i = 0; i<_num_particles; i++) {
+        if (t == 0) { // sample priors
+            par_row = sample_priors(RNG);
+            if (i<_num_particles) Y_orig.row(i) = par_row;
+        } else {      // sample predictive priors
+            par_row = sample_predictive_priors(t, RNG);
+            if (i<_num_particles) Y_orig.row(i) = par_row;
+        }
+        for (int j = 0; j<npar(); j++) { send_data[i*npar() + j] = par_row(j); }
+    }
+    // Seed the workers with the first 'num_workers' jobs
+    int particle_id;
+    for (int rank = 1; rank < _mp->mpi_size; ++rank) {
+        particle_id = rank - 1;                   // which row in Y
+#ifdef USING_MPI
+        MPI_Send(&send_data[particle_id*npar()],  // message buffer
+                 npar(),                          // number of elements
+                 MPI_LONG_DOUBLE,                 // data item is a double
+                 rank,                            // destination process rank
+                 particle_id,                     // message tag
+                 _mp->comm);                      // always use this
+#endif
+    }
+    
+    // Receive a result from any worker and dispatch a new work request
+    long double rec_buffer[nmet()];
+    particle_id++; // move cursor to next particle to be sent
+    while ( particle_id < _num_particles ) { 
+#ifdef USING_MPI
+        MPI_Recv(&rec_buffer,                     // message buffer
+                 nmet(),                          // message size
+                 MPI_LONG_DOUBLE,                 // of type double
+                 MPI_ANY_SOURCE,                  // receive from any sender
+                 MPI_ANY_TAG,                     // any type of message
+                 _mp->comm,                       // always use this
+                 &status);                        // received message info
+#endif
+        for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
 
 #ifdef USING_MPI
-    MPI_Scatter(send_data,        // send buffer 
-                send_count,       // send count
-                MPI_LONG_DOUBLE,  // send type
-                local_Y_data,     // receive buffer
-                send_count,       // receive count
-                MPI_LONG_DOUBLE,  // receive type
-                mpi_root,         // rank of sending process
-                _mp->comm         // communicator handle
-                );
+        MPI_Send(&send_data[particle_id*npar()],  // message buffer
+                 npar(),                          // number of elements
+                 MPI_LONG_DOUBLE,                 // data item is a double
+                 status.MPI_SOURCE,               // send it to the rank that just finished
+                 particle_id,                     // message tag
+                 _mp->comm);                      // always use this
 #endif
+        particle_id++; // move cursor
+    }
+    
+    // receive results for outstanding work requests--there are exactly 'num_workers' left
+    for (int rank = 1; rank < _mp->mpi_size; ++rank) {
+#ifdef USING_MPI
+        MPI_Recv(&rec_buffer, 
+                 nmet(), 
+                 MPI_LONG_DOUBLE, 
+                 MPI_ANY_SOURCE,
+                 MPI_ANY_TAG, 
+                 _mp->comm, 
+                 &status);
+#endif
+        for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
+    }
+     
+    // Tell all the workers they're done for now
+    for (int rank = 1; rank < _mp->mpi_size; ++rank) {
+#ifdef USING_MPI
+        MPI_Send(0, 0, MPI_INT, rank, STOP_TAG, _mp->comm);
+#endif
+    }
 
-    for (int i = 0; i<particles_per_rank; i++) {
+    vector<int> bad_particle_idx; // bandaid, in case simulator returns nonsense values
+    for (int i = 0; i<_num_particles; i++) {
+        for (int j = 0; j<nmet(); j++) {
+            const double met_val = rec_data[i*nmet() + j];
+            if (not isfinite(met_val)) bad_particle_idx.push_back(i);
+            X_orig(i,j) = rec_data[i*nmet() + j];
+        }
+    }
+    
+    // bandaid, in case simulator returns nonsense values
+    for (unsigned int i = 0; i < bad_particle_idx.size(); i++) {
+        X_orig.row(i).fill(numeric_limits<float_type>::min());
+        Y_orig.row(i).fill(numeric_limits<float_type>::min());
+    }
+
+    delete[] send_data;
+    delete[] rec_data;
+}
+
+
+void AbcSmc::_particle_worker() {
+    MPI_Status status;
+    long double *local_Y_data = new long double[npar()]();
+    long double *local_X_data = new long double[nmet()]();
+
+    while (1) {
+        MPI_Recv(local_Y_data, 
+                 npar(), 
+                 MPI_LONG_DOUBLE, 
+                 mpi_root, 
+                 MPI_ANY_TAG,
+                 _mp->comm, 
+                 &status);
+
+        // Check the tag of the received message.
+        if (status.MPI_TAG == STOP_TAG) {
+            delete[] local_Y_data;
+            delete[] local_X_data;
+            return;
+        }
+
         Row pars(npar());
-        for (int j = 0; j<npar(); j++) { pars[j] = local_Y_data[i*npar() + j]; }
         Row mets(nmet());
 
+        for (int j = 0; j<npar(); j++) { pars[j] = local_Y_data[j]; }
+
         _run_simulator(pars, mets);
-        
-        for (int j = 0; j<nmet(); j++) { local_X_data[i*nmet() + j] = mets[j]; }
+
+        for (int j = 0; j<nmet(); j++) { local_X_data[j] = mets[j]; }
+
+        MPI_Send(local_X_data, 
+                 nmet(), 
+                 MPI_LONG_DOUBLE, 
+                 mpi_root, 
+                 status.MPI_TAG, 
+                 _mp->comm);
     }
-
-#ifdef USING_MPI
-    MPI_Gather(local_X_data,        // send buffer 
-               rec_count,           // send count
-               MPI_LONG_DOUBLE,     // send type
-               rec_data,            // receive buffer
-               rec_count,           // receive count
-               MPI_LONG_DOUBLE,     // receive type
-               mpi_root,            // rank of receiving process
-               _mp->comm            // communicator handle
-               );
-#endif
-    vector<int> bad_particle_idx; //bandaid
-    if (_mp->mpi_rank == mpi_root) {
-        // cerr << "Root is copying data\n";
-        for (int i = 0; i<particles_per_rank * _mp->mpi_size and i<_num_particles; i++) {
-            for (int j = 0; j<nmet(); j++) {
-                // experimental bandaid to address corrupted data issue
-                const double met_val = rec_data[i*nmet() + j];
-                if (met_val < -1e100 or met_val > 1e100) bad_particle_idx.push_back(i);
-
-                X_orig(i,j) = rec_data[i*nmet() + j];
-            }
-        }
-        
-        // experimental bandaid to address corrupted data issue
-        for (unsigned int i = 0; i < bad_particle_idx.size(); i++) {
-            X_orig.row(i).fill(numeric_limits<float_type>::min());
-            Y_orig.row(i).fill(numeric_limits<float_type>::min());
-        }
-
-        delete[] send_data;
-        delete[] rec_data;
-    }
-
-    // cerr << "Done copying data\n";
-
-    delete[] local_Y_data;
-    delete[] local_X_data;
-
-    return success;
 }
 
 
