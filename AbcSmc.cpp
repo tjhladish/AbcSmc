@@ -12,7 +12,7 @@
 
 // need a positive int that is very unlikely 
 // to be less than the number of particles
-#define STOP_TAG INT_MAX - 37
+#define STOP_TAG 10000000
 
 using std::vector;
 using std::string;
