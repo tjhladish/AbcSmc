@@ -281,6 +281,24 @@ float_type mean(const Col data) {
     return data.sum() / data.size();
 }
 
+float_type median(const Col data) {
+    assert(data.size() > 0);
+    // copy & sort data
+    vector<float_type> vdata(data.data(), data.data()+data.size());
+    const int n = vdata.size();
+    sort(vdata.begin(), vdata.end());
+
+    float_type median;
+
+    if (n % 2 == 0) {
+        median = (vdata[n / 2 - 1] + vdata[n / 2]) / 2;
+    } else {
+        median = vdata[n / 2];
+    }
+
+    return median;
+}
+
 float_type variance(const Col data, float_type _mean) {
     if (data.size() < 2) { 
         cerr << "WARNING: Variance called with " << data.size() << " data values. Returning 0." << endl;
@@ -290,10 +308,55 @@ float_type variance(const Col data, float_type _mean) {
     }
 }
 
+float_type max(const Col data) {
+    assert(data.size() > 0);
+    float_type m = data[0];
+    for (int i = 1; i< data.size(); i++) {
+        const float_type v = data[i];
+        if (v > m) m = v;
+    }
+    return m;
+}
+
 float_type skewness(const Col data) {
     float_type _x = mean(data);
     float_type _v = variance(data, _x);
     return ((data.array() - _x).pow(3).sum() / data.size() ) / pow(_v, 1.5);
+}
+
+int _mc_pos(const float_type v, const float_type m) {
+    enum Position {ABOVE, BELOW, AT};
+    Position p;
+    if (v > m) { p = ABOVE; }
+    else if (v < m) { p = BELOW; }
+    else { p = AT; }
+    return (int) p;
+}
+
+int median_crossings(const Col data) {
+    if (data.size() < 2) {
+        return 0;
+    } else {
+        return median_crossings(data, median(data));
+    }
+}
+
+// Calculates the number of times the data series crosses the median
+int median_crossings(const Col data, const float_type m) {
+    int mc = 0;
+    if (data.size() < 2) return mc;
+
+    enum Position {ABOVE, BELOW, AT};
+    // current and next are like cursors that trace the data series
+    Position current, next;
+    current = (Position) _mc_pos(data[0], m);
+    if (current == AT) mc++; // increment if we're starting at the median
+    for (int i = 1; i < data.size(); ++i) {
+        next = (Position) _mc_pos(data[i], m);
+        if (next != current and current != AT) mc++; // just crossed or touched the median
+        current = next;
+    }
+    return mc;
 }
 
 float optimize_box_cox (const Col data, float lambda_min, float lambda_max, float step) {
