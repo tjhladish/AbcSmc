@@ -21,6 +21,8 @@ using std::ofstream;
 using std::setw;
 
 const string double_bar = "=========================================================================================";
+const int PREC = 5;
+const int WIDTH = 12; 
 
 bool AbcSmc::parse_config(string conf_filename) {
     Json::Value par;   // will contains the par value after parsing.
@@ -166,7 +168,7 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
     _particle_metrics.clear();
     _weights.clear();
 
-    cerr << std::setprecision(5);
+    cerr << std::setprecision(PREC);
 
     if (_mp->mpi_rank == 0) {
         _particle_parameters.resize( _num_smc_sets, Mat2D::Zero(_num_particles, npar()) );
@@ -199,20 +201,22 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
 
             calculate_predictive_prior_weights( t );
 
-            if (t > 0) {
-                report_convergence_data(t);
-            }
+            report_convergence_data(t);
             cerr << endl << endl;
 
             write_predictive_prior_file(t);
         }
     }
 }
+void print_stats(ostream& stream, string str1, string str2, int width, double val1, double val2, double delta, double pct_chg, string tail) {
+    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2 
+                                                      << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
+}
 
 
 void AbcSmc::report_convergence_data(int t) {
-    vector<double> last_means( npar() );
-    vector<double> current_means( npar() );
+    vector<double> last_means( npar(), 0 );
+    vector<double> current_means( npar(), 0 );
 
     for (int j = 0; j < npar(); j++) {
         int N = _predictive_prior[t].size();
@@ -222,36 +226,55 @@ void AbcSmc::report_convergence_data(int t) {
             current_means[j] += par_value;
         }
         current_means[j] /= N;
-
-        int N2 = _predictive_prior[t-1].size();
-        for (int i = 0; i < N2; i++) {
-            double particle_idx = _predictive_prior[t-1][i];
-            double par_value = _particle_parameters[t-1](particle_idx, j);
-            last_means[j] += par_value;
+        
+        if (t > 0) {
+            int N2 = _predictive_prior[t-1].size();
+            for (int i = 0; i < N2; i++) {
+                double particle_idx = _predictive_prior[t-1][i];
+                double par_value = _particle_parameters[t-1](particle_idx, j);
+                last_means[j] += par_value;
+            }
+            last_means[j] /= N2;
         }
-        last_means[j] /= N2;
     }
 
     cerr << double_bar << endl;
-    cerr << "Convergence data for predictive priors:\n";
+    if (t == 0) {
+        cerr << "Predictive prior summary statistics:\n";
+    } else {
+        cerr << "Convergence data for predictive priors:\n";
+    }
     for (unsigned int i = 0; i < _model_pars.size(); i++) {
-        double current_stdev = sqrt(_model_pars[i]->get_doubled_variance(t)/2.0);
-        double last_stdev    = sqrt(_model_pars[i]->get_doubled_variance(t-1)/2.0);
-        double delta, pct_chg;
+        const Parameter* par = _model_pars[i];
+        const double current_stdev = sqrt(par->get_doubled_variance(t)/2.0);
+        const double prior_mean = par->get_prior_mean();
+        const double prior_mean_delta = current_means[i] - prior_mean;
+        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * current_means[i] / prior_mean : INFINITY;
 
-        cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
+        const double prior_stdev = par->get_prior_stdev();
+        const double prior_stdev_delta = current_stdev - prior_stdev;
+        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * current_stdev / prior_stdev : INFINITY;
+        if (t == 0) {
+            cerr << "  Par " << i << ": \"" << par->get_name() << "\"\n";
 
-        delta = current_means[i]-last_means[i];
-        pct_chg = 100 * delta / last_means[i];
-        cerr << "    Last mean,  current mean  ( delta, % ): " << setw(9) << last_means[i]
-            << ", " << setw(9) << current_means[i] 
-            << " ( " << setw(9) << delta << ", " << setw(9) << pct_chg  << "% )\n";
+            print_stats(cerr, "Prior mean", "  current mean", 9, prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            print_stats(cerr, "Prior stdev", "current stdev", 9, prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
+        } else {
+            double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(t-1)/2.0);
+            double delta, pct_chg;
 
-        delta = current_stdev-last_stdev;
-        pct_chg = 100 * delta / last_stdev;
-        cerr << "    Last stdev, current stdev ( delta, % ): " << setw(9) << last_stdev
-            << ", " << setw(9) << current_stdev 
-            << " ( " << setw(9) << delta << ", " << setw(9) << pct_chg  << "% )\n";
+            cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
+
+            delta = current_means[i] - last_means[i];
+            pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
+            print_stats(cerr, "Prior mean", "  current mean", 9, prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            print_stats(cerr, "Last mean", "   current mean", 9, last_means[i], current_means[i], delta, pct_chg, "\n");
+
+            delta = current_stdev - last_stdev;
+            pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
+            print_stats(cerr, "Prior stdev", "current stdev", 9, prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
+            print_stats(cerr, "Last stdev", " current stdev", 9, last_stdev, current_stdev, delta, pct_chg, "\n");
+        }
     }
 }
 
@@ -586,7 +609,7 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     // A is number of components to use
     for (int A = 1; A<=ncomp; A++) { 
         // How well did we do with this many components?
-        cerr << A << " components\t";
+        cerr << setw(2) << A << " components ";
         cerr << "explained variance: " << plsm.explained_variance(X, Y, A);
         //cerr << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
         cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl; 
@@ -610,24 +633,24 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     _predictive_prior[t] = sample;
 
     cerr << "Best five:\n";
-    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_short_name(); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->get_short_name(); } cerr << endl;
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
     for (int q=0; q<5; q++) {
         const int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } 
         cerr << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(9) << X_orig(idx, i); } 
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } 
         cerr << endl;
     }
 
     cerr << "Worst five:\n";
-    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_short_name(); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->get_short_name(); } cerr << endl;
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
     for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
         const int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } 
         cerr << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(9) << X_orig(idx, i); } 
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } 
         cerr << endl;
     }
 }
@@ -695,7 +718,7 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
         double numerator = 1;
         for (int j = 0; j<npar(); j++) {
             Parameter* par = _model_pars[j];
-            numerator *= uniform_pdf(par->get_min(), par->get_max());
+            numerator *= uniform_pdf(par->get_prior_min(), par->get_prior_max());
         }
 
         for (unsigned int i = 0; i < _predictive_prior[set_num].size(); i++) {
@@ -731,8 +754,8 @@ Row AbcSmc::sample_predictive_priors(int set_num, const gsl_rng* RNG ) {
         double par_value = _particle_parameters[set_num-1](particle_idx, j);
         const Parameter* parameter = _model_pars[j];
         double doubled_variance = parameter->get_doubled_variance(set_num-1);
-        double par_min = parameter->get_min();
-        double par_max = parameter->get_max();
+        double par_min = parameter->get_prior_min();
+        double par_max = parameter->get_prior_max();
         par_values(j) = rand_trunc_normal( par_value, doubled_variance, par_min, par_max, RNG );
 
         if (parameter->get_numeric_type() == INT) {
