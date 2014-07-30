@@ -95,9 +95,9 @@ float_type max(const Col data);
 
 float_type skewness(const Col data);
 
-int median_crossings(const Col data, const float_type _median);
+float_type median_crossings(const Col data, const float_type _median);
 
-int median_crossings(const Col data);
+float_type median_crossings(const Col data);
 
 float optimize_box_cox (const Col data, float lambda_min, float lambda_max, float step);
 

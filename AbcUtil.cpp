@@ -333,7 +333,7 @@ int _mc_pos(const float_type v, const float_type m) {
     return (int) p;
 }
 
-int median_crossings(const Col data) {
+float_type median_crossings(const Col data) {
     if (data.size() < 2) {
         return 0;
     } else {
@@ -342,7 +342,7 @@ int median_crossings(const Col data) {
 }
 
 // Calculates the number of times the data series crosses the median
-int median_crossings(const Col data, const float_type m) {
+float_type median_crossings(const Col data, const float_type m) {
     int mc = 0;
     if (data.size() < 2) return mc;
 
@@ -356,7 +356,7 @@ int median_crossings(const Col data, const float_type m) {
         if (next != current and current != AT) mc++; // just crossed or touched the median
         current = next;
     }
-    return mc;
+    return ((float_type) mc)/(data.size()-1);
 }
 
 float optimize_box_cox (const Col data, float lambda_min, float lambda_max, float step) {
