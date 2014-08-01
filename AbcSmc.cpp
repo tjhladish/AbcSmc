@@ -208,11 +208,10 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
         }
     }
 }
-void print_stats(ostream& stream, string str1, string str2, int width, double val1, double val2, double delta, double pct_chg, string tail) {
+void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
     stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2 
                                                       << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
 }
-
 
 void AbcSmc::report_convergence_data(int t) {
     vector<double> last_means( npar(), 0 );
@@ -249,16 +248,18 @@ void AbcSmc::report_convergence_data(int t) {
         const double current_stdev = sqrt(par->get_doubled_variance(t)/2.0);
         const double prior_mean = par->get_prior_mean();
         const double prior_mean_delta = current_means[i] - prior_mean;
-        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * current_means[i] / prior_mean : INFINITY;
+        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
 
         const double prior_stdev = par->get_prior_stdev();
         const double prior_stdev_delta = current_stdev - prior_stdev;
-        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * current_stdev / prior_stdev : INFINITY;
+        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
         if (t == 0) {
             cerr << "  Par " << i << ": \"" << par->get_name() << "\"\n";
 
-            print_stats(cerr, "Prior mean", "  current mean", 9, prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            print_stats(cerr, "Prior stdev", "current stdev", 9, prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
+            cerr << "  Means:\n";
+            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
         } else {
             double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(t-1)/2.0);
             double delta, pct_chg;
@@ -267,13 +268,17 @@ void AbcSmc::report_convergence_data(int t) {
 
             delta = current_means[i] - last_means[i];
             pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
-            print_stats(cerr, "Prior mean", "  current mean", 9, prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            print_stats(cerr, "Last mean", "   current mean", 9, last_means[i], current_means[i], delta, pct_chg, "\n");
+            cerr << "  Means:\n";
+            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Last", " current", last_means[i], current_means[i], delta, pct_chg, "\n");
 
             delta = current_stdev - last_stdev;
             pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
-            print_stats(cerr, "Prior stdev", "current stdev", 9, prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
-            print_stats(cerr, "Last stdev", " current stdev", 9, last_stdev, current_stdev, delta, pct_chg, "\n");
+            cerr << "  Means:\n";
+            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
+            cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n");
         }
     }
 }
@@ -295,8 +300,7 @@ bool AbcSmc::read_particle_set(int t, Mat2D &X_orig, Mat2D &Y_orig ) {
     int line_num=0;
     while(std::getline(iss,buffer)){
         line_num++;
-        vector<string>line;
-        split(buffer,' ',line);
+        vector<string>line = split(buffer,' ');
         // not a header and #fields is correct
         // first two columns are set num (t) and iteration
         const int offset = 2;
@@ -351,8 +355,7 @@ bool AbcSmc::read_predictive_prior( int t ) {
     int line_num=0;
     while(std::getline(iss,buffer)){
         line_num++;
-        vector<string>line;
-        split(buffer,' ',line);
+        vector<string>line = split(buffer,' ');
         // not a header and #fields is correct
         // first two columns are set num (t) and iteration
         const int offset = 3;

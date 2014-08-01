@@ -56,7 +56,7 @@ typedef Matrix<int, 1, Dynamic>  Rowi;
 typedef Matrix<std::complex<float_type>,Dynamic,Dynamic> Mat2Dc;
 typedef Matrix<std::complex<float_type>, Dynamic, 1>  Colc;
 
-void split(const std::string& s, char c, std::vector<std::string>& v);
+vector<string> split(const std::string& s, char c);
 
 inline int string2int(const std::string& s){ std::istringstream i(s); int x = 0; i >> x; return x; }
 inline double string2double(const std::string& s){ std::istringstream i(s); double x = 0; i >> x; return x; }

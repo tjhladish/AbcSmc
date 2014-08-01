@@ -12,16 +12,15 @@ using std::pow;
 using std::pair;
 using std::make_pair;
 
-void split(const string& s, char c, vector<string>& v) {
-    string::size_type i = 0;
-    string::size_type j = s.find(c);
 
-    while (j != string::npos) {
-        v.push_back(s.substr(i, j-i));
-        i = ++j;
-        j = s.find(c, j);
+vector<string> split(const string &s, char delim) {
+    vector<string> tokens;
+    stringstream ss(s);
+    string token;
+    while (getline(ss, token, delim)) {
+        tokens.push_back(token);
     }
-    if (j == string::npos) v.push_back(s.substr(i, s.length( )));
+    return tokens;
 }
 
 
@@ -37,7 +36,6 @@ string slurp(string filename) {
 Mat2D read_matrix_file(string filename, char sep) {
     cerr << "Loading " << filename << endl;
     ifstream myfile(filename.c_str());
-    stringstream ss;
 
     vector<vector<double> > M;
     if (myfile.is_open()) {
@@ -45,8 +43,7 @@ Mat2D read_matrix_file(string filename, char sep) {
 
         while ( getline(myfile,line) ) {
             //split string based on "," and store results into vector
-            vector<string> fields;
-            split(line, sep, fields);
+            vector<string> fields = split(line, sep);
 
             vector<double>row(fields.size());
             for( unsigned int i=0; i < fields.size(); i++ ) {
