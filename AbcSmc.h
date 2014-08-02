@@ -18,7 +18,7 @@ class Parameter {
             if (ptype == UNIFORM) {
                 fmin = val1;
                 fmax = val2;
-                mean = (val2 - val1) / 2.0;
+                mean = (val2 + val1) / 2.0;
                 stdev = sqrt(pow(val2-val1,2)/12);
             } /*else if (ptype == NORMAL) {
                 fmin = DBL_MIN;
