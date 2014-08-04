@@ -18,7 +18,7 @@ class Parameter {
             if (ptype == UNIFORM) {
                 fmin = val1;
                 fmax = val2;
-                mean = (val2 - val1) / 2.0;
+                mean = (val2 + val1) / 2.0;
                 stdev = sqrt(pow(val2-val1,2)/12);
             } /*else if (ptype == NORMAL) {
                 fmin = DBL_MIN;
@@ -37,10 +37,13 @@ class Parameter {
             }
         }
 
+        // doubled variance of particles
         double get_doubled_variance(int t) const { return doubled_variance[t]; }
         void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
-        double get_min() const { return fmin; }
-        double get_max() const { return fmax; }
+        double get_prior_min() const { return fmin; }
+        double get_prior_max() const { return fmax; }
+        double get_prior_mean() const { return mean; }
+        double get_prior_stdev() const { return stdev; }
         std::string get_name() const { return name; }
         std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
         NumericType get_numeric_type() const { return ntype; }

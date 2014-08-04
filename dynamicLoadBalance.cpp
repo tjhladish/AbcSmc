@@ -2,6 +2,7 @@
 #include <vector>
 #define DIETAG     10000000
 #define MASTER_RANK 0
+#include <limits.h>
 
 using namespace std;
 
@@ -18,6 +19,23 @@ int main(int argc, char* argv[]) {
       MPI_COMM_WORLD,         /* always use this */
       &myrank);               /* process rank, 0 thru N-1 */
     if (myrank == 0) {
+        // Example of how to get upper bound for tags
+        void* v;
+        int flag;
+        int vval;
+        MPI_Comm_get_attr( MPI_COMM_WORLD, MPI_TAG_UB, &v, &flag );
+        if (!flag) {
+            fprintf( stderr, "Could not get TAG_UB\n" );fflush(stderr);
+        } else {
+            vval = *(int*)v;
+            if (vval < 32767) {
+                fprintf( stderr, "Got too-small value (%d) for TAG_UB\n", vval ); fflush(stderr);
+            } else {
+                fprintf( stderr, "MAX_INT: %d\n", INT_MAX); fflush(stderr);
+                fprintf( stderr, "Got %d\n", vval ); fflush(stderr);
+            }
+        }
+
         master();
     } else {
         slave();
