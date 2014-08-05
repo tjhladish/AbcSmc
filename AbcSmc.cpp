@@ -270,14 +270,12 @@ void AbcSmc::report_convergence_data(int t) {
             pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
             cerr << "  Means:\n";
             print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            cerr << "  Standard deviations:\n";
             print_stats(cerr, "Last", " current", last_means[i], current_means[i], delta, pct_chg, "\n");
 
             delta = current_stdev - last_stdev;
             pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
-            cerr << "  Means:\n";
-            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
             cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
             print_stats(cerr, "Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n");
         }
     }
