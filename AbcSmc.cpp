@@ -605,7 +605,7 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     int ncomp = npar();             // It doesn't make sense to consider more components than model parameters
     PLS_Model plsm;
     plsm.initialize(npred, nresp, ncomp);
-    plsm.plsr(X.topRows(_pls_training_set_size), Y.topRows(_pls_training_set_size), plsm, KERNEL_TYPE1);
+    plsm.plsr(X.topRows(_pls_training_set_size), Y.topRows(_pls_training_set_size), KERNEL_TYPE1);
 
     // A is number of components to use
     for (int A = 1; A<=ncomp; A++) { 
@@ -618,13 +618,14 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
 
     const int test_set_size = nobs - _pls_training_set_size;
     Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
-    //int max_num_components = num_components.maxCoeff();
-    cerr << "Optimal number of components (NEW DATA):\t" << num_components << endl;
+    int num_components_used = num_components.maxCoeff();
+    cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
+    cerr << "Using " << num_components_used << " components." << endl;
 
     // Calculate new, orthogonal metrics (==scores) using the pls model
     // Is casting as real always safe?
-    Row   obs_scores = plsm.scores(obs_met).row(0).real();
-    Mat2D sim_scores = plsm.scores(X).real();
+    Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
+    Mat2D sim_scores = plsm.scores(X, num_components_used).real();
     Col   distances  = euclidean(obs_scores, sim_scores);
     vector<int> ranking = ordered(distances);
 
