@@ -54,4 +54,4 @@ endif
 	$(CC) $(CFLAGS) -c $(INCLUDE) $< -o $@ 
 
 clean:
-	rm $(OBJECTS) $(JSONOBJECTS) $(LIBABC) $(LIBJSON)
+	rm -f $(OBJECTS) $(JSONOBJECTS) $(LIBABC) $(LIBJSON)

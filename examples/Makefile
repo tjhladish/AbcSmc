@@ -49,4 +49,5 @@ abc_mpi_simptr: libabc_mpi main_mpi_simptr.cpp
 	$(CC) $(CFLAGS) -D USING_MPI $(ABC_INC) $(GSL_INC) main_mpi_simptr.cpp -o abc_mpi_simptr $(ABC_LIB) $(GSL_LIB)
 
 clean:
-	rm dice_game abc abc_mpi_exec abc_mpi_simptr
+	$(MAKE) -C $(ABCDIR) clean
+	rm -f dice_game abc abc_mpi_exec abc_mpi_simptr
