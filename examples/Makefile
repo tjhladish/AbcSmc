@@ -36,8 +36,9 @@ libabc_mpi:
 libabc_ubuntu_mpi:
 	$(MAKE) -C $(ABCDIR) -f Makefile all_ubuntu_mpi
 
-abc: libabc_no_mpi main.cpp
-	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main.cpp -o abc $(ABC_LIB) $(GSL_LIB)
+abc: libabc_no_mpi main_exec.cpp main_simptr.cpp
+	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_exec.cpp -o abc_simulator_executable $(ABC_LIB) $(GSL_LIB)
+	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_simptr.cpp -o abc_simulator_pointer $(ABC_LIB) $(GSL_LIB)
 
 dice: dice_game.cpp
 	$(CC) $(CFLAGS) $(GSL_INC) dice_game.cpp -o dice_game $(GSL_LIB)
@@ -50,4 +51,4 @@ abc_mpi_simptr: libabc_mpi main_mpi_simptr.cpp
 
 clean:
 	$(MAKE) -C $(ABCDIR) clean
-	rm -f dice_game abc abc_mpi_exec abc_mpi_simptr
+	rm -f dice_game abc_simulator_pointer abc_simulator_executable abc_mpi_exec abc_mpi_simptr
