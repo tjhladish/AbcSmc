@@ -398,6 +398,7 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 
 
 void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+#ifdef USING_MPI
     MPI_Status status;
     long double *send_data = new long double[npar() * _num_particles](); // all params, flattened array
     long double *rec_data  = new long double[nmet() * _num_particles](); // all metrics, flattened array
@@ -418,21 +419,18 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
     int particle_id;
     for (int rank = 1; rank < _mp->mpi_size; ++rank) {
         particle_id = rank - 1;                   // which row in Y
-#ifdef USING_MPI
         MPI_Send(&send_data[particle_id*npar()],  // message buffer
                  npar(),                          // number of elements
                  MPI_LONG_DOUBLE,                 // data item is a double
                  rank,                            // destination process rank
                  particle_id,                     // message tag
                  _mp->comm);                      // always use this
-#endif
     }
     
     // Receive a result from any worker and dispatch a new work request
     long double rec_buffer[nmet()];
     particle_id++; // move cursor to next particle to be sent
     while ( particle_id < _num_particles ) { 
-#ifdef USING_MPI
         MPI_Recv(&rec_buffer,                     // message buffer
                  nmet(),                          // message size
                  MPI_LONG_DOUBLE,                 // of type double
@@ -440,23 +438,19 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
                  MPI_ANY_TAG,                     // any type of message
                  _mp->comm,                       // always use this
                  &status);                        // received message info
-#endif
         for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
 
-#ifdef USING_MPI
         MPI_Send(&send_data[particle_id*npar()],  // message buffer
                  npar(),                          // number of elements
                  MPI_LONG_DOUBLE,                 // data item is a double
                  status.MPI_SOURCE,               // send it to the rank that just finished
                  particle_id,                     // message tag
                  _mp->comm);                      // always use this
-#endif
         particle_id++; // move cursor
     }
     
     // receive results for outstanding work requests--there are exactly 'num_workers' left
     for (int rank = 1; rank < _mp->mpi_size; ++rank) {
-#ifdef USING_MPI
         MPI_Recv(&rec_buffer, 
                  nmet(), 
                  MPI_LONG_DOUBLE, 
@@ -464,15 +458,12 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
                  MPI_ANY_TAG, 
                  _mp->comm, 
                  &status);
-#endif
         for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
     }
      
     // Tell all the workers they're done for now
     for (int rank = 1; rank < _mp->mpi_size; ++rank) {
-#ifdef USING_MPI
         MPI_Send(0, 0, MPI_INT, rank, STOP_TAG, _mp->comm);
-#endif
     }
 
     vector<int> bad_particle_idx; // bandaid, in case simulator returns nonsense values
@@ -492,10 +483,12 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
 
     delete[] send_data;
     delete[] rec_data;
+#endif
 }
 
 
 void AbcSmc::_particle_worker() {
+#ifdef USING_MPI
     MPI_Status status;
     long double *local_Y_data = new long double[npar()]();
     long double *local_X_data = new long double[nmet()]();
@@ -532,6 +525,7 @@ void AbcSmc::_particle_worker() {
                  status.MPI_TAG, 
                  _mp->comm);
     }
+#endif
 }
 
 
