@@ -18,7 +18,7 @@ class Parameter {
             if (ptype == UNIFORM) {
                 fmin = val1;
                 fmax = val2;
-                mean = (val2 - val1) / 2.0;
+                mean = (val2 + val1) / 2.0;
                 stdev = sqrt(pow(val2-val1,2)/12);
             } /*else if (ptype == NORMAL) {
                 fmin = DBL_MIN;
@@ -37,10 +37,13 @@ class Parameter {
             }
         }
 
+        // doubled variance of particles
         double get_doubled_variance(int t) const { return doubled_variance[t]; }
         void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
-        double get_min() const { return fmin; }
-        double get_max() const { return fmax; }
+        double get_prior_min() const { return fmin; }
+        double get_prior_max() const { return fmax; }
+        double get_prior_mean() const { return mean; }
+        double get_prior_stdev() const { return stdev; }
         std::string get_name() const { return name; }
         std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
         NumericType get_numeric_type() const { return ntype; }
@@ -75,8 +78,8 @@ class Metric {
 
 class AbcSmc {
     public:
-        AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; };
-        AbcSmc( MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; };
+        AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
+        AbcSmc( MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
         void set_num_samples(int n) { _num_particles = n; }
@@ -85,7 +88,7 @@ class AbcSmc {
         void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
         //void set_metric_basefilename( std::string name ) { _metrics_filename = name; }
         void set_executable( std::string name ) { _executable_filename = name; use_executable = true; }
-        void set_simulator(vector<float_type> (*simulator) (vector<float_type>)) { _simulator = simulator; use_simulator = true; }
+        void set_simulator(vector<float_type> (*simulator) (vector<float_type>, const MPI_par*)) { _simulator = simulator; use_simulator = true; }
         void set_particle_basefilename( std::string name ) { _particle_filename = name; }
         void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
         void write_particle_file( const int t );
@@ -115,10 +118,12 @@ class AbcSmc {
         int _num_particles;
         int _pls_training_set_size;
         int _predictive_prior_size; // number of particles that will be used to inform predictive prior
-        vector<float_type> (*_simulator) (vector<float_type>);
+        vector<float_type> (*_simulator) (vector<float_type>, const MPI_par*);
         bool use_simulator;
         std::string _executable_filename;
         bool use_executable;
+        bool resume_flag;
+        std::string resume_directory;
         //std::string _metrics_filename;
         std::string _particle_filename;
         std::string _predictive_prior_filename;
@@ -135,9 +140,17 @@ class AbcSmc {
         bool _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
 
         bool _populate_particles_mpi( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
+        void _particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG);
+        void _particle_worker();
 
         void _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig); 
         
+        void set_resume( bool res ) { resume_flag = res; }
+        bool resume() { return resume_flag; }
+        void set_resume_directory( std::string res_dir ) { resume_directory = res_dir; }
+        bool read_particle_set( int t, Mat2D &X_orig, Mat2D &Y_orig );
+        bool read_predictive_prior( int t );
+
         Col euclidean( Row obs_met, Mat2D sim_met ); 
 
         Row sample_priors( const gsl_rng* RNG );

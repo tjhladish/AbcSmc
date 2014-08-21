@@ -56,9 +56,11 @@ typedef Matrix<int, 1, Dynamic>  Rowi;
 typedef Matrix<std::complex<float_type>,Dynamic,Dynamic> Mat2Dc;
 typedef Matrix<std::complex<float_type>, Dynamic, 1>  Colc;
 
-void split(const std::string& s, char c, std::vector<std::string>& v);
+vector<string> split(const std::string& s, char c);
 
+inline int string2int(const std::string& s){ std::istringstream i(s); int x = 0; i >> x; return x; }
 inline double string2double(const std::string& s){ std::istringstream i(s); double x = 0; i >> x; return x; }
+inline float_type string2float_type(const std::string& s){ std::istringstream i(s); float_type x = 0; i >> x; return x; }
 
 std::string slurp(std::string filename);
 
@@ -85,9 +87,17 @@ float_type normalcdf(float_type z);
 
 float_type mean(const Col data);
 
+float_type median(const Col data);
+
 float_type variance(const Col data, float_type _mean);
 
+float_type max(const Col data);
+
 float_type skewness(const Col data);
+
+float_type median_crossings(const Col data, const float_type _median);
+
+float_type median_crossings(const Col data);
 
 float optimize_box_cox (const Col data, float lambda_min, float lambda_max, float step);
 
