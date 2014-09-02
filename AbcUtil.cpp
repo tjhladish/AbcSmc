@@ -117,6 +117,14 @@ Mat2D colwise_z_scores( const Mat2D& mat, Row& means, Row& stdev ) {
     // Standardize values by column, i.e. convert to Z-scores
     means = col_means( mat );
     stdev = col_stdev( mat, means );
+
+    // This is not technically correct, since z scores are undefined if the stdev is 0.  
+    // In our case, however, the resulting scores cannot be nan, or downstream calculations 
+    // are fouled up, so we basically setting them to 0 as a stop-gap solution.  A better solution
+    // would be to not pass this parameter in to the PLS regression.  This should be possible
+    // but needs to be implemented with care.
+    for (int c = 0; c<stdev.size(); c++) if (stdev[c] == 0) stdev[c] = 1;
+
     Mat2D zmat = Mat2D::Zero(mat.rows(), mat.cols());
     for (int r = 0; r<mat.rows(); r++) { zmat.row(r) = (mat.row(r) - means).cwiseQuotient(stdev); }
     return zmat;
