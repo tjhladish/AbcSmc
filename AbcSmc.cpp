@@ -10,6 +10,10 @@
 #include <sstream>
 #include <fstream>
 
+// need a positive int that is very unlikely 
+// to be less than the number of particles
+#define STOP_TAG 10000000
+
 using std::vector;
 using std::string;
 using std::stringstream;
@@ -17,6 +21,8 @@ using std::ofstream;
 using std::setw;
 
 const string double_bar = "=========================================================================================";
+const int PREC = 5;
+const int WIDTH = 12; 
 
 bool AbcSmc::parse_config(string conf_filename) {
     Json::Value par;   // will contains the par value after parsing.
@@ -162,7 +168,7 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
     _particle_metrics.clear();
     _weights.clear();
 
-    cerr << std::setprecision(5);
+    cerr << std::setprecision(PREC);
 
     if (_mp->mpi_rank == 0) {
         _particle_parameters.resize( _num_smc_sets, Mat2D::Zero(_num_particles, npar()) );
@@ -195,20 +201,21 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
 
             calculate_predictive_prior_weights( t );
 
-            if (t > 0) {
-                report_convergence_data(t);
-            }
+            report_convergence_data(t);
             cerr << endl << endl;
 
             write_predictive_prior_file(t);
         }
     }
 }
-
+void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
+    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2 
+                                                      << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
+}
 
 void AbcSmc::report_convergence_data(int t) {
-    vector<double> last_means( npar() );
-    vector<double> current_means( npar() );
+    vector<double> last_means( npar(), 0 );
+    vector<double> current_means( npar(), 0 );
 
     for (int j = 0; j < npar(); j++) {
         int N = _predictive_prior[t].size();
@@ -218,36 +225,59 @@ void AbcSmc::report_convergence_data(int t) {
             current_means[j] += par_value;
         }
         current_means[j] /= N;
-
-        int N2 = _predictive_prior[t-1].size();
-        for (int i = 0; i < N2; i++) {
-            double particle_idx = _predictive_prior[t-1][i];
-            double par_value = _particle_parameters[t-1](particle_idx, j);
-            last_means[j] += par_value;
+        
+        if (t > 0) {
+            int N2 = _predictive_prior[t-1].size();
+            for (int i = 0; i < N2; i++) {
+                double particle_idx = _predictive_prior[t-1][i];
+                double par_value = _particle_parameters[t-1](particle_idx, j);
+                last_means[j] += par_value;
+            }
+            last_means[j] /= N2;
         }
-        last_means[j] /= N2;
     }
 
     cerr << double_bar << endl;
-    cerr << "Convergence data for predictive priors:\n";
+    if (t == 0) {
+        cerr << "Predictive prior summary statistics:\n";
+    } else {
+        cerr << "Convergence data for predictive priors:\n";
+    }
     for (unsigned int i = 0; i < _model_pars.size(); i++) {
-        double current_stdev = sqrt(_model_pars[i]->get_doubled_variance(t)/2.0);
-        double last_stdev    = sqrt(_model_pars[i]->get_doubled_variance(t-1)/2.0);
-        double delta, pct_chg;
+        const Parameter* par = _model_pars[i];
+        const double current_stdev = sqrt(par->get_doubled_variance(t)/2.0);
+        const double prior_mean = par->get_prior_mean();
+        const double prior_mean_delta = current_means[i] - prior_mean;
+        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
 
-        cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
+        const double prior_stdev = par->get_prior_stdev();
+        const double prior_stdev_delta = current_stdev - prior_stdev;
+        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
+        if (t == 0) {
+            cerr << "  Par " << i << ": \"" << par->get_name() << "\"\n";
 
-        delta = current_means[i]-last_means[i];
-        pct_chg = 100 * delta / last_means[i];
-        cerr << "    Last mean,  current mean  ( delta, % ): " << setw(9) << last_means[i]
-            << ", " << setw(9) << current_means[i] 
-            << " ( " << setw(9) << delta << ", " << setw(9) << pct_chg  << "% )\n";
+            cerr << "  Means:\n";
+            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
+        } else {
+            double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(t-1)/2.0);
+            double delta, pct_chg;
 
-        delta = current_stdev-last_stdev;
-        pct_chg = 100 * delta / last_stdev;
-        cerr << "    Last stdev, current stdev ( delta, % ): " << setw(9) << last_stdev
-            << ", " << setw(9) << current_stdev 
-            << " ( " << setw(9) << delta << ", " << setw(9) << pct_chg  << "% )\n";
+            cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
+
+            delta = current_means[i] - last_means[i];
+            pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
+            cerr << "  Means:\n";
+            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            print_stats(cerr, "Last", " current", last_means[i], current_means[i], delta, pct_chg, "\n");
+
+            delta = current_stdev - last_stdev;
+            pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
+            cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
+            print_stats(cerr, "Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n");
+        }
     }
 }
 
@@ -268,8 +298,7 @@ bool AbcSmc::read_particle_set(int t, Mat2D &X_orig, Mat2D &Y_orig ) {
     int line_num=0;
     while(std::getline(iss,buffer)){
         line_num++;
-        vector<string>line;
-        split(buffer,' ',line);
+        vector<string>line = split(buffer,' ');
         // not a header and #fields is correct
         // first two columns are set num (t) and iteration
         const int offset = 2;
@@ -324,8 +353,7 @@ bool AbcSmc::read_predictive_prior( int t ) {
     int line_num=0;
     while(std::getline(iss,buffer)){
         line_num++;
-        vector<string>line;
-        split(buffer,' ',line);
+        vector<string>line = split(buffer,' ');
         // not a header and #fields is correct
         // first two columns are set num (t) and iteration
         const int offset = 3;
@@ -349,6 +377,7 @@ bool AbcSmc::read_predictive_prior( int t ) {
 
 
 bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+    // this is silly -- only 'true' is ever returned from this function
     int continue_flag = (int) true;
     if (_mp->mpi_rank == mpi_root and resume() and read_particle_set( t, X_orig, Y_orig )) {
         continue_flag = (int) false;
@@ -358,103 +387,152 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 #endif
     if (not (bool) continue_flag) return true; // resume was set, reading particles succeeded
 
-    bool success = true;
-    long double *send_data, *local_Y_data, *rec_data, *local_X_data;
-    int particles_per_rank = (_num_particles % _mp->mpi_size) == 0 ? _num_particles / _mp->mpi_size : 1 + (_num_particles / _mp->mpi_size);
-    int send_count = npar() * particles_per_rank; 
-    int rec_count  = nmet() * particles_per_rank; 
-
-    // If the desired number of particles is not divisible by the number of threads (mpi_size),
-    // then we will end up calculating somewhat more than we need and throwing out the extras.
-    // That's why we use both particles_per_rank and _num_particles.
     if (_mp->mpi_rank == mpi_root) {
-        send_data = new long double[send_count * _mp->mpi_size]();
-        rec_data  = new long double[rec_count  * _mp->mpi_size]();
-        Row par_row;
-        for (int i = 0; i<particles_per_rank * _mp->mpi_size; i++) {
-            if (t == 0) { // sample priors
-                par_row = sample_priors(RNG);
-                if (i<_num_particles) Y_orig.row(i) = par_row;
-            } else {      // sample predictive priors
-                par_row = sample_predictive_priors(t, RNG);
-                if (i<_num_particles) Y_orig.row(i) = par_row;
-            }
-            for (int j = 0; j<npar(); j++) { send_data[i*npar() + j] = par_row(j); }
+        _particle_scheduler(t, X_orig, Y_orig, RNG);
+    } else {
+        _particle_worker();
+    }
+
+    return true;
+}
+
+
+void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+#ifdef USING_MPI
+    MPI_Status status;
+    long double *send_data = new long double[npar() * _num_particles](); // all params, flattened array
+    long double *rec_data  = new long double[nmet() * _num_particles](); // all metrics, flattened array
+
+    // sample parameter distributions; copy values into Y matrix and into send_data buffer
+    Row par_row;
+    for (int i = 0; i<_num_particles; i++) {
+        if (t == 0) { // sample priors
+            par_row = sample_priors(RNG);
+            if (i<_num_particles) Y_orig.row(i) = par_row;
+        } else {      // sample predictive priors
+            par_row = sample_predictive_priors(t, RNG);
+            if (i<_num_particles) Y_orig.row(i) = par_row;
+        }
+        for (int j = 0; j<npar(); j++) { send_data[i*npar() + j] = par_row(j); }
+    }
+    // Seed the workers with the first 'num_workers' jobs
+    int particle_id;
+    for (int rank = 1; rank < _mp->mpi_size; ++rank) {
+        particle_id = rank - 1;                   // which row in Y
+        MPI_Send(&send_data[particle_id*npar()],  // message buffer
+                 npar(),                          // number of elements
+                 MPI_LONG_DOUBLE,                 // data item is a double
+                 rank,                            // destination process rank
+                 particle_id,                     // message tag
+                 _mp->comm);                      // always use this
+    }
+    
+    // Receive a result from any worker and dispatch a new work request
+    long double rec_buffer[nmet()];
+    particle_id++; // move cursor to next particle to be sent
+    while ( particle_id < _num_particles ) { 
+        MPI_Recv(&rec_buffer,                     // message buffer
+                 nmet(),                          // message size
+                 MPI_LONG_DOUBLE,                 // of type double
+                 MPI_ANY_SOURCE,                  // receive from any sender
+                 MPI_ANY_TAG,                     // any type of message
+                 _mp->comm,                       // always use this
+                 &status);                        // received message info
+        for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
+
+        MPI_Send(&send_data[particle_id*npar()],  // message buffer
+                 npar(),                          // number of elements
+                 MPI_LONG_DOUBLE,                 // data item is a double
+                 status.MPI_SOURCE,               // send it to the rank that just finished
+                 particle_id,                     // message tag
+                 _mp->comm);                      // always use this
+        particle_id++; // move cursor
+    }
+    
+    // receive results for outstanding work requests--there are exactly 'num_workers' left
+    for (int rank = 1; rank < _mp->mpi_size; ++rank) {
+        MPI_Recv(&rec_buffer, 
+                 nmet(), 
+                 MPI_LONG_DOUBLE, 
+                 MPI_ANY_SOURCE,
+                 MPI_ANY_TAG, 
+                 _mp->comm, 
+                 &status);
+        for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
+    }
+     
+    // Tell all the workers they're done for now
+    for (int rank = 1; rank < _mp->mpi_size; ++rank) {
+        MPI_Send(0, 0, MPI_INT, rank, STOP_TAG, _mp->comm);
+    }
+
+    vector<int> bad_particle_idx; // bandaid, in case simulator returns nonsense values
+    for (int i = 0; i<_num_particles; i++) {
+        for (int j = 0; j<nmet(); j++) {
+            const double met_val = rec_data[i*nmet() + j];
+            if (not isfinite(met_val)) bad_particle_idx.push_back(i);
+            X_orig(i,j) = rec_data[i*nmet() + j];
         }
     }
-   
-    local_Y_data = new long double[send_count];
-    local_X_data = new long double[rec_count];
+    
+    // bandaid, in case simulator returns nonsense values
+    for (unsigned int i = 0; i < bad_particle_idx.size(); i++) {
+        X_orig.row(i).fill(numeric_limits<float_type>::min());
+        Y_orig.row(i).fill(numeric_limits<float_type>::min());
+    }
 
-#ifdef USING_MPI
-    MPI_Scatter(send_data,        // send buffer 
-                send_count,       // send count
-                MPI_LONG_DOUBLE,  // send type
-                local_Y_data,     // receive buffer
-                send_count,       // receive count
-                MPI_LONG_DOUBLE,  // receive type
-                mpi_root,         // rank of sending process
-                _mp->comm         // communicator handle
-                );
+    delete[] send_data;
+    delete[] rec_data;
 #endif
+}
 
-    for (int i = 0; i<particles_per_rank; i++) {
+
+void AbcSmc::_particle_worker() {
+#ifdef USING_MPI
+    MPI_Status status;
+    long double *local_Y_data = new long double[npar()]();
+    long double *local_X_data = new long double[nmet()]();
+
+    while (1) {
+        MPI_Recv(local_Y_data, 
+                 npar(), 
+                 MPI_LONG_DOUBLE, 
+                 mpi_root, 
+                 MPI_ANY_TAG,
+                 _mp->comm, 
+                 &status);
+
+        // Check the tag of the received message.
+        if (status.MPI_TAG == STOP_TAG) {
+            delete[] local_Y_data;
+            delete[] local_X_data;
+            return;
+        }
+
         Row pars(npar());
-        for (int j = 0; j<npar(); j++) { pars[j] = local_Y_data[i*npar() + j]; }
         Row mets(nmet());
 
+        for (int j = 0; j<npar(); j++) { pars[j] = local_Y_data[j]; }
+
         _run_simulator(pars, mets);
-        
-        for (int j = 0; j<nmet(); j++) { local_X_data[i*nmet() + j] = mets[j]; }
-    }
 
-#ifdef USING_MPI
-    MPI_Gather(local_X_data,        // send buffer 
-               rec_count,           // send count
-               MPI_LONG_DOUBLE,     // send type
-               rec_data,            // receive buffer
-               rec_count,           // receive count
-               MPI_LONG_DOUBLE,     // receive type
-               mpi_root,            // rank of receiving process
-               _mp->comm            // communicator handle
-               );
+        for (int j = 0; j<nmet(); j++) { local_X_data[j] = mets[j]; }
+
+        MPI_Send(local_X_data, 
+                 nmet(), 
+                 MPI_LONG_DOUBLE, 
+                 mpi_root, 
+                 status.MPI_TAG, 
+                 _mp->comm);
+    }
 #endif
-    vector<int> bad_particle_idx; //bandaid
-    if (_mp->mpi_rank == mpi_root) {
-        // cerr << "Root is copying data\n";
-        for (int i = 0; i<particles_per_rank * _mp->mpi_size and i<_num_particles; i++) {
-            for (int j = 0; j<nmet(); j++) {
-                // experimental bandaid to address corrupted data issue
-                const double met_val = rec_data[i*nmet() + j];
-                if (met_val < -1e100 or met_val > 1e100) bad_particle_idx.push_back(i);
-
-                X_orig(i,j) = rec_data[i*nmet() + j];
-            }
-        }
-        
-        // experimental bandaid to address corrupted data issue
-        for (unsigned int i = 0; i < bad_particle_idx.size(); i++) {
-            X_orig.row(i).fill(numeric_limits<float_type>::min());
-            Y_orig.row(i).fill(numeric_limits<float_type>::min());
-        }
-
-        delete[] send_data;
-        delete[] rec_data;
-    }
-
-    // cerr << "Done copying data\n";
-
-    delete[] local_Y_data;
-    delete[] local_X_data;
-
-    return success;
 }
 
 
 bool AbcSmc::_run_simulator(Row &par, Row &met) {
     bool particle_success = true;
     if (use_simulator) {
-        vector<float_type> met_vec = _simulator( as_vector(par) );
+        vector<float_type> met_vec = _simulator( as_vector(par), _mp );
         met = as_row(met_vec);
     } else if (use_executable) {
         string command = _executable_filename;
@@ -521,12 +599,12 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     int ncomp = npar();             // It doesn't make sense to consider more components than model parameters
     PLS_Model plsm;
     plsm.initialize(npred, nresp, ncomp);
-    plsm.plsr(X.topRows(_pls_training_set_size), Y.topRows(_pls_training_set_size), plsm, KERNEL_TYPE1);
+    plsm.plsr(X.topRows(_pls_training_set_size), Y.topRows(_pls_training_set_size), KERNEL_TYPE1);
 
     // A is number of components to use
     for (int A = 1; A<=ncomp; A++) { 
         // How well did we do with this many components?
-        cerr << A << " components\t";
+        cerr << setw(2) << A << " components ";
         cerr << "explained variance: " << plsm.explained_variance(X, Y, A);
         //cerr << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
         cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl; 
@@ -534,13 +612,14 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
 
     const int test_set_size = nobs - _pls_training_set_size;
     Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
-    //int max_num_components = num_components.maxCoeff();
-    cerr << "Optimal number of components (NEW DATA):\t" << num_components << endl;
+    int num_components_used = num_components.maxCoeff();
+    cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
+    cerr << "Using " << num_components_used << " components." << endl;
 
     // Calculate new, orthogonal metrics (==scores) using the pls model
     // Is casting as real always safe?
-    Row   obs_scores = plsm.scores(obs_met).row(0).real();
-    Mat2D sim_scores = plsm.scores(X).real();
+    Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
+    Mat2D sim_scores = plsm.scores(X, num_components_used).real();
     Col   distances  = euclidean(obs_scores, sim_scores);
     vector<int> ranking = ordered(distances);
 
@@ -550,24 +629,24 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     _predictive_prior[t] = sample;
 
     cerr << "Best five:\n";
-    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_short_name(); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->get_short_name(); } cerr << endl;
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
     for (int q=0; q<5; q++) {
         const int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } 
         cerr << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(9) << X_orig(idx, i); } 
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } 
         cerr << endl;
     }
 
     cerr << "Worst five:\n";
-    for (int i = 0; i<npar(); i++) { cerr << setw(9) << _model_pars[i]->get_short_name(); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(9) << _model_mets[i]->get_short_name(); } cerr << endl;
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
     for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
         const int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(9) << Y_orig(idx, i); } 
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } 
         cerr << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(9) << X_orig(idx, i); } 
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } 
         cerr << endl;
     }
 }
@@ -635,7 +714,7 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
         double numerator = 1;
         for (int j = 0; j<npar(); j++) {
             Parameter* par = _model_pars[j];
-            numerator *= uniform_pdf(par->get_min(), par->get_max());
+            numerator *= uniform_pdf(par->get_prior_min(), par->get_prior_max());
         }
 
         for (unsigned int i = 0; i < _predictive_prior[set_num].size(); i++) {
@@ -671,8 +750,8 @@ Row AbcSmc::sample_predictive_priors(int set_num, const gsl_rng* RNG ) {
         double par_value = _particle_parameters[set_num-1](particle_idx, j);
         const Parameter* parameter = _model_pars[j];
         double doubled_variance = parameter->get_doubled_variance(set_num-1);
-        double par_min = parameter->get_min();
-        double par_max = parameter->get_max();
+        double par_min = parameter->get_prior_min();
+        double par_max = parameter->get_prior_max();
         par_values(j) = rand_trunc_normal( par_value, doubled_variance, par_min, par_max, RNG );
 
         if (parameter->get_numeric_type() == INT) {

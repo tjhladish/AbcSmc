@@ -32,7 +32,7 @@ class PLS_Model {
 
     //"Modified kernel algorithms 1 and 2"
     //from Dayal and MacGregor (1997) "Improved PLS Algorithms" J. of Chemometrics. 11,73-85.
-    void plsr(const Mat2D X, const Mat2D Y, PLS_Model& plsm, METHOD algorithm) {
+    void plsr(const Mat2D X, const Mat2D Y, METHOD algorithm) {
         method = algorithm;
         int M = Y.cols(); // Number of response variables == columns in Y
 
@@ -79,10 +79,11 @@ class PLS_Model {
     }
 
 
+    // latent X values, i.e. the orthogonal metrics you wish you could measure
     const Mat2Dc scores(Mat2D X_new) { return scores(X_new, A); }
     const Mat2Dc scores(Mat2D X_new, int comp) { 
         assert (A >= comp);
-        return X_new * R;
+        return X_new * R.leftCols(comp);
     }
  
     // compute the regression coefficients (aka 'beta')
@@ -140,7 +141,7 @@ class PLS_Model {
         plsm_v.initialize(Xv.cols(), Yv.cols(), this->A);
         for (int i = 0; i < X.rows()-1; i++) {
             // run pls for the data, less one observation
-            plsm_v.plsr(Xv, Yv, plsm_v, this->method);
+            plsm_v.plsr(Xv, Yv, this->method);
             for (int j = 1; j <= this->A; j++) {
                 // now see how well the data predict the missing observation
                 Row res = plsm_v.residuals(X.row(i), Y.row(i), j).row(0);
@@ -170,7 +171,7 @@ class PLS_Model {
         PLS_Model plsm_v;
         plsm_v.initialize(Xv.cols(), Yv.cols(), this->A);
         for (int i = 0; i < X.rows(); i++) {
-            plsm_v.plsr(Xv, Yv, plsm_v, this->method);
+            plsm_v.plsr(Xv, Yv, this->method);
             //cerr << "Using matrix:\n" << Xv << "\n";
             //cerr << "Excluding row " << i << ":\n" << X.row(i) << "\n\n";
             for (int j = 1; j <= this->A; j++) {
