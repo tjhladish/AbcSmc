@@ -416,7 +416,7 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
         for (int j = 0; j<npar(); j++) { send_data[i*npar() + j] = par_row(j); }
     }
     // Seed the workers with the first 'num_workers' jobs
-    int particle_id;
+    int particle_id = 0;
     for (int rank = 1; rank < _mp->mpi_size; ++rank) {
         particle_id = rank - 1;                   // which row in Y
         MPI_Send(&send_data[particle_id*npar()],  // message buffer
