@@ -51,6 +51,11 @@ bool AbcSmc::parse_config(string conf_filename) {
             ptype = UNIFORM;
         } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
             ptype = NORMAL;
+        } else if (ptype_str == "PSEUDO") {
+            ptype = PSEUDO;
+        } else {
+            cerr << "Unknown parameter distribution type: " << ptype_str << ".  Aborting." << endl;
+            exit(-205);
         }
 
         NumericType ntype = INT; 
@@ -59,7 +64,11 @@ bool AbcSmc::parse_config(string conf_filename) {
             ntype = INT;
         } else if (ntype_str == "FLOAT") {
             ntype = FLOAT;
+        } else {
+            cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl;
+            exit(-206);
         }
+
 
         double par1 = model_par[i]["par1"].asDouble();
         double par2 = model_par[i]["par2"].asDouble();
@@ -81,7 +90,11 @@ bool AbcSmc::parse_config(string conf_filename) {
             ntype = INT;
         } else if (ntype_str == "FLOAT") {
             ntype = FLOAT;
+        } else {
+            cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
+            exit(-207);
         }
+
 
         double val = model_met[i]["value"].asDouble();
 
@@ -182,6 +195,7 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
     for (int t = 0; t<_num_smc_sets; t++) {
 
 #ifdef USING_MPI
+        assert(_mp->mpi_size > 1);
         bool success = _populate_particles_mpi( t, _particle_metrics[t], _particle_parameters[t], RNG );
 #else
         bool success = _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );

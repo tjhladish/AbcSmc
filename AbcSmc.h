@@ -5,7 +5,7 @@
 
 #include "AbcUtil.h"
 
-enum PriorType {UNIFORM, NORMAL};
+enum PriorType {UNIFORM, NORMAL, PSEUDO};
 enum NumericType {INT, FLOAT};
 
 class Parameter {
@@ -14,13 +14,24 @@ class Parameter {
 
         Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2 ) 
             : name(s), short_name(ss), ptype(p), ntype(n) {
-            assert(ptype == UNIFORM);
             if (ptype == UNIFORM) {
                 fmin = val1;
                 fmax = val2;
                 mean = (val2 + val1) / 2.0;
                 stdev = sqrt(pow(val2-val1,2)/12);
-            } /*else if (ptype == NORMAL) {
+                state = 0; // dummy variable for UNIFORM
+            } else if (ptype == PSEUDO) {
+                fmin = val1;
+                fmax = val2;
+                mean = 0;  // dummy variable for PSEUDO 
+                stdev = 0; // dummy variable for PSEUDO 
+                state = fmin;
+            } else {
+                cerr << "Prior type " << ptype << " not supported.  Aborting." << endl;
+                exit(-200);
+            }
+
+            /*else if (ptype == NORMAL) {
                 fmin = DBL_MIN;
                 fmax = DBL_MAX;
                 mean = val1;
@@ -29,11 +40,20 @@ class Parameter {
         }
 
         double sample(const gsl_rng* RNG) { 
-            if (ntype == INT) {
-                 // + 1 makes it out of [fmin, fmax], instead of [fmin, fmax)
-                return gsl_rng_uniform_int(RNG, fmax-fmin + 1) + fmin;
-            } else { 
-                return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
+            if (ptype == UNIFORM) {
+                if (ntype == INT) {
+                     // + 1 makes it out of [fmin, fmax], instead of [fmin, fmax)
+                    return gsl_rng_uniform_int(RNG, fmax-fmin + 1) + fmin;
+                } else { 
+                    return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
+                }
+            } else if (ptype == PSEUDO) {
+                int current = state;
+                state = ++state > fmax ? fmin : state;
+                return current;
+            } else {
+                cerr << "Prior type " << ptype << " not supported.  Aborting." << endl;
+                exit(-200);
             }
         }
 
@@ -53,7 +73,7 @@ class Parameter {
         std::string short_name;
         PriorType ptype;
         NumericType ntype;
-        //int imin, imax;
+        int state;
         double fmin, fmax, mean, stdev;
         std::vector<double> doubled_variance;
 };
