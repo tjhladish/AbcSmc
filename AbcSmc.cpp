@@ -288,7 +288,7 @@ bool AbcSmc::read_particle_set(int t, Mat2D &X_orig, Mat2D &Y_orig ) {
     ifstream iss(existing_particle_filename.c_str());
     if (!iss) {
         cerr << "WARNING: " << existing_particle_filename << " not found." << endl;
-        cerr << "         This is okay if all existing particle files have been read." << endl;
+        cerr << "         Starting generation of set " << t << "." << endl;
         set_resume( false );
         return false;
     }
