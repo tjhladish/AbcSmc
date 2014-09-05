@@ -5,7 +5,7 @@ using namespace std;
 int main(int argc, char* argv[]) {
 
     if (argc != 2) {
-        cerr << "\n\tUsage: ./abc abc_config_file.json\n\n";
+        cerr << "\n\tUsage: ./abc_simulator_executable abc_config_exec.json\n\n";
         return 100;
     }
     

@@ -51,6 +51,11 @@ bool AbcSmc::parse_config(string conf_filename) {
             ptype = UNIFORM;
         } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
             ptype = NORMAL;
+        } else if (ptype_str == "PSEUDO") {
+            ptype = PSEUDO;
+        } else {
+            cerr << "Unknown parameter distribution type: " << ptype_str << ".  Aborting." << endl;
+            exit(-205);
         }
 
         NumericType ntype = INT; 
@@ -59,7 +64,11 @@ bool AbcSmc::parse_config(string conf_filename) {
             ntype = INT;
         } else if (ntype_str == "FLOAT") {
             ntype = FLOAT;
+        } else {
+            cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl;
+            exit(-206);
         }
+
 
         double par1 = model_par[i]["par1"].asDouble();
         double par2 = model_par[i]["par2"].asDouble();
@@ -81,7 +90,11 @@ bool AbcSmc::parse_config(string conf_filename) {
             ntype = INT;
         } else if (ntype_str == "FLOAT") {
             ntype = FLOAT;
+        } else {
+            cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
+            exit(-207);
         }
+
 
         double val = model_met[i]["value"].asDouble();
 
@@ -182,6 +195,7 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
     for (int t = 0; t<_num_smc_sets; t++) {
 
 #ifdef USING_MPI
+        assert(_mp->mpi_size > 1);
         bool success = _populate_particles_mpi( t, _particle_metrics[t], _particle_parameters[t], RNG );
 #else
         bool success = _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );
@@ -398,6 +412,7 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 
 
 void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+#ifdef USING_MPI
     MPI_Status status;
     long double *send_data = new long double[npar() * _num_particles](); // all params, flattened array
     long double *rec_data  = new long double[nmet() * _num_particles](); // all metrics, flattened array
@@ -415,24 +430,21 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
         for (int j = 0; j<npar(); j++) { send_data[i*npar() + j] = par_row(j); }
     }
     // Seed the workers with the first 'num_workers' jobs
-    int particle_id;
+    int particle_id = 0;
     for (int rank = 1; rank < _mp->mpi_size; ++rank) {
         particle_id = rank - 1;                   // which row in Y
-#ifdef USING_MPI
         MPI_Send(&send_data[particle_id*npar()],  // message buffer
                  npar(),                          // number of elements
                  MPI_LONG_DOUBLE,                 // data item is a double
                  rank,                            // destination process rank
                  particle_id,                     // message tag
                  _mp->comm);                      // always use this
-#endif
     }
     
     // Receive a result from any worker and dispatch a new work request
     long double rec_buffer[nmet()];
     particle_id++; // move cursor to next particle to be sent
     while ( particle_id < _num_particles ) { 
-#ifdef USING_MPI
         MPI_Recv(&rec_buffer,                     // message buffer
                  nmet(),                          // message size
                  MPI_LONG_DOUBLE,                 // of type double
@@ -440,23 +452,19 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
                  MPI_ANY_TAG,                     // any type of message
                  _mp->comm,                       // always use this
                  &status);                        // received message info
-#endif
         for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
 
-#ifdef USING_MPI
         MPI_Send(&send_data[particle_id*npar()],  // message buffer
                  npar(),                          // number of elements
                  MPI_LONG_DOUBLE,                 // data item is a double
                  status.MPI_SOURCE,               // send it to the rank that just finished
                  particle_id,                     // message tag
                  _mp->comm);                      // always use this
-#endif
         particle_id++; // move cursor
     }
     
     // receive results for outstanding work requests--there are exactly 'num_workers' left
     for (int rank = 1; rank < _mp->mpi_size; ++rank) {
-#ifdef USING_MPI
         MPI_Recv(&rec_buffer, 
                  nmet(), 
                  MPI_LONG_DOUBLE, 
@@ -464,15 +472,12 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
                  MPI_ANY_TAG, 
                  _mp->comm, 
                  &status);
-#endif
         for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
     }
      
     // Tell all the workers they're done for now
     for (int rank = 1; rank < _mp->mpi_size; ++rank) {
-#ifdef USING_MPI
         MPI_Send(0, 0, MPI_INT, rank, STOP_TAG, _mp->comm);
-#endif
     }
 
     vector<int> bad_particle_idx; // bandaid, in case simulator returns nonsense values
@@ -492,10 +497,12 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
 
     delete[] send_data;
     delete[] rec_data;
+#endif
 }
 
 
 void AbcSmc::_particle_worker() {
+#ifdef USING_MPI
     MPI_Status status;
     long double *local_Y_data = new long double[npar()]();
     long double *local_X_data = new long double[nmet()]();
@@ -532,6 +539,7 @@ void AbcSmc::_particle_worker() {
                  status.MPI_TAG, 
                  _mp->comm);
     }
+#endif
 }
 
 
