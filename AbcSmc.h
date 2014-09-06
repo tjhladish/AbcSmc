@@ -47,12 +47,8 @@ class Parameter {
                 } else { 
                     return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
                 }
-            } else if (ptype == PSEUDO) {
-                int current = state;
-                state = ++state > fmax ? fmin : state;
-                return current;
             } else {
-                cerr << "Prior type " << ptype << " not supported.  Aborting." << endl;
+                cerr << "Prior type " << ptype << " not supported for random sampling.  Aborting." << endl;
                 exit(-200);
             }
         }
@@ -64,8 +60,12 @@ class Parameter {
         double get_prior_max() const { return fmax; }
         double get_prior_mean() const { return mean; }
         double get_prior_stdev() const { return stdev; }
+        int get_state() const { return state; }
+        int increment_state() { return ++state; }
+        int reset_state() { state = (int) get_prior_min(); return state; }
         std::string get_name() const { return name; }
         std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
+        PriorType get_prior_type() const { return ptype; }
         NumericType get_numeric_type() const { return ntype; }
 
     private:
