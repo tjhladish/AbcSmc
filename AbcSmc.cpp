@@ -678,10 +678,36 @@ Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
 
 Row AbcSmc::sample_priors(const gsl_rng* RNG) {
     Row par_sample = Row::Zero(_model_pars.size());
-
+    bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
+    // for each parameter
     for (unsigned int i = 0; i < _model_pars.size(); i++) {
-        par_sample(i) =  _model_pars[i]->sample(RNG);
+        Parameter* p = _model_pars[i];
+        float_type val;
+        // if it's a non-random, PSEUDO parameter
+        if (p->get_prior_type() == PSEUDO) {
+            // get the state now, so that the first time it will have the initialized value
+            val = (float_type) p->get_state();
+            // We need to imitate the way nested loops work, but in a single loop.
+            // PSEUDO parameters only get incremented when any and all previous PSEUDO parameters
+            // have reached their max values and are being reset
+            if (increment_nonrandom_par) {
+                // This parameter has reached it's max value and gets reset to minimum
+                if (p->get_state() == (int) p->get_prior_max()) {
+                    p->reset_state();
+                // otherwise, increment this one and prevent others from being incremented
+                } else {
+                    p->increment_state();
+                    increment_nonrandom_par = false;
+                }
+            }
+        } else {
+            // Random parameters get sampled independently from each other, and are therefore easy
+            val = p->sample(RNG);
+        }
+
+        par_sample(i) = val;
     }
+//cerr << "sample: " << par_sample << endl;
     return par_sample;
 }
 
