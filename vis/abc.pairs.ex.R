@@ -19,7 +19,8 @@ proto[1,] <- NA
 proto[1,abc_metrics_names] <- abc_metrics_values
 dm = rbind(d6, proto)
 dm$sim = factor(ifelse(is.na(dm$iteration), F, T))
-dm[dm$sim==F,4:(3+npar)] = colMeans(dm[dm$sim==T,4:(3+npar)])
+dm[dm$sim==F,4:(3+npar)] = apply(dm[dm$sim==T,4:(3+npar)], 2, median)
+#dm[dm$sim==F,4:(3+npar)] = colMeans(dm[dm$sim==T,4:(3+npar)])
 
 colors <- c(sim = '#00000012', par = 'purple', met = 'orange')
 chars <- c(sim = 20, par = '|', met = '—')
@@ -33,8 +34,7 @@ names(dm)[4:13] = c('EF', 'Mos move', 'Daily intros', 'Num mos', 'Beta', 'Mean',
 names(dm)[14] = "Autocorr"
 
 png("pairs-a-varEIP00.png", width=1800, height=1340, res=150)
-#pairs.panels(dm[,4:14], points.col=colors[as.character(dm$sim)])#, gap=0.5)
-pairs.panels(dm[,4:14], dm[,15], npar, nmet, points.col='#00000012', box.col='black', box.lwd=0.5)#, gap=0.5)
+pairs.panels(dm[,4:14], dm[,15], npar, nmet, points.col='#00000012', box.col='black', box.lwd=0.5, gap=0.5)
 dev.off()
 
 d6p = dm
@@ -42,5 +42,5 @@ d6p = dm
 names(dm)[c(6,7,10,11)] = c('log10(Daily intros)', 'Mosq/loc', 'Median', 'Std deviation')
 
 png("pairs-b-varEIP00.png", width=1800, height=1340, res=200)
-pairs.panels(dm[,c(6,7,10,11)], dm[,15], npar=2, nmet=2, points.col='#00000012', box.lwd=1)#, gap=0.5)
+pairs.panels(dm[,c(6,7,10,11)], dm[,15], npar=2, nmet=2, points.col='#00000012', box.lwd=1, gap=0.5)
 dev.off()

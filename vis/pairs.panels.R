@@ -91,14 +91,15 @@ function (x, labels, panel = points, ...,
 #           localAxis(1 + 2 * row1attop, x[, j], x[, i], 
 #                       ...)
 # draw x-axis
-                if (i == nc & j != nc) localAxis(1, x[, j], x[, i], ...)
+                if (i == nc & j != nc) localAxis(1, x[, j], x[, i], las=2, ...)
 # draw y-axis
-                if (j == 1 & i != 1) localAxis(2, x[, j], x[, i], ...)
+                if (j == 1 & i != 1) localAxis(2, x[, j], x[, i], las=2, ...)
 #           if (j == nc && (i%%2 || !has.upper || !has.lower)) 
 #             localAxis(4, x[, j], x[, i], ...)
                 mfg <- par("mfg")
                 if (i == j) {
-                    if (has.diag) localDiagPanel(as.vector(x[, i]), ...)
+                    if (has.diag) localDiagPanel(x, i, ...)
+                    #if (has.diag) localDiagPanel(as.vector(x[, i]), ...)
                     if (has.labs) {
                         par(usr = c(0, 1, 0, 1))
                         if (is.null(cex.labels)) {
@@ -137,7 +138,6 @@ function (x,
         digits = 2,
         method="pearson",
         cor=TRUE,
-        hist.col="gray",
         points.col="#00000033",
         points.pch=20,
         cor.cex=2,
@@ -147,6 +147,10 @@ function (x,
 
 #first define all the "little functions"
 
+    "colfunc" <- colorRampPalette(c("#ff0000", "#dddddd", "#0000ff"), space='Lab')
+    #"colfunc" <- colorRampPalette(c("#dd0000", "#dddddd", "#0000dd"), space='Lab')
+    colscale = colfunc(21) # covers seq(-1, 1, 0.1)
+    
 #    "panel.hist.density" <-
 #        function(x,...) {
 #            usr <- par("usr"); on.exit(par(usr))
@@ -163,14 +167,17 @@ function (x,
 #        }
 
     "panel.hist" <-
-        function(x, ...)
+        function(d, col1, ...)
         {
+            x = as.vector(d[sims==T,col1])
+            hist.col = if (col1 <= npar) '#00ff0088' else '#ffa50088';
+
             usr <- par("usr"); on.exit(par(usr))
             par(usr = c(usr[1:2], 0, 1.5) )
             h <- hist(x, plot = FALSE)
             breaks <- h$breaks; nB <- length(breaks)
             y <- h$counts; y <- y/max(y)
-            rect(breaks[-nB], 0, breaks[-1], y,col=hist.col)
+            rect(breaks[-nB], 0, breaks[-1], y, col=hist.col)
         }
 
     "panel.smoother.noellipse" <- 
@@ -187,22 +194,34 @@ function (x,
 
             x1 = d[sims==F, col1]
             y1 = d[sims==F, col2]
-            color1 = if (col1 <= npar) '#AB82FF' else 'orange';
-            color2 = if (col2 <= npar) '#AB82FF' else 'orange';
-            points(x1, y1, col=color1, pch = 20, cex=points.cex+0.5, ...)
-            if (color1 != color2) {
-                points(x1, y1, col=color2, pch = 20, cex=(points.cex-1), ...)
-            }
-            #points(x1, y1, col=color1, pch = '|', cex=points.cex, ...)
-            #points(x1, y1, col=color2, pch = '—', cex=points.cex, ...)
+
+            # version 3
+            color1 = if (col1 <= npar) 'green' else 'orange';
+            color2 = if (col2 <= npar) 'green' else 'orange';
+
+            abline(v=x1, col=color1, lty=3)
+            abline(h=y1, col=color2, lty=3)
+            # version 2
+            # color1 = if (col1 <= npar) '#AB82FF' else 'orange';
+            # color2 = if (col2 <= npar) '#AB82FF' else 'orange';
+            # points(x1, y1, col=color1, pch = 20, cex=points.cex+0.5, ...)
+            # if (color1 != color2) {
+            #     points(x1, y1, col=color2, pch = 20, cex=(points.cex-1), ...)
+            # }
+
+            # version 1
+            # points(x1, y1, col=color1, pch = '|', cex=points.cex, ...)
+            # points(x1, y1, col=color2, pch = '—', cex=points.cex, ...)
+
             ok <- is.finite(x) & is.finite(y)
-            if (any(ok)) lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), col = col.smooth, ...)
+            if (any(ok)) {
+                r  <- cor(x, y, use="pairwise", method=method)
+                col_idx = round(r*10) + 11
+                lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), col = colscale[col_idx], ...)
+                #lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), col = col.smooth, ...)
+            }
         }
 
-    #"colfunc" <- colorRampPalette(c("red", "grey", "blue"))
-    "colfunc" <- colorRampPalette(c("#dd0000", "#dddddd", "#0000dd"), space='Lab')
-    colscale = colfunc(21) # covers seq(-1, 1, 0.1)
-    
     "panel.cor" <-
         function(d, col1, col2, digits=2, prefix="", ...)
         {
@@ -214,7 +233,6 @@ function (x,
             txt <- format(c(round(r,digits), 0.123456789), digits=digits)[1]
             txt <- paste(prefix, txt, sep="")
             #if(missing(cor.cex)) {
-            #    print("WTF")
             #    cor.cex <- min(0.8/strwidth('-0.00'))
             #}
             col_idx = round(r*10) + 11
