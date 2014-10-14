@@ -108,9 +108,10 @@ function (x, labels, panel = points, ...,
                         text.panel(0.5, label.pos, labels[i], cex = cex.labels, font = font.labels)
                     }
                 } else if (i < j) {
-                    localLowerPanel(as.vector(x[, j]), as.vector(x[, i]), ...)
+                    localLowerPanel(x, j, i, ...)
                 } else {
-                    localUpperPanel(as.vector(x[, j]), as.vector(x[, i]), ...)
+                    localUpperPanel(x, j, i, ...)
+                    #localUpperPanel(as.vector(x[, j]), as.vector(x[, i]), ...)
                 }
                 if (any(par("mfg") != mfg)) stop("the 'panel' function made a new plot")
             } else {
@@ -128,6 +129,9 @@ function (x, labels, panel = points, ...,
 
 "pairs.panels" <-
 function (x,
+        sims,
+        npar,
+        nmet,
         smooth = TRUE,
         density=TRUE,
         digits = 2,
@@ -170,15 +174,27 @@ function (x,
         }
 
     "panel.smoother.noellipse" <- 
-        function (x, y,pch = par("pch"), col.smooth = "red", span = 2/3, iter = 3, ...) 
+        function (d, col1, col2, pch = par("pch"), col.smooth = "red", span = 2/3, iter = 3, ...) 
         {
+            x = as.vector(d[sims==T,col1])
+            y = as.vector(d[sims==T,col2])
             xm <- mean(x,na.rm=TRUE)
             ym <- mean(y,na.rm=TRUE)
             xs <- sd(x,na.rm=TRUE)
             ys <- sd(y,na.rm=TRUE)
             r = cor(x, y,use="pairwise",method=method)
-
             points(x, y, col=points.col, pch = points.pch, cex=points.cex, ...)
+
+            x1 = d[sims==F, col1]
+            y1 = d[sims==F, col2]
+            color1 = if (col1 <= npar) '#AB82FF' else 'orange';
+            color2 = if (col2 <= npar) '#AB82FF' else 'orange';
+            points(x1, y1, col=color1, pch = 20, cex=points.cex+0.5, ...)
+            if (color1 != color2) {
+                points(x1, y1, col=color2, pch = 20, cex=(points.cex-1), ...)
+            }
+            #points(x1, y1, col=color1, pch = '|', cex=points.cex, ...)
+            #points(x1, y1, col=color2, pch = '—', cex=points.cex, ...)
             ok <- is.finite(x) & is.finite(y)
             if (any(ok)) lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), col = col.smooth, ...)
         }
@@ -188,8 +204,10 @@ function (x,
     colscale = colfunc(21) # covers seq(-1, 1, 0.1)
     
     "panel.cor" <-
-        function(x, y, digits=2, prefix="", ...)
+        function(d, col1, col2, digits=2, prefix="", ...)
         {
+            x = as.vector(d[sims==T,col1])
+            y = as.vector(d[sims==T,col2])
             usr <- par("usr"); on.exit(par(usr))
             par(usr = c(0, 1, 0, 1))
             r  <- cor(x, y,use="pairwise",method=method)
