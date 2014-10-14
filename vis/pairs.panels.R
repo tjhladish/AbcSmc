@@ -1,10 +1,19 @@
 # pairs2() is almost the same as the default pairs plot, but axes are placed on the bottom and the left, instead of alternating.
 # This is much more readable if only the lower triangle is being used to plot data
 pairs2 <- 
-function (x, labels, panel = points, ..., lower.panel = panel, 
-        upper.panel = panel, diag.panel = NULL, text.panel = textPanel, 
-        label.pos = 0.5 + has.diag/3, cex.labels = NULL, font.labels = 1, 
-        row1attop = TRUE, gap = 1) 
+function (x, labels, panel = points, ..., 
+          lower.panel = panel, 
+          upper.panel = panel, 
+          diag.panel = NULL, 
+          text.panel = textPanel, 
+          label.pos = 0.5 + has.diag/3, 
+          cex.labels = NULL, 
+          font.labels = 1, 
+          row1attop = TRUE, 
+          gap = 1,
+          box.col = 'black',
+          box.lty = 'solid',
+          box.lwd = 1) 
 {
     textPanel <- function(x = 0.5, y = 0.5, txt, cex, font) {
         text(x, y, txt, cex = cex, font = font)
@@ -76,7 +85,7 @@ function (x, labels, panel = points, ..., lower.panel = panel,
         for (j in 1L:nc) {
             localPlot(x[, j], x[, i], xlab = "", ylab = "", axes = FALSE, type = "n", ...)
             if (i == j || (i < j && has.lower) || (i > j && has.upper)) {
-                box()
+                box(col=box.col, lty=box.lty, lwd=box.lwd, ...)
 # edited here...
 #           if (i == 1 && (!(j%%2) || !has.upper || !has.lower)) 
 #           localAxis(1 + 2 * row1attop, x[, j], x[, i], 
@@ -134,48 +143,44 @@ function (x,
 
 #first define all the "little functions"
 
-    "panel.hist.density" <-
-        function(x,...) {
-            usr <- par("usr"); on.exit(par(usr))
-                par(usr = c(usr[1:2], 0, 1.5) )
-                h <- hist(x, plot = FALSE)
-                breaks <- h$breaks; nB <- length(breaks)
-                y <- h$counts; y <- y/max(y)
-                rect(breaks[-nB], 0, breaks[-1], y,col=hist.col)
-                tryd <- try( d <- density(x,na.rm=TRUE,bw="nrd",adjust=1.2),silent=TRUE)
-                if(class(tryd) != "try-error") {
-                    d$y <- d$y/max(d$y)
-                        lines(d)
-                }
-        }
+#    "panel.hist.density" <-
+#        function(x,...) {
+#            usr <- par("usr"); on.exit(par(usr))
+#            par(usr = c(usr[1:2], 0, 1.5) )
+#            h <- hist(x, plot = FALSE)
+#            breaks <- h$breaks; nB <- length(breaks)
+#            y <- h$counts; y <- y/max(y)
+#            rect(breaks[-nB], 0, breaks[-1], y,col=hist.col)
+#            tryd <- try( d <- density(x,na.rm=TRUE,bw="nrd",adjust=1.2),silent=TRUE)
+#            if(class(tryd) != "try-error") {
+#                d$y <- d$y/max(d$y)
+#                lines(d)
+#            }
+#        }
 
     "panel.hist" <-
         function(x, ...)
         {
             usr <- par("usr"); on.exit(par(usr))
-                par(usr = c(usr[1:2], 0, 1.5) )
-                h <- hist(x, plot = FALSE)
-                breaks <- h$breaks; nB <- length(breaks)
-                y <- h$counts; y <- y/max(y)
-                rect(breaks[-nB], 0, breaks[-1], y,col=hist.col)
+            par(usr = c(usr[1:2], 0, 1.5) )
+            h <- hist(x, plot = FALSE)
+            breaks <- h$breaks; nB <- length(breaks)
+            y <- h$counts; y <- y/max(y)
+            rect(breaks[-nB], 0, breaks[-1], y,col=hist.col)
         }
 
     "panel.smoother.noellipse" <- 
-        function (x, y,pch = par("pch"), 
-                col.smooth = "red", span = 2/3, iter = 3, ...) 
+        function (x, y,pch = par("pch"), col.smooth = "red", span = 2/3, iter = 3, ...) 
         {
-
             xm <- mean(x,na.rm=TRUE)
-                ym <- mean(y,na.rm=TRUE)
-                xs <- sd(x,na.rm=TRUE)
-                ys <- sd(y,na.rm=TRUE)
-                r = cor(x, y,use="pairwise",method=method)
+            ym <- mean(y,na.rm=TRUE)
+            xs <- sd(x,na.rm=TRUE)
+            ys <- sd(y,na.rm=TRUE)
+            r = cor(x, y,use="pairwise",method=method)
 
-                points(x, y, col=points.col, pch = points.pch, cex=points.cex, ...)
-                ok <- is.finite(x) & is.finite(y)
-                if (any(ok)) 
-                    lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), 
-                            col = col.smooth, ...)
+            points(x, y, col=points.col, pch = points.pch, cex=points.cex, ...)
+            ok <- is.finite(x) & is.finite(y)
+            if (any(ok)) lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), col = col.smooth, ...)
         }
 
     #"colfunc" <- colorRampPalette(c("red", "grey", "blue"))
@@ -186,15 +191,15 @@ function (x,
         function(x, y, digits=2, prefix="", ...)
         {
             usr <- par("usr"); on.exit(par(usr))
-                par(usr = c(0, 1, 0, 1))
-                r  <- cor(x, y,use="pairwise",method=method)
-                txt <- format(c(round(r,digits), 0.123456789), digits=digits)[1]
-                txt <- paste(prefix, txt, sep="")
-                #if(missing(cor.cex)) {
-                #    print("WTF")
-                #    cor.cex <- min(0.8/strwidth('-0.00'))
-                #}
-                col_idx = round(r*10) + 11
+            par(usr = c(0, 1, 0, 1))
+            r  <- cor(x, y,use="pairwise",method=method)
+            txt <- format(c(round(r,digits), 0.123456789), digits=digits)[1]
+            txt <- paste(prefix, txt, sep="")
+            #if(missing(cor.cex)) {
+            #    print("WTF")
+            #    cor.cex <- min(0.8/strwidth('-0.00'))
+            #}
+            col_idx = round(r*10) + 11
             text(0.5, 0.5, txt, cex=cor.cex, col=colscale[col_idx], font=2)
         }
 
@@ -206,8 +211,8 @@ function (x,
 #having done the same trick for passing method, it is now time to change all of this to pass some of these other options
 
     old.par <- par(no.readonly = TRUE) # save default, for resetting... 
-        on.exit(par(old.par))     #and when we quit the function, restore to original values
+    on.exit(par(old.par))     #and when we quit the function, restore to original values
 
-        pairs2(x, diag.panel = panel.hist, upper.panel = panel.cor, lower.panel = panel.smoother.noellipse, ...)
+    pairs2(x, diag.panel = panel.hist, upper.panel = panel.cor, lower.panel = panel.smoother.noellipse, ...)
 #pairs(x, diag.panel = panel.hist.density, upper.panel = panel.cor, lower.panel = panel.smoother.noellipse, ...)
 }
