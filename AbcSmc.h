@@ -12,8 +12,8 @@ class Parameter {
     public:
         Parameter() {};
 
-        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2 ) 
-            : name(s), short_name(ss), ptype(p), ntype(n) {
+        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2, double val_step ) 
+            : name(s), short_name(ss), ptype(p), ntype(n), step(val_step) {
             if (ptype == UNIFORM) {
                 fmin = val1;
                 fmax = val2;
@@ -60,9 +60,9 @@ class Parameter {
         double get_prior_max() const { return fmax; }
         double get_prior_mean() const { return mean; }
         double get_prior_stdev() const { return stdev; }
-        int get_state() const { return state; }
-        int increment_state() { return ++state; }
-        int reset_state() { state = (int) get_prior_min(); return state; }
+        double get_state() const { return state; }
+        double increment_state() { return state += step; }
+        double reset_state() { state = get_prior_min(); return state; }
         std::string get_name() const { return name; }
         std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
         PriorType get_prior_type() const { return ptype; }
@@ -73,8 +73,7 @@ class Parameter {
         std::string short_name;
         PriorType ptype;
         NumericType ntype;
-        int state;
-        double fmin, fmax, mean, stdev;
+        double fmin, fmax, mean, stdev, state, step;
         std::vector<double> doubled_variance;
 };
 
@@ -116,8 +115,8 @@ class AbcSmc {
         void add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) { 
             _model_mets.push_back(new Metric(name, short_name, ntype, obs_val)); 
         }
-        void add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2) {
-            _model_pars.push_back(new Parameter(name, short_name, ptype, ntype, val1, val2));
+        void add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step) {
+            _model_pars.push_back(new Parameter(name, short_name, ptype, ntype, val1, val2, step));
         }
         
         bool parse_config(std::string conf_filename);

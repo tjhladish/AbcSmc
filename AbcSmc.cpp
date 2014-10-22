@@ -69,11 +69,11 @@ bool AbcSmc::parse_config(string conf_filename) {
             exit(-206);
         }
 
-
         double par1 = model_par[i]["par1"].asDouble();
         double par2 = model_par[i]["par2"].asDouble();
+        double step = model_par[i].get("step", 1.0).asDouble();
 
-        add_next_parameter( name, short_name, ptype, ntype, par1, par2);
+        add_next_parameter( name, short_name, ptype, ntype, par1, par2, step);
     }
 
     // Parse model metrics 
@@ -94,7 +94,6 @@ bool AbcSmc::parse_config(string conf_filename) {
             cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
             exit(-207);
         }
-
 
         double val = model_met[i]["value"].asDouble();
 
@@ -431,8 +430,9 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
     }
     // Seed the workers with the first 'num_workers' jobs
     int particle_id = 0;
-    for (int rank = 1; rank < _mp->mpi_size; ++rank) {
-        particle_id = rank - 1;                   // which row in Y
+    // Don't send particles that don't exist!
+    for (int rank = 1; rank < _mp->mpi_size and rank <= _num_particles; ++rank) {
+        particle_id = rank - 1;                       // which row in Y
         MPI_Send(&send_data[particle_id*npar()],  // message buffer
                  npar(),                          // number of elements
                  MPI_LONG_DOUBLE,                 // data item is a double
@@ -463,8 +463,9 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
         particle_id++; // move cursor
     }
     
-    // receive results for outstanding work requests--there are exactly 'num_workers' left
-    for (int rank = 1; rank < _mp->mpi_size; ++rank) {
+    // receive results for outstanding work requests--there are exactly 'num_workers' 
+    // or '_num_particles' left, whichever is smaller
+    for (int rank = 1; rank < _mp->mpi_size and rank <= _num_particles; ++rank) {
         MPI_Recv(&rec_buffer, 
                  nmet(), 
                  MPI_LONG_DOUBLE, 
@@ -692,7 +693,7 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
             // have reached their max values and are being reset
             if (increment_nonrandom_par) {
                 // This parameter has reached it's max value and gets reset to minimum
-                if (p->get_state() == (int) p->get_prior_max()) {
+                if (p->get_state() >= p->get_prior_max()) {
                     p->reset_state();
                 // otherwise, increment this one and prevent others from being incremented
                 } else {
