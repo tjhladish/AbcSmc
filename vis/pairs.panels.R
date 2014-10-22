@@ -85,7 +85,7 @@ function (x, labels, panel = points, ...,
         for (j in 1L:nc) {
             localPlot(x[, j], x[, i], xlab = "", ylab = "", axes = FALSE, type = "n", ...)
             if (i == j || (i < j && has.lower) || (i > j && has.upper)) {
-                box(col=box.col, lty=box.lty, lwd=box.lwd, ...)
+                #box(col=box.col, lty=box.lty, lwd=box.lwd, ...)
 # edited here...
 #           if (i == 1 && (!(j%%2) || !has.upper || !has.lower)) 
 #           localAxis(1 + 2 * row1attop, x[, j], x[, i], 
@@ -115,6 +115,7 @@ function (x, labels, panel = points, ...,
                     #localUpperPanel(as.vector(x[, j]), as.vector(x[, i]), ...)
                 }
                 if (any(par("mfg") != mfg)) stop("the 'panel' function made a new plot")
+                box(col=box.col, lty=box.lty, lwd=box.lwd, ...)
             } else {
                 par(new = FALSE)
             }
@@ -174,10 +175,12 @@ function (x,
 
             usr <- par("usr"); on.exit(par(usr))
             par(usr = c(usr[1:2], 0, 1.5) )
-            h <- hist(x, plot = FALSE)
+            #h <- hist(x, add=T, col=hist.col)
+            inset = (usr[2] - usr[1])*0.01
+            h <- hist(x, breaks=seq(usr[1]+inset, usr[2]-inset, length.out=11), plot = FALSE)
             breaks <- h$breaks; nB <- length(breaks)
             y <- h$counts; y <- y/max(y)
-            rect(breaks[-nB], 0, breaks[-1], y, col=hist.col)
+            rect(breaks[-nB], 0, breaks[-1], y, col=hist.col, border=NA)
         }
 
     "panel.smoother.noellipse" <- 
@@ -185,10 +188,6 @@ function (x,
         {
             x = as.vector(d[sims==T,col1])
             y = as.vector(d[sims==T,col2])
-            xm <- mean(x,na.rm=TRUE)
-            ym <- mean(y,na.rm=TRUE)
-            xs <- sd(x,na.rm=TRUE)
-            ys <- sd(y,na.rm=TRUE)
             r = cor(x, y,use="pairwise",method=method)
             points(x, y, col=points.col, pch = points.pch, cex=points.cex, ...)
 

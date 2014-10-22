@@ -33,7 +33,8 @@ names(dm)[4:13] = c('EF', 'Mos move', 'Daily intros', 'Num mos', 'Beta', 'Mean',
 #names(dm)[13] = "Autocorr"
 names(dm)[14] = "Autocorr"
 
-png("pairs-a-varEIP00.png", width=1800, height=1340, res=150)
+pdf("pairs-a-varEIP00.pdf", width=16, height=16)
+#png("pairs-a-varEIP00.png", width=1800, height=1340, res=150)
 pairs.panels(dm[,4:14], dm[,15], npar, nmet, points.col='#00000012', box.col='black', box.lwd=0.5, gap=0.5)
 dev.off()
 
