@@ -6,7 +6,7 @@
 #include <unistd.h>
 
 using namespace std;
-const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
+const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 
 // wrapper for simulator
 // must take vector of doubles (ABC paramters) 
@@ -25,6 +25,8 @@ vector<long double> simulator(vector<long double> args, const MPI_par* mp) {
         results[i] = gsl_rng_uniform_int(RNG, par2) + 1;
         sum += results[i];
     }
+
+//cout << "Res: " << results[0] << " " << results[1] << endl;
     
     vector<long double> metrics(2);
     metrics[0] = sum;
@@ -44,7 +46,6 @@ int main(int argc, char* argv[]) {
         return 100;
     }
     
-    const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
     gsl_rng_set(RNG, time (NULL) * getpid()); // seed the rng using sys time and the process id
 
     AbcSmc* abc = new AbcSmc();
