@@ -39,6 +39,8 @@ vector<long double> simulator(vector<long double> args, const MPI_par* mp) {
         sum += results[i];
     }
     
+//cout << "R: " << results[0] << " " << results[1] << endl;
+
     vector<long double> metrics(2);
     metrics[0] = sum;
     if (par1 == 1) {
