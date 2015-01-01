@@ -71,7 +71,7 @@ bool AbcSmc::parse_config(string conf_filename) {
 
         double par1 = model_par[i]["par1"].asDouble();
         double par2 = model_par[i]["par2"].asDouble();
-        double step = model_par[i].get("step", 1.0).asDouble();
+        double step = model_par[i].get("step", 1.0).asDouble(); // default increment is 1
 
         add_next_parameter( name, short_name, ptype, ntype, par1, par2, step);
     }
@@ -529,7 +529,8 @@ void AbcSmc::_particle_worker() {
 
         for (int j = 0; j<npar(); j++) { pars[j] = local_Y_data[j]; }
 
-        _run_simulator(pars, mets);
+        bool success = _run_simulator(pars, mets);
+        if (not success) exit(-208);
 
         for (int j = 0; j<nmet(); j++) { local_X_data[j] = mets[j]; }
 
@@ -548,6 +549,10 @@ bool AbcSmc::_run_simulator(Row &par, Row &met) {
     bool particle_success = true;
     if (use_simulator) {
         vector<float_type> met_vec = _simulator( as_vector(par), _mp );
+        if ((signed) met_vec.size() != nmet()) {
+            cerr << "ERROR: simulator function returned the wrong number of metrics: expected " << nmet() << ", received " << met_vec.size() << endl; 
+            particle_success = false;
+        }
         met = as_row(met_vec);
     } else if (use_executable) {
         string command = _executable_filename;
@@ -577,8 +582,9 @@ bool AbcSmc::_run_simulator(Row &par, Row &met) {
 
 
 bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+    bool success = true;
     if (resume() and read_particle_set( t, X_orig, Y_orig )) {
-        return true;
+        return success;
     }
 
     for (int i = 0; i<_num_particles; i++) {
@@ -590,10 +596,11 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
        
         Row pars = Y_orig.row(i);
         Row mets = X_orig.row(i);
-        _run_simulator(pars, mets);
+        success = _run_simulator(pars, mets);
+        if (not success) return false;
         X_orig.row(i) = mets;
     }
-    return true;
+    return success;
 }
 
 
