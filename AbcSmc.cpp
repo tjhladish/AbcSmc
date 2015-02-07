@@ -20,6 +20,8 @@ using std::stringstream;
 using std::ofstream;
 using std::setw;
 
+using namespace sqdb;
+
 const string double_bar = "=========================================================================================";
 const int PREC = 5;
 const int WIDTH = 12; 
@@ -116,7 +118,8 @@ bool AbcSmc::parse_config(string conf_filename) {
     set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
     set_particle_basefilename( par["particle_basefilename"].asString() );
     set_predictive_prior_basefilename( par["predictive_prior_basefilename"].asString() );
-    
+    set_database_filename( par["database_filename"].asString() );
+
     return true;
 
 }
@@ -221,6 +224,7 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
         }
     }
 }
+
 void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
     stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2 
                                                       << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
@@ -579,6 +583,149 @@ bool AbcSmc::_run_simulator(Row &par, Row &met) {
     }
     return particle_success;
 }
+
+
+bool AbcSmc::build_database(const gsl_rng* RNG) {
+    sqdb::Db db(_database_filename.c_str());
+
+    stringstream ss;
+    if ( !db.TableExists("jobs") and !db.TableExists("parameters") and !db.TableExists("metrics") ) {
+        db.Query("create table jobs( serial int primary key asc, smcIteration int, jobId int, startTime int, duration int, status text, posterior int );").Next();
+        // build parameters schema
+        ss << "create table parameters( serial int primary key, ";
+        for (int i = 0; i<npar()-1; i++) { ss << _model_pars[i]->get_short_name() << " real, "; }
+        ss << _model_pars.back()->get_short_name() << " real );";
+        db.Query(ss.str().c_str()).Next();
+        ss.str(string());
+        ss.clear();
+
+// http://stackoverflow.com/questions/1374468/c-stringstream-string-and-char-conversion-confusion
+        // build metrics schema
+//        ss << "create table metrics( serial int primary key, m1 real, m2 real )";
+        ss << "create table metrics( serial int primary key, ";
+        for (int i = 0; i<nmet()-1; i++) { ss << _model_mets[i]->get_short_name() << " real, "; }
+        ss << _model_mets.back()->get_short_name() << " real );";
+        db.Query(ss.str().c_str()).Next();
+        ss.str(string());
+        ss.clear();
+
+        // https://www.sqlite.org/datatype3.html
+    } else {
+        return false;
+    }
+
+    Row pars;
+    for (int i = 1; i<=_num_particles; i++) {
+        pars = sample_priors(RNG);
+        QueryStr qstr;
+        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into jobs values ( %d, 0, %d, %d, NULL, 'Q', NULL );"), i, i, time(NULL))).Next();
+
+        Statement s = db.Query("select last_insert_rowid() from jobs;");
+        s.Next();
+        const int rowid = s.GetField(0);
+        // insert parameters
+        ss << "insert into parameters values ( " << rowid << ", ";
+        for (int j = 0; j<npar()-1; j++) { ss << pars[j] << ", "; }
+        ss << pars.rightCols(1) << " );";
+        db.Query(ss.str().c_str()).Next();
+        ss.str(string());
+        ss.clear();
+
+        // insert metrics
+        ss << "insert into metrics values ( " << rowid << ", ";
+        for (int j = 0; j<nmet()-1; j++) { ss << " NULL, "; }
+        ss << " NULL );";
+        db.Query(ss.str().c_str()).Next();
+        ss.str(string());
+        ss.clear();
+    }
+    return true;
+}
+
+
+bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, Row &pars) { 
+    bool db_success = false;
+    int attempts = 0;
+    const max_attempts = 100;
+    while (not db_success and attempts < max_attempts) {
+        attempts++;
+        try {
+            cerr << "Attempting: " << sqlstring << endl;
+            Statement s = db.Query(sqlstring);
+            
+            if (s.Next()) { 
+                if (npar() == pars.size()) {
+                    for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i); 
+                }
+            }
+
+            db_success = true;
+        } catch (Exception& e) { 
+            cerr << "blarg1!\n";
+            cerr << e.GetErrorMsg();
+            attempts++;
+        } catch (exception& e) {
+            cerr << "blarg2!\n";
+            cerr << e.what();
+            attempts++;
+        }
+        sleep(1);
+    }
+
+    return db_success;
+}
+
+
+bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring) { 
+    Row dummy;
+    return do_sql(db, sqlstring, dummy); 
+}
+
+
+bool AbcSmc::simulate_database(const int smc_iteration, const int particle_id){
+    // TODO - somehow we need to be able to specify which smc iteration we're using
+    Row pars(npar());
+    Row mets(nmet());
+
+    // read row particle_id for this set from database
+    // store par values in row variable
+
+    stringstream ss;
+
+    ss << "select ";
+    for (int i = 0; i<npar()-1; i++) { ss << _model_pars[i]->get_short_name() << ", "; }
+    ss << _model_pars.back()->get_short_name() << " ";
+    ss << "from parameters p, jobs j where p.serial = j.serial and j.smcIteration = %d and j.jobID = %d;"; 
+    string selectStatment = ss.str();
+    cerr << selectStatment << " " << smc_iteration << " " << particle_id << endl;
+    ss.str(string());
+    ss.clear();
+        
+    sqdb::Db db(_database_filename.c_str());
+    QueryStr qstr;
+    const char* selectString = qstr.Format(SQDB_MAKE_TEXT(selectStatment.c_str()), smc_iteration, particle_id);
+    bool ok = do_sql(db, selectString, pars);
+
+    if (ok) {
+        bool success = _run_simulator(pars, mets);
+        if (not success) exit(-209);
+
+        ss << "update metrics set "; 
+        for (int i = 0; i<nmet()-1; i++) { ss << _model_mets[i]->get_short_name() << "=" << mets[i] << ", "; }
+        ss << _model_mets.back()->get_short_name() << "=" << mets.rightCols(1) << " ";
+        ss << "where serial in (select serial from jobs where smcIteration = %d and jobID = %d);"; 
+        string updateStatment = ss.str();
+        cerr << updateStatment << " " << smc_iteration << " " << particle_id << endl;
+        ss.str(string());
+        ss.clear();
+    
+        const char* updateString = qstr.Format(SQDB_MAKE_TEXT(updateStatment.c_str()), smc_iteration, particle_id);
+        do_sql(db, updateString);
+    }
+
+    return true;
+}
+
 
 
 bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {

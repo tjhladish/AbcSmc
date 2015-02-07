@@ -4,6 +4,7 @@
 #define mpi_root 0
 
 #include "AbcUtil.h"
+#include "sqdb.h"
 
 enum PriorType {UNIFORM, NORMAL, PSEUDO};
 enum NumericType {INT, FLOAT};
@@ -110,6 +111,7 @@ class AbcSmc {
         void set_simulator(vector<float_type> (*simulator) (vector<float_type>, const MPI_par*)) { _simulator = simulator; use_simulator = true; }
         void set_particle_basefilename( std::string name ) { _particle_filename = name; }
         void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
+        void set_database_filename( std::string name ) { _database_filename = name; }
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
         void add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) { 
@@ -122,6 +124,11 @@ class AbcSmc {
         bool parse_config(std::string conf_filename);
         void report_convergence_data(int);
 
+        bool build_database(const gsl_rng* RNG);
+
+        bool do_sql(sqdb::Db &db, const char* sqlstring, Row &pars);
+        bool do_sql(sqdb::Db &db, const char* sqlstring);
+        bool simulate_database(const int smc_iteration, const int particle_id);
         void run(const gsl_rng* RNG) { run(_executable_filename, RNG); }; 
         void run(std::string executable, const gsl_rng* RNG); 
            
@@ -146,6 +153,7 @@ class AbcSmc {
         //std::string _metrics_filename;
         std::string _particle_filename;
         std::string _predictive_prior_filename;
+        std::string _database_filename;
         std::vector< Mat2D > _particle_metrics;
         std::vector< Mat2D > _particle_parameters;
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters

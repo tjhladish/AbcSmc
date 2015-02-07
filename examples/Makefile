@@ -2,7 +2,7 @@ CC=g++
 #CFLAGS = -g -std=c++0x
 CFLAGS = -O2
 ABCDIR = $(HOME)/work/AbcSmc
-ABC_INC = -I$(ABCDIR)
+ABC_INC = -I$(ABCDIR) -I../sqdb
 
 ifdef TACC_GSL_INC
 GSL_INC = -I$$TACC_GSL_INC
@@ -11,8 +11,8 @@ ifdef HPC_GSL_INC
 GSL_INC = -I$$HPC_GSL_INC
 endif
 
-ABC_LIB = -L$(ABCDIR) -labc -ljsoncpp
-GSL_LIB = -lm -L$$TACC_GSL_LIB/ -L$$HPC_GSL_LIB/ -lgsl -lgslcblas
+ABC_LIB = -L$(ABCDIR) -labc -ljsoncpp -lsqdb ../sqlite3.o
+GSL_LIB = -lm -L$$TACC_GSL_LIB/ -L$$HPC_GSL_LIB/ -lgsl -lgslcblas -lpthread -ldl
 
 default: all_no_mpi
 
@@ -39,6 +39,7 @@ libabc_ubuntu_mpi:
 abc: libabc_no_mpi main_exec.cpp main_simptr.cpp
 	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_exec.cpp -o abc_simulator_executable $(ABC_LIB) $(GSL_LIB)
 	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_simptr.cpp -o abc_simulator_pointer $(ABC_LIB) $(GSL_LIB)
+	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_sql.cpp -o abc_simulator_sql $(ABC_LIB) $(GSL_LIB)
 
 dice: dice_game.cpp
 	$(CC) $(CFLAGS) $(GSL_INC) dice_game.cpp -o dice_game $(GSL_LIB)

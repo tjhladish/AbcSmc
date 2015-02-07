@@ -1,0 +1,16 @@
+#!/bin/bash
+#PBS -r n
+#PBS -N abc
+#PBS -o junk.out
+#PBS -e junk.err
+#PBS -m a
+#PBS -M tjhladish@gmail.com
+#PBS -W group_list=epi
+#PBS -l walltime=00:05:00
+#PBS -l nodes=1:ppn=1
+#PBS -l pmem=1G
+#PBS -t 1-1000
+
+module load gsl
+cd /home/thladish/work/AbcSmc/examples
+./abc_simulator_sql abc_config_sql.json $PBS_ARRAYID
