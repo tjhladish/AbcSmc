@@ -643,30 +643,34 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 }
 
 
-bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, Row &pars) { 
+bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring, Row &pars) {
     bool db_success = false;
     int attempts = 0;
-    const max_attempts = 100;
+    const int max_attempts = 1000;
     while (not db_success and attempts < max_attempts) {
         attempts++;
         try {
+            db.BeginTransaction();
             cerr << "Attempting: " << sqlstring << endl;
             Statement s = db.Query(sqlstring);
-            
-            if (s.Next()) { 
-                if (npar() == pars.size()) {
-                    for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i); 
+            if (s.Next()) {
+                if (npar() == pars.size()) { // sometimes we are getting pars.  pars is empty if not
+                    for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i);
                 }
             }
 
+            db.Query(jobstring).Next(); // update jobs table
+
+            db.CommitTransaction();
             db_success = true;
-        } catch (Exception& e) { 
-            cerr << "blarg1!\n";
-            cerr << e.GetErrorMsg();
+            break;
+        } catch (const Exception& e) {
+            db.RollbackTransaction();
+            cerr << e.GetErrorMsg() << endl;
             attempts++;
-        } catch (exception& e) {
-            cerr << "blarg2!\n";
-            cerr << e.what();
+        } catch (const exception& e) {
+            db.RollbackTransaction();
+            cerr << e.what() << endl;
             attempts++;
         }
         sleep(1);
@@ -676,56 +680,111 @@ bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, Row &pars) {
 }
 
 
-bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring) { 
+bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring) {
     Row dummy;
-    return do_sql(db, sqlstring, dummy); 
+    return do_sql(db, sqlstring, jobstring, dummy);
 }
 
 
-bool AbcSmc::simulate_database(const int smc_iteration, const int particle_id){
-    // TODO - somehow we need to be able to specify which smc iteration we're using
+bool AbcSmc::sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status) {
+    stringstream ss;
+    ss << "select status from jobs where " << sql_job_tag << ";";
+    const string statementString = ss.str();
+    const char* sqlstring = statementString.c_str();
+
+    cerr << "Attempting: " << sqlstring << endl;
+    bool db_success = false;
+    int attempts = 0;
+    const int max_attempts = 1000;
+    while (not db_success and attempts < max_attempts) {
+        attempts++;
+        try {
+            Statement s = db.Query(sqlstring);
+            if (s.Next()) {
+                status = s.GetField(0).GetString();
+            }
+
+            db_success = true;
+            break;
+        } catch (const Exception& e) {
+            cerr << e.GetErrorMsg() << endl;
+            attempts++;
+        }
+        sleep(1);
+    }
+    if (not db_success) cerr << "Failed to get job status for tag " << sql_job_tag << " after " << attempts << "attempts\n";
+    if (status == "D") {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+
+bool AbcSmc::simulate_database(const int smc_iteration, const int particle_id) {
     Row pars(npar());
     Row mets(nmet());
 
-    // read row particle_id for this set from database
-    // store par values in row variable
-
     stringstream ss;
+    ss << " jobs.smcIteration = " << smc_iteration << " and jobs.jobID = " << particle_id;
+    const string sql_job_tag = ss.str();
+    ss.str(string()); ss.clear();
 
     ss << "select ";
     for (int i = 0; i<npar()-1; i++) { ss << _model_pars[i]->get_short_name() << ", "; }
     ss << _model_pars.back()->get_short_name() << " ";
-    ss << "from parameters p, jobs j where p.serial = j.serial and j.smcIteration = %d and j.jobID = %d;"; 
-    string selectStatment = ss.str();
-    cerr << selectStatment << " " << smc_iteration << " " << particle_id << endl;
-    ss.str(string());
-    ss.clear();
-        
-    sqdb::Db db(_database_filename.c_str());
-    QueryStr qstr;
-    const char* selectString = qstr.Format(SQDB_MAKE_TEXT(selectStatment.c_str()), smc_iteration, particle_id);
-    bool ok = do_sql(db, selectString, pars);
+    ss << "from parameters p, jobs where p.serial = jobs.serial and" << sql_job_tag << ";";
+    const string selectParametersString = ss.str();
+    const char* selectParametersStatement = selectParametersString.c_str();
+    ss.str(string()); ss.clear();
 
-    if (ok) {
+    const int start_time = time(0);
+    // build jobs update statement to indicate job is running
+    ss << "update jobs set startTime = " << start_time << ", status = 'R' where" << sql_job_tag << ";";
+    const string jobRunningString = ss.str();
+    const char* jobRunningStatement = jobRunningString.c_str();
+    ss.str(string()); ss.clear();
+
+    sqdb::Db db(_database_filename.c_str());
+    string job_status;
+    bool ok_to_continue = true;
+    bool particle_done = sql_particle_already_done(db, sql_job_tag, job_status);
+    if (particle_done) {
+        cerr << "Particle is done\n";
+        ok_to_continue = false;
+    } else {
+        if (job_status == "R") {
+            cerr << "Running job with tag " << sql_job_tag << " redundantly." << endl;
+        }
+        ok_to_continue = do_sql(db, selectParametersStatement, jobRunningStatement, pars);
+    }
+
+    if (ok_to_continue) {
         bool success = _run_simulator(pars, mets);
         if (not success) exit(-209);
 
-        ss << "update metrics set "; 
+        ss << "update metrics set ";
         for (int i = 0; i<nmet()-1; i++) { ss << _model_mets[i]->get_short_name() << "=" << mets[i] << ", "; }
         ss << _model_mets.back()->get_short_name() << "=" << mets.rightCols(1) << " ";
-        ss << "where serial in (select serial from jobs where smcIteration = %d and jobID = %d);"; 
-        string updateStatment = ss.str();
-        cerr << updateStatment << " " << smc_iteration << " " << particle_id << endl;
-        ss.str(string());
-        ss.clear();
-    
-        const char* updateString = qstr.Format(SQDB_MAKE_TEXT(updateStatment.c_str()), smc_iteration, particle_id);
-        do_sql(db, updateString);
+        ss << "where serial in (select serial from jobs where" << sql_job_tag << ");";
+        const string updateMetricsString = ss.str();
+        const char* updateMetricsStatement = updateMetricsString.c_str();
+        cerr << updateMetricsStatement << endl;
+        ss.str(string()); ss.clear();
+
+        // build jobs update statement to indicate job is running
+        ss << "update jobs set duration = " << time(0) - start_time << ", status = 'D' where" << sql_job_tag << ";";
+        const string jobDoneString = ss.str();
+        const char* jobDoneStatement = jobDoneString.c_str();
+        ss.str(string()); ss.clear();
+
+        do_sql(db, updateMetricsStatement, jobDoneStatement);
+    } else {
+        cerr << "Parameter selection failed.  Particle may already be complete.\n";
     }
 
     return true;
 }
-
 
 
 bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {

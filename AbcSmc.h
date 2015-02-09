@@ -126,8 +126,9 @@ class AbcSmc {
 
         bool build_database(const gsl_rng* RNG);
 
-        bool do_sql(sqdb::Db &db, const char* sqlstring, Row &pars);
-        bool do_sql(sqdb::Db &db, const char* sqlstring);
+        bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
+        bool do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring, Row &pars);
+        bool do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring);
         bool simulate_database(const int smc_iteration, const int particle_id);
         void run(const gsl_rng* RNG) { run(_executable_filename, RNG); }; 
         void run(std::string executable, const gsl_rng* RNG); 
