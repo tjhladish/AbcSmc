@@ -125,11 +125,13 @@ class AbcSmc {
         void report_convergence_data(int);
 
         bool build_database(const gsl_rng* RNG);
+        bool read_SMC_set_from_database (int t, Mat2D &X_orig, Mat2D &Y_orig);
 
         bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
         bool do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring, Row &pars);
         bool do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring);
         bool simulate_database(const int smc_iteration, const int particle_id);
+
         void run(const gsl_rng* RNG) { run(_executable_filename, RNG); }; 
         void run(std::string executable, const gsl_rng* RNG); 
            
@@ -178,6 +180,10 @@ class AbcSmc {
         void set_resume_directory( std::string res_dir ) { resume_directory = res_dir; }
         bool read_particle_set( int t, Mat2D &X_orig, Mat2D &Y_orig );
         bool read_predictive_prior( int t );
+
+        string _build_sql_select_par_string();
+        string _build_sql_select_met_string();
+        string _build_sql_create_par_string(string tag);
 
         Col euclidean( Row obs_met, Mat2D sim_met ); 
 

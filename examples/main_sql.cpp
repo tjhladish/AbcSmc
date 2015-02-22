@@ -47,6 +47,9 @@ int main(int argc, char* argv[]) {
     AbcSmc* abc = new AbcSmc();
     abc->parse_config(string(argv[1]));
     if (atoi(argv[2]) == 0) {
+        // if DB exists and contains a completed set, run pls and sample for next set:
+        abc->process_database(RNG); // TODO
+        // else:
         abc->build_database(RNG);
     } else {
         abc->set_simulator(simulator);
