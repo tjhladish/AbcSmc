@@ -112,7 +112,7 @@ bool AbcSmc::parse_config(string conf_filename) {
         set_resume( true );
     }
 
-    set_smc_sets( par["smc_sets"].asInt() ); // or have it test for convergence
+    set_smc_iterations( par["smc_iterations"].asInt() ); // or have it test for convergence
     set_num_samples( par["num_samples"].asInt() );
     set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
     set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
@@ -176,7 +176,11 @@ void AbcSmc::write_predictive_prior_file( const int t ) {
 }
 
 
-void AbcSmc::process_database(const gsl_rng* RNG) {
+bool AbcSmc::process_database(const gsl_rng* RNG) {
+
+    if (build_database(RNG)) return true; // if DB doesn't exist, create it and exit
+
+    sqdb::Db db(_database_filename.c_str());
     _particle_parameters.clear();
     _particle_metrics.clear();
     _weights.clear();
@@ -191,34 +195,38 @@ void AbcSmc::process_database(const gsl_rng* RNG) {
     _predictive_prior.resize(_num_smc_sets);
 
     vector< vector<int> > serials;
-    read_SMC_sets_from_database(serials);
-// TODO resume here
-// need to read in last two sets, if available, for calculate_predictive_prior_weights() to work
-    // do pls and filtering
-    cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
-    _filter_particles( t, X_orig, Y_orig );
+    read_SMC_sets_from_database(db, serials);
+    stringstream ss;
+    for (unsigned int t = 0; t < _particle_parameters.size(); ++t) {
+        
+    // TODO resume here
+    // need to read in last two sets, if available, for calculate_predictive_prior_weights() to work
+        // do pls and filtering
+        cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
+        _filter_particles( t, _particle_metrics[t], _particle_parameters[t]);
 
-    calculate_predictive_prior_weights( t );
-    _update_sets_table( t );
+        calculate_predictive_prior_weights( t );
+        _update_sets_table( db, t );
 
-    // update jobs table with predictive prior rankings and weights
+        // update jobs table with predictive prior rankings and weights
 
-    for (int i = 0; i < _predictive_prior_size; i++) { // best to worst performing particle in posterior?
-        const int particle_idx = _predictive_prior[t][i];
-        const int particle_serial = serials[particle_idx];
-        ss << "update jobs set posterior = " << i << ", weight = " << _weights[t][i] << " where serial = " << particle_serial << ";";
+        for (int i = 0; i < _predictive_prior_size; i++) { // best to worst performing particle in posterior?
+            const int particle_idx = _predictive_prior[t][i];
+            const int particle_serial = serials[t][particle_idx];
+            ss << "update jobs set posterior = " << i << ", weight = " << _weights[t][i] << " where serial = " << particle_serial << ";";
 
-        if ( not db.Query(ss.str().c_str()).Next() ) {
-            cerr << "ERROR: Failed to update jobs table with posterior and weight data.\n";
-            cerr << "Query: " << ss << endl;
-            return false;
+            if ( not db.Query(ss.str().c_str()).Next() ) {
+                cerr << "ERROR: Failed to update jobs table with posterior and weight data.\n";
+                cerr << "Query: " << ss << endl;
+                return false;
+            }
+
+            ss.str(string());
+            ss.clear();
         }
-
-        ss.str(string());
-        ss.clear();
+        report_convergence_data(t);
+        cerr << endl << endl;
     }
-    report_convergence_data(t);
-    cerr << endl << endl;
 /*
     // TODO sample predictive prior
     Row pars;
@@ -426,12 +434,11 @@ bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
     ss << "update sets set status = 'D', ";
     for (int j = 0; j < npar(); ++j) ss << ", " << _model_pars[j]->get_short_name() << "_dv = " << _model_pars[j]->get_doubled_variance(t);
     ss << " where smcSet = " << t << ";";
-    _db_execute_stringstream(db, ss);
+    return _db_execute_stringstream(db, ss);
 }
 
 
-bool AbcSmc::read_SMC_sets_from_database (vector< vector<int> > &serials) {
-    sqdb::Db db(_database_filename.c_str());
+bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
     stringstream ss;
 
     // make sure database looks intact
@@ -440,57 +447,48 @@ bool AbcSmc::read_SMC_sets_from_database (vector< vector<int> > &serials) {
         return false;
     }
 
+    cerr << "BLARG\n";
     // make sure set t is a completed set
     QueryStr qstr;
-    Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT("select count(*) from jobs where smcSet = %d;"), t));
-    int set_size = 0;
-    if (s.Next()) {
-        set_size = s.GetField(0); 
-    } else {
-        cerr << "ERROR: Failed to read SMC set from database because set size query failed.\n";
-        return false;
-    }
-
-    s = db.Query(qstr.Format(SQDB_MAKE_TEXT("select count(*) from jobs where smcSet = %d and status = 'D';"), t));
-    int completed_set_size = 0; 
-    if (s.Next()) {
-        completed_set_size = s.GetField(0);
-    } else {
-        cerr << "ERROR: Failed to read SMC set from database because completed set size query failed.\n";
-        return false;
-    }
-
-    if (set_size != completed_set_size) {
-        cerr << "ERROR: Failed to read SMC set from database because not all particles are complete in set " << t << "\n";
-        return false;
-    } 
-// join all three tables for rows with smcSet = t, slurp and store values
- 
-    Y_orig.resize( set_size, npar() );
-    X_orig.resize( set_size, nmet() );
-
-    string select_str = "select J.serial, " + _build_sql_select_par_string() + ", " + _build_sql_select_met_string() 
-                        + "from jobs J, metrics M, parameters P where J.serial = M.serial and J.serial = P.serial "
-                        + "and J.smcSet = %d;";
-
+    Statement s = db.Query("select smcSet, count(*), COUNT(case status when 'D' then 1 else null end) from jobs group by smcSet order by smcSet;");
     serials.clear();
-    serials.resize( set_size );
+    _particle_parameters.clear();
+    _particle_metrics.clear();
+    while (s.Next()) {
+    cerr << "BLARG2\n";
+        int t = s.GetField(0);
+        int set_size = s.GetField(1);
+        int completed_set_size = s.GetField(2);
+        if (set_size != completed_set_size) {
+            cerr << "ERROR: Failed to read SMC set from database because not all particles are complete in set " << t << "\n";
+            return false;
+        } 
+        _particle_parameters.push_back( Mat2D::Zero( completed_set_size, npar() ) );
+        _particle_metrics.push_back( Mat2D::Zero( completed_set_size, nmet() ) );
+
+        // join all three tables for rows with smcSet = t, slurp and store values
+        string select_str = "select J.serial, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string() 
+                            + "from jobs J, metrics M, parameters P where J.serial = M.serial and J.serial = P.serial "
+                            + "and J.smcSet = %d;";
+
+        serials.push_back( vector<int>(completed_set_size) );
 
 cerr << "select particle: " << select_str << endl;
-    s = db.Query(qstr.Format(SQDB_MAKE_TEXT(select_str.c_str()), t));
+        Statement s2 = db.Query(qstr.Format(SQDB_MAKE_TEXT(select_str.c_str()), t));
 
-    int particle_counter = 0;
-    while (s.Next()) {
-        // not a header and #fields is correct
-        // first two columns are set num (t) and iteration
-        int offset = 1; // first value is J.serial
-        serials[particle_counter] = s.GetField(0);
-        for(int i=offset; i < offset + npar(); i++) Y_orig(particle_counter,i-offset) = (double) s.GetField(i); 
-        offset += npar();
-        for(int i=offset; i < offset + nmet(); i++) X_orig(particle_counter,i-offset) = (double) s.GetField(i); 
-
+        int particle_counter = 0;
+        while (s2.Next()) {
+            // not a header and #fields is correct
+            // first two columns are set num (t) and iteration
+            int offset = 2; // first values are J.serial, J.rank
+            serials[t][particle_counter] = s2.GetField(0);
+cerr << "predictive prior value: " << (int) s2.GetField(1) << endl;
+            for(int i=offset; i < offset + npar(); i++) _particle_parameters[t](particle_counter,i-offset) = (double) s2.GetField(i); 
+            offset += npar();
+            for(int i=offset; i < offset + nmet(); i++) _particle_metrics[t](particle_counter,i-offset) = (double) s2.GetField(i); 
+        }
     }
-
+ 
     return true;
 }
 
@@ -817,7 +815,13 @@ string AbcSmc::_build_sql_select_met_string() {
 
 
 bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
-    bool success = db.Query(ss.str().c_str()).Next();
+//    cerr << ss.str() << endl;
+    bool success = false;
+    try {
+        success = db.Query(ss.str().c_str()).Next();
+    } catch (const Exception& e) {
+        cerr << e.GetErrorMsg() << endl;
+    }
     ss.str(string());
     ss.clear();
     return success;
@@ -832,27 +836,29 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         ss << "create table sets( smcSet int primary key asc, status text, " << _build_sql_create_par_string("_dv") << ");";
         _db_execute_stringstream(db, ss);
 
-        ss << "create table jobs( serial int primary key asc, smcSet int, jobId int, startTime int, duration int, status text, posterior int, weight real );";
+        ss << "create table jobs( serial int primary key asc, smcSet int, jobId int, startTime int, duration int, status text, posterior int );";
         _db_execute_stringstream(db, ss);
 
-        ss << "create table parameters( serial int primary key, " << _build_sql_create_par_string() << ");";
+        ss << "create table parameters( serial int primary key, " << _build_sql_create_par_string("") << ");";
         _db_execute_stringstream(db, ss);
 
-        ss << "create table metrics( serial int primary key, " << _build_sql_select_met_string() << ");";
+        ss << "create table metrics( serial int primary key, " << _build_sql_create_met_string("") << ");";
         _db_execute_stringstream(db, ss);
 
     } else {
         return false;
     }
 
+    db.BeginTransaction();
+    ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
+    _db_execute_stringstream(db, ss);
+
     Row pars;
     for (int i = 1; i<=_num_particles; i++) {
         pars = sample_priors(RNG);
         QueryStr qstr;
-        ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
-        _db_execute_stringstream(db, ss);
 
-        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into jobs values ( %d, 0, %d, %d, NULL, 'Q', NULL, NULL );"), i, i, time(NULL))).Next();
+        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into jobs values ( %d, 0, %d, %d, NULL, 'Q', -1 );"), i, i, time(NULL))).Next();
 
         Statement s = db.Query("select last_insert_rowid() from jobs;");
         s.Next();
@@ -864,6 +870,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         ss << "insert into metrics values ( " << rowid; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
         _db_execute_stringstream(db, ss);
     }
+    db.CommitTransaction();
     return true;
 }
 
@@ -956,7 +963,7 @@ bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
     ss.str(string()); ss.clear();
 
     ss << "select ";
-    ss << _build_sql_select_par_string();
+    ss << _build_sql_select_par_string("");
     //for (int i = 0; i<npar()-1; i++) { ss << _model_pars[i]->get_short_name() << ", "; }
     //ss << _model_pars.back()->get_short_name() << " ";
     ss << "from parameters P, jobs where P.serial = jobs.serial and" << sql_job_tag << ";";
@@ -1079,7 +1086,9 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
 
     vector<int>::iterator first = ranking.begin();
     vector<int>::iterator last  = ranking.begin() + _predictive_prior_size;
+cerr << "3\n";
     vector<int> sample(first, last);
+cerr << _predictive_prior.size() << " " << t << "\n";
     _predictive_prior[t] = sample;
 
     cerr << "Best five:\n";

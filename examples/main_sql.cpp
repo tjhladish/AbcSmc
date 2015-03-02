@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
         // if DB exists and contains a completed set, run pls and sample for next set:
         abc->process_database(RNG); // TODO
         // else:
-        abc->build_database(RNG);
+        //abc->build_database(RNG);
     } else {
         abc->set_simulator(simulator);
         int smc_iteration = 0;

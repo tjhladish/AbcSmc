@@ -9,6 +9,10 @@
 enum PriorType {UNIFORM, NORMAL, PSEUDO};
 enum NumericType {INT, FLOAT};
 
+enum AbcStatus {INCOMPLETE_SET, TOO_FEW_SETS, ABC_COMPLETE};
+enum SetStatus {INCOMPLETE_PARTICLES, UNDEFINED_POSTERIOR, UNSAMPLED_PRIOR, SET_COMPLETE};
+enum ParticleStatus {UNDEFINED_PARAMETERS, UNDEFINED_METRICS, PARTICLE_COMPLETE};
+
 class Parameter {
     public:
         Parameter() {};
@@ -96,6 +100,59 @@ class Metric {
 };
 
 
+class Particle {
+//enum ParticleStatus {UNDEFINED_PARAMETERS, UNDEFINED_METRICS, PARTICLE_COMPLETE};
+    public:
+        Particle() { 
+            status = UNDEFINED_PARAMETERS; serial = -1; posterior_rank = -1; weight = -1; 
+        }
+        Particle(int s):serial(s) { 
+            status = UNDEFINED_PARAMETERS; posterior_rank = -1; weight = -1;
+        }
+        Particle(int s, std::vector<long double> p):serial(s), pars(p) { 
+            status = UNDEFINED_METRICS; posterior_rank = -1; weight = -1;
+        }
+        Particle(int s, std::vector<long double> p, vector<long double> m):serial(s), pars(p), mets(m) { 
+            status = PARTICLE_COMPLETE; posterior_rank = -1; weight = -1;
+        }
+        Particle(int s, std::vector<long double> p, vector<long double> m, int r, double w):serial(s), pars(p), mets(m), posterior_rank(r), weight(w) { 
+            status = PARTICLE_COMPLETE;
+        }
+
+        std::vector<long double> get_pars() const { return pars; }
+        std::vector<long double> get_mets() const { return mets; }
+        void set_pars(std::vector<long double> p) { assert(status==UNDEFINED_PARAMETERS); pars = p; status = UNDEFINED_METRICS; }
+        void set_mets(std::vector<long double> m) { assert(status==UNDEFINED_METRICS);    mets = m; status = PARTICLE_COMPLETE; }
+        ParticleStatus get_status() const { return status; }
+        void set_posterior_rank(int r) { posterior_rank = r; }
+        void set_weight(int w) { weight = w; }
+        bool in_posterior() const { return posterior_rank >= 0; }
+        int get_posterior_rank() const { return posterior_rank; }
+
+    private:
+        int serial;
+        std::vector<long double> pars;
+        std::vector<long double> mets;
+        int posterior_rank;
+        double weight;
+        ParticleStatus status;
+};
+
+
+class ParticleSet {
+//enum AbcStatus {INCOMPLETE_SET, TOO_FEW_SETS, ABC_COMPLETE};
+//enum SetStatus {UNSAMPLED_PRIOR, INCOMPLETE_PARTICLES, UNDEFINED_POSTERIOR, SET_COMPLETE};
+    public:
+        ParticleSet() { status = UNSAMPLED_PRIOR; }
+        SetStatus get_status() const { return status; }
+        void set_status(SetStatus s) { status = s; } 
+
+    private:
+        std::vector<Particle*> particles;
+        AbcStatus status;
+};
+
+
 class AbcSmc {
     public:
         AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
@@ -124,7 +181,9 @@ class AbcSmc {
         bool parse_config(std::string conf_filename);
         void report_convergence_data(int);
 
+
         bool build_database(const gsl_rng* RNG);
+        bool process_database(const gsl_rng* RNG);
         bool read_SMC_set_from_database (int t, Mat2D &X_orig, Mat2D &Y_orig);
 
         bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
@@ -181,9 +240,16 @@ class AbcSmc {
         bool read_particle_set( int t, Mat2D &X_orig, Mat2D &Y_orig );
         bool read_predictive_prior( int t );
 
-        string _build_sql_select_par_string();
+        string _build_sql_select_par_string(string tag);
         string _build_sql_select_met_string();
         string _build_sql_create_par_string(string tag);
+        string _build_sql_create_met_string(string tag);
+
+        bool _db_execute_stringstream(sqdb::Db &db, stringstream &ss);
+
+        bool _update_sets_table(sqdb::Db &db, int t);
+        bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
+
 
         Col euclidean( Row obs_met, Mat2D sim_met ); 
 
