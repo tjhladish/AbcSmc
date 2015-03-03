@@ -36,10 +36,12 @@ libabc_mpi:
 libabc_ubuntu_mpi:
 	$(MAKE) -C $(ABCDIR) -f Makefile all_ubuntu_mpi
 
+abc_sql: libabc_no_mpi main_sql.cpp
+	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_sql.cpp -o abc_simulator_sql $(ABC_LIB) $(GSL_LIB)
+
 abc: libabc_no_mpi main_exec.cpp main_simptr.cpp
 	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_exec.cpp -o abc_simulator_executable $(ABC_LIB) $(GSL_LIB)
 	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_simptr.cpp -o abc_simulator_pointer $(ABC_LIB) $(GSL_LIB)
-	$(CC) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_sql.cpp -o abc_simulator_sql $(ABC_LIB) $(GSL_LIB)
 
 dice: dice_game.cpp
 	$(CC) $(CFLAGS) $(GSL_INC) dice_game.cpp -o dice_game $(GSL_LIB)

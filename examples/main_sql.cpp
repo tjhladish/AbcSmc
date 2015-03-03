@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
     } else {
         abc->set_simulator(simulator);
         int smc_iteration = 0;
-        abc->simulate_database(smc_iteration, atoi(argv[2]));
+        abc->simulate_next_particle();
     }
     return 0;
 }

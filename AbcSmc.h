@@ -9,9 +9,9 @@
 enum PriorType {UNIFORM, NORMAL, PSEUDO};
 enum NumericType {INT, FLOAT};
 
-enum AbcStatus {INCOMPLETE_SET, TOO_FEW_SETS, ABC_COMPLETE};
-enum SetStatus {INCOMPLETE_PARTICLES, UNDEFINED_POSTERIOR, UNSAMPLED_PRIOR, SET_COMPLETE};
-enum ParticleStatus {UNDEFINED_PARAMETERS, UNDEFINED_METRICS, PARTICLE_COMPLETE};
+//enum AbcStatus {INCOMPLETE_SET, TOO_FEW_SETS, ABC_COMPLETE};
+//enum SetStatus {INCOMPLETE_PARTICLES, UNDEFINED_POSTERIOR, UNSAMPLED_PRIOR, SET_COMPLETE};
+//enum ParticleStatus {UNDEFINED_PARAMETERS, UNDEFINED_METRICS, PARTICLE_COMPLETE};
 
 class Parameter {
     public:
@@ -99,7 +99,7 @@ class Metric {
         double obs_val;
 };
 
-
+/*
 class Particle {
 //enum ParticleStatus {UNDEFINED_PARAMETERS, UNDEFINED_METRICS, PARTICLE_COMPLETE};
     public:
@@ -150,7 +150,7 @@ class ParticleSet {
     private:
         std::vector<Particle*> particles;
         AbcStatus status;
-};
+};*/
 
 
 class AbcSmc {
@@ -187,9 +187,9 @@ class AbcSmc {
         bool read_SMC_set_from_database (int t, Mat2D &X_orig, Mat2D &Y_orig);
 
         bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
-        bool do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring, Row &pars);
-        bool do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring);
-        bool simulate_database(const int smc_iteration, const int particle_id);
+        bool do_sql(sqdb::Db &db, stringstream &ss1, stringstream &ss2, int &serial, Row &pars);
+        bool do_sql(sqdb::Db &db, stringstream &ss1, stringstream &ss2);
+        bool simulate_next_particle();
 
         void run(const gsl_rng* RNG) { run(_executable_filename, RNG); }; 
         void run(std::string executable, const gsl_rng* RNG); 

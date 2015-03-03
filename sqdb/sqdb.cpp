@@ -7,6 +7,9 @@
 
 #include "sqdb.h"
 
+#include <iostream>
+#include <unistd.h>
+
 using namespace sqdb;
 
 Exception::Exception(sqlite3* db)
@@ -253,23 +256,25 @@ Statement& Statement::operator=(const Statement& x)
   return *this;
 }
 
-bool Statement::Next()
-{
+bool Statement::Next() {
   assert(m_stmt);
-  int ret = sqlite3_step(m_stmt);
-  m_needReset = true;
-  if ( ret == SQLITE_DONE )
-  {
-    return false;
+  int ret = SQLITE_BUSY;
+  
+  while (ret == SQLITE_BUSY) {
+      ret = sqlite3_step(m_stmt);
+      m_needReset = true;
+      if ( ret == SQLITE_DONE ) {
+        return false;
+      } else if ( ret == SQLITE_ROW ) {
+        return true;
+      } else if ( ret == SQLITE_BUSY ) {
+        sleep(1);
+        continue;  
+      } else {
+         throw Exception(m_db, ret);
+      }
   }
-  else if ( ret == SQLITE_ROW ) 
-  {
-    return true;
-  }
-  else
-  {
-    CHECK(m_db, ret);
-  }
+  return false;
 }
 
 Convertor Statement::GetField(int field) const

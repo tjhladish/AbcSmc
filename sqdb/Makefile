@@ -1,5 +1,5 @@
 sqlite3.o: sqlite3.c sqlite3.h
-	gcc -g -c sqlite3.c
+	gcc -g -c sqlite3.c -DSQLITE_THREADSAFE=2
 
 sqdb.o: sqdb.cpp sqdb.h
 	g++ -g -c sqdb.cpp

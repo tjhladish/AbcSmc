@@ -305,7 +305,25 @@ cerr << "fields size, nmet, npar: " << fields.size() << " " << nmet() << " " << 
 
 }
 
+/*
 
+    getNextParictuleToSimulate() 
+    -> database empty
+    or
+    --> here is one .. 
+    or 
+    --> all compete..
+
+
+    (all compete ) -> PLS .., create new particles. . 
+    (here is one)  -> do simulation
+    (empty)         -> create database, and run the first one .
+ 
+
+
+
+*/
+/*
 void AbcSmc::run(string executable, const gsl_rng* RNG) {
     // NEED TO ADD SANITY CHECKS HERE
     _executable_filename = executable;
@@ -316,16 +334,21 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
     cerr << std::setprecision(PREC);
 
     if (_mp->mpi_rank == 0) {
+        // read in database here
+        // resize the following if they need to be bigger based on JSON file
         _particle_parameters.resize( _num_smc_sets, Mat2D::Zero(_num_particles, npar()) );
         _particle_metrics.resize( _num_smc_sets, Mat2D::Zero(_num_particles, nmet()) );
         _weights.resize(_num_smc_sets);
+        _predictive_prior.clear(); // moved up into this mpi_root block
+        _predictive_prior.resize(_num_smc_sets); // moved up into this mpi_root block
     }
 
-    _predictive_prior.clear();
-    _predictive_prior.resize(_num_smc_sets);
-
     for (int t = 0; t<_num_smc_sets; t++) {
-
+        // if status == unsampled prior, then sample prior; change status to incomplete particles
+        // if status == incomplete particles, simulate particles; change status to undefined posterior
+        // if status == undefined posterior, filter particles; change status to unweighted posterior
+        // if status == unweighted posterior, weight particles; change status to complete set
+        // if status == complete set, report convergence data; continue
 #ifdef USING_MPI
         assert(_mp->mpi_size > 1);
         bool success = _populate_particles_mpi( t, _particle_metrics[t], _particle_parameters[t], RNG );
@@ -354,7 +377,7 @@ void AbcSmc::run(string executable, const gsl_rng* RNG) {
         }
     }
 }
-
+*/
 void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
     stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2 
                                                       << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
@@ -492,7 +515,7 @@ cerr << "predictive prior value: " << (int) s2.GetField(1) << endl;
     return true;
 }
 
-
+/*
 bool AbcSmc::read_particle_set(int t, Mat2D &X_orig, Mat2D &Y_orig ) {
     string pad = t < 10 ? "0" : "";
     string existing_particle_filename = _particle_filename + "." + pad + toString(t);
@@ -541,8 +564,8 @@ cerr << "fields size, nmet, npar: " << fields.size() << " " << nmet() << " " << 
     cerr << "Loaded particle set " << t << endl;
     return true;
 }
-
-
+*/
+/*
 bool AbcSmc::read_predictive_prior( int t ) {
     vector<int> ranking;
 
@@ -586,8 +609,8 @@ bool AbcSmc::read_predictive_prior( int t ) {
     cerr << "Loaded predictive prior set " << t << endl;
     return true;
 }
-
-
+*/
+/*
 bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
     // this is silly -- only 'true' is ever returned from this function
     int continue_flag = (int) true;
@@ -607,7 +630,7 @@ bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const 
 
     return true;
 }
-
+*/
 
 void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
 #ifdef USING_MPI
@@ -745,6 +768,7 @@ void AbcSmc::_particle_worker() {
 
 
 bool AbcSmc::_run_simulator(Row &par, Row &met) {
+cerr << par << endl;
     bool particle_success = true;
     if (use_simulator) {
         vector<float_type> met_vec = _simulator( as_vector(par), _mp );
@@ -875,33 +899,50 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 }
 
 
-bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring, Row &pars) {
+bool AbcSmc::do_sql(sqdb::Db &db, stringstream &sql_ss, stringstream &job_ss, int &serial, Row &pars) {
+//bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring, Row &pars) {
     bool db_success = false;
     int attempts = 0;
     const int max_attempts = 1000;
     while (not db_success and attempts < max_attempts) {
         attempts++;
         try {
-            db.BeginTransaction();
-            cerr << "Attempting: " << sqlstring << endl;
-            Statement s = db.Query(sqlstring);
-            if (s.Next()) {
-                if (npar() == pars.size()) { // sometimes we are getting pars.  pars is empty if not
-                    for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i);
+            //db.BeginTransaction();
+            db.Query("BEGIN EXCLUSIVE;").Next();
+
+            if (npar() == pars.size() and pars.size() > 0) { // sometimes we are getting pars.  pars is empty if not
+                Statement s = db.Query(sql_ss.str().c_str());
+                cerr << "Attempting: " << sql_ss.str() << endl;
+                if (s.Next()) {
+                    serial = (int) s.GetField(0);
+                    for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i+1);
+
+                    job_ss << serial << ";";
+                    cerr << "Attempting: " << job_ss.str() << endl;
+                    db.Query(job_ss.str().c_str()).Next(); // update jobs table
+                    db_success = true;
                 }
+            } else if (pars.size() == 0) { 
+                cerr << "Attempting: " << sql_ss.str() << endl;
+                db.Query(sql_ss.str().c_str()).Next(); // update metrics table
+                cerr << "Attempting: " << job_ss.str() << endl;
+                db.Query(job_ss.str().c_str()).Next(); // update jobs table
+                db_success = true;
+            } else {
+                cerr << "ERROR: pars.size() != npar()\n";
+                exit(-215);
             }
 
-            db.Query(jobstring).Next(); // update jobs table
-
             db.CommitTransaction();
-            db_success = true;
             break;
         } catch (const Exception& e) {
             db.RollbackTransaction();
+            cerr << "CAUGHT E: "; 
             cerr << e.GetErrorMsg() << endl;
             attempts++;
         } catch (const exception& e) {
             db.RollbackTransaction();
+            cerr << "CAUGHT e: "; 
             cerr << e.what() << endl;
             attempts++;
         }
@@ -912,9 +953,10 @@ bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring, 
 }
 
 
-bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring) {
-    Row dummy;
-    return do_sql(db, sqlstring, jobstring, dummy);
+bool AbcSmc::do_sql(sqdb::Db &db, stringstream &ss1, stringstream &ss2) {
+    int intdummy;
+    Row rowdummy;
+    return do_sql(db, ss1, ss2, intdummy, rowdummy);
 }
 
 
@@ -953,73 +995,46 @@ bool AbcSmc::sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, s
 }
 
 
-bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
+bool AbcSmc::simulate_next_particle() {
+//bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
+    sqdb::Db db(_database_filename.c_str());
     Row pars(npar());
     Row mets(nmet());
 
-    stringstream ss;
-    ss << " jobs.smcSet = " << smc_set << " and jobs.jobID = " << particle_id;
-    const string sql_job_tag = ss.str();
-    ss.str(string()); ss.clear();
-
-    ss << "select ";
-    ss << _build_sql_select_par_string("");
-    //for (int i = 0; i<npar()-1; i++) { ss << _model_pars[i]->get_short_name() << ", "; }
-    //ss << _model_pars.back()->get_short_name() << " ";
-    ss << "from parameters P, jobs where P.serial = jobs.serial and" << sql_job_tag << ";";
-    const string selectParametersString = ss.str();
-    const char* selectParametersStatement = selectParametersString.c_str();
-    ss.str(string()); ss.clear();
+    stringstream select_ss;
+    select_ss << "select J.serial, " << _build_sql_select_par_string("");
+    select_ss << "from parameters P, jobs J where P.serial = J.serial and J.status = 'Q' limit 1;";
 
     const int start_time = time(0);
     // build jobs update statement to indicate job is running
-    ss << "update jobs set startTime = " << start_time << ", status = 'R' where" << sql_job_tag << ";";
-    const string jobRunningString = ss.str();
-    const char* jobRunningStatement = jobRunningString.c_str();
-    ss.str(string()); ss.clear();
+    stringstream update_ss;
+    update_ss << "update jobs set startTime = " << start_time << ", status = 'R' where serial = "; // we don't know the serial yet
 
-    sqdb::Db db(_database_filename.c_str());
-    string job_status;
-    bool ok_to_continue = true;
-    bool particle_done = sql_particle_already_done(db, sql_job_tag, job_status);
-    if (particle_done) {
-        cerr << "Particle is done\n";
-        ok_to_continue = false;
-    } else {
-        if (job_status == "R") {
-            cerr << "Running job with tag " << sql_job_tag << " redundantly." << endl;
-        }
-        ok_to_continue = do_sql(db, selectParametersStatement, jobRunningStatement, pars);
-    }
-
+    int serial;
+    bool ok_to_continue = do_sql(db, select_ss, update_ss, serial, pars);
     if (ok_to_continue) {
         bool success = _run_simulator(pars, mets);
         if (not success) exit(-209);
 
-        ss << "update metrics set ";
-        for (int i = 0; i<nmet()-1; i++) { ss << _model_mets[i]->get_short_name() << "=" << mets[i] << ", "; }
-        ss << _model_mets.back()->get_short_name() << "=" << mets.rightCols(1) << " ";
-        ss << "where serial in (select serial from jobs where" << sql_job_tag << ");";
-        const string updateMetricsString = ss.str();
-        const char* updateMetricsStatement = updateMetricsString.c_str();
-        cerr << updateMetricsStatement << endl;
-        ss.str(string()); ss.clear();
+        stringstream update_mets_ss;
+        update_mets_ss << "update metrics set ";
+        for (int i = 0; i<nmet()-1; i++) { update_mets_ss << _model_mets[i]->get_short_name() << "=" << mets[i] << ", "; }
+        update_mets_ss << _model_mets.back()->get_short_name() << "=" << mets.rightCols(1) << " ";
+        update_mets_ss << "where serial = " << serial << ";";
 
         // build jobs update statement to indicate job is running
-        ss << "update jobs set duration = " << time(0) - start_time << ", status = 'D' where" << sql_job_tag << ";";
-        const string jobDoneString = ss.str();
-        const char* jobDoneStatement = jobDoneString.c_str();
-        ss.str(string()); ss.clear();
+        stringstream update_jobs_ss;
+        update_jobs_ss << "update jobs set duration = " << time(0) - start_time << ", status = 'D' where serial = " << serial << ";";
 
-        do_sql(db, updateMetricsStatement, jobDoneStatement);
+        do_sql(db, update_mets_ss, update_jobs_ss);
     } else {
-        cerr << "Parameter selection failed.  Particle may already be complete.\n";
+        cerr << "Parameter selection from database failed.\n";
     }
 
     return true;
 }
 
-
+/*
 bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
     bool success = true;
     if (resume() and read_particle_set( t, X_orig, Y_orig )) {
@@ -1041,7 +1056,7 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
     }
     return success;
 }
-
+*/
 
 void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     // Run PLS
