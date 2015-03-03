@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
     } else {
         abc->set_simulator(simulator);
         int smc_iteration = 0;
-        abc->simulate_next_particle();
+        abc->simulate_next_particles(10);
     }
     return 0;
 }

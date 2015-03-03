@@ -187,9 +187,10 @@ class AbcSmc {
         bool read_SMC_set_from_database (int t, Mat2D &X_orig, Mat2D &Y_orig);
 
         bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
-        bool do_sql(sqdb::Db &db, stringstream &ss1, stringstream &ss2, int &serial, Row &pars);
-        bool do_sql(sqdb::Db &db, stringstream &ss1, stringstream &ss2);
-        bool simulate_next_particle();
+        bool fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serial, vector<Row> &par_mat); 
+        bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
+
+        bool simulate_next_particles(int n);
 
         void run(const gsl_rng* RNG) { run(_executable_filename, RNG); }; 
         void run(std::string executable, const gsl_rng* RNG); 

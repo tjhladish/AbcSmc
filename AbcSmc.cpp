@@ -899,64 +899,68 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 }
 
 
-bool AbcSmc::do_sql(sqdb::Db &db, stringstream &sql_ss, stringstream &job_ss, int &serial, Row &pars) {
-//bool AbcSmc::do_sql(sqdb::Db &db, const char* sqlstring, const char* jobstring, Row &pars) {
+bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serials, vector<Row> &par_mat) {
     bool db_success = false;
-    int attempts = 0;
-    const int max_attempts = 1000;
-    while (not db_success and attempts < max_attempts) {
-        attempts++;
-        try {
-            //db.BeginTransaction();
-            db.Query("BEGIN EXCLUSIVE;").Next();
+    try {
+        //db.BeginTransaction();
+        db.Query("BEGIN EXCLUSIVE;").Next();
 
-            if (npar() == pars.size() and pars.size() > 0) { // sometimes we are getting pars.  pars is empty if not
-                Statement s = db.Query(sql_ss.str().c_str());
-                cerr << "Attempting: " << sql_ss.str() << endl;
-                if (s.Next()) {
-                    serial = (int) s.GetField(0);
-                    for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i+1);
+        Statement s = db.Query(select_pars_ss.str().c_str());
+        cerr << "Attempting: " << select_pars_ss.str() << endl;
+        while (s.Next()) {
+            Row pars(npar());
+            const int serial = (int) s.GetField(0); 
+            serials.push_back( serial );
+            for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i+1);
+            par_mat.push_back(pars);
 
-                    job_ss << serial << ";";
-                    cerr << "Attempting: " << job_ss.str() << endl;
-                    db.Query(job_ss.str().c_str()).Next(); // update jobs table
-                    db_success = true;
-                }
-            } else if (pars.size() == 0) { 
-                cerr << "Attempting: " << sql_ss.str() << endl;
-                db.Query(sql_ss.str().c_str()).Next(); // update metrics table
-                cerr << "Attempting: " << job_ss.str() << endl;
-                db.Query(job_ss.str().c_str()).Next(); // update jobs table
-                db_success = true;
-            } else {
-                cerr << "ERROR: pars.size() != npar()\n";
-                exit(-215);
-            }
-
-            db.CommitTransaction();
-            break;
-        } catch (const Exception& e) {
-            db.RollbackTransaction();
-            cerr << "CAUGHT E: "; 
-            cerr << e.GetErrorMsg() << endl;
-            attempts++;
-        } catch (const exception& e) {
-            db.RollbackTransaction();
-            cerr << "CAUGHT e: "; 
-            cerr << e.what() << endl;
-            attempts++;
+            //job_ss << serial << ";";
+            string job_str = update_jobs_ss.str() + to_string(serial) + ";";
+            cerr << "Attempting: " << job_str << endl;
+            db.Query(job_str.c_str()).Next(); // update jobs table
         }
-        sleep(1);
+
+        db.CommitTransaction();
+        db_success = true;
+    } catch (const Exception& e) {
+        db.RollbackTransaction();
+        cerr << "CAUGHT E: "; 
+        cerr << e.GetErrorMsg() << endl;
+    } catch (const exception& e) {
+        db.RollbackTransaction();
+        cerr << "CAUGHT e: "; 
+        cerr << e.what() << endl;
     }
 
     return db_success;
 }
 
 
-bool AbcSmc::do_sql(sqdb::Db &db, stringstream &ss1, stringstream &ss2) {
-    int intdummy;
-    Row rowdummy;
-    return do_sql(db, ss1, ss2, intdummy, rowdummy);
+bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings) {
+    bool db_success = false;
+    db.Query("BEGIN EXCLUSIVE;").Next();
+
+    try {
+        for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
+            cerr << "Attempting: " << update_metrics_strings[i] << endl;
+            db.Query(update_metrics_strings[i].c_str()).Next(); // update metrics table
+            cerr << "Attempting: " << update_jobs_strings[i] << endl;
+            db.Query(update_jobs_strings[i].c_str()).Next(); // update jobs table
+        }
+
+        db_success = true;
+        db.CommitTransaction();
+    } catch (const Exception& e) {
+        db.RollbackTransaction();
+        cerr << "CAUGHT E: "; 
+        cerr << e.GetErrorMsg() << endl;
+    } catch (const exception& e) {
+        db.RollbackTransaction();
+        cerr << "CAUGHT e: "; 
+        cerr << e.what() << endl;
+    }
+
+    return db_success;
 }
 
 
@@ -995,38 +999,49 @@ bool AbcSmc::sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, s
 }
 
 
-bool AbcSmc::simulate_next_particle() {
+bool AbcSmc::simulate_next_particles(const int n = 1) {
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
     sqdb::Db db(_database_filename.c_str());
-    Row pars(npar());
-    Row mets(nmet());
+    vector<Row> par_mat;  //( n, Row(npar()) ); -- expected size, if n rows are available
+    vector<Row> met_mat;  //( n, Row(nmet()) );
 
     stringstream select_ss;
     select_ss << "select J.serial, " << _build_sql_select_par_string("");
-    select_ss << "from parameters P, jobs J where P.serial = J.serial and J.status = 'Q' limit 1;";
+    select_ss << "from parameters P, jobs J where P.serial = J.serial and J.status = 'Q' limit " << n << ";";
 
-    const int start_time = time(0);
+    const int overall_start_time = time(0);
     // build jobs update statement to indicate job is running
     stringstream update_ss;
-    update_ss << "update jobs set startTime = " << start_time << ", status = 'R' where serial = "; // we don't know the serial yet
+    update_ss << "update jobs set startTime = " << overall_start_time << ", status = 'R' where serial = "; // we don't know the serial yet
 
-    int serial;
-    bool ok_to_continue = do_sql(db, select_ss, update_ss, serial, pars);
+    vector<int> serials;
+    bool ok_to_continue = fetch_particle_parameters(db, select_ss, update_ss, serials, par_mat);
+    vector<string> update_metrics_strings;
+    vector<string> update_jobs_strings;
+    stringstream ss;
     if (ok_to_continue) {
-        bool success = _run_simulator(pars, mets);
-        if (not success) exit(-209);
+        for (unsigned int i = 0; i < par_mat.size(); ++i) {
+            const int start_time = time(0);
+            const int serial = serials[i];
+            met_mat.push_back( Row(nmet()) );
+            bool success = _run_simulator(par_mat[i], met_mat[i]);
+            if (not success) exit(-209);
 
-        stringstream update_mets_ss;
-        update_mets_ss << "update metrics set ";
-        for (int i = 0; i<nmet()-1; i++) { update_mets_ss << _model_mets[i]->get_short_name() << "=" << mets[i] << ", "; }
-        update_mets_ss << _model_mets.back()->get_short_name() << "=" << mets.rightCols(1) << " ";
-        update_mets_ss << "where serial = " << serial << ";";
+            stringstream ss;
+            ss << "update metrics set ";
+            for (int j = 0; j<nmet()-1; j++) { ss << _model_mets[j]->get_short_name() << "=" << met_mat[i][j] << ", "; }
+            ss << _model_mets.back()->get_short_name() << "=" << met_mat[i].rightCols(1) << " ";
+            ss << "where serial = " << serial << ";";
+            update_metrics_strings.push_back(ss.str());
+            ss.str(string()); ss.clear();
+                    
 
-        // build jobs update statement to indicate job is running
-        stringstream update_jobs_ss;
-        update_jobs_ss << "update jobs set duration = " << time(0) - start_time << ", status = 'D' where serial = " << serial << ";";
-
-        do_sql(db, update_mets_ss, update_jobs_ss);
+            // build jobs update statement to indicate job is running
+            ss << "update jobs set startTime = " << start_time << ", duration = " << time(0) - start_time << ", status = 'D' where serial = " << serial << ";";
+            update_jobs_strings.push_back(ss.str());
+            ss.str(string()); ss.clear();
+        }
+        update_particle_metrics(db, update_metrics_strings, update_jobs_strings);
     } else {
         cerr << "Parameter selection from database failed.\n";
     }
