@@ -183,12 +183,11 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
 
     cerr << std::setprecision(PREC);
 
-    _particle_parameters.clear(); //resize( _num_smc_sets, Mat2D::Zero(_num_particles, npar()) );
-    _particle_metrics.clear(); //resize( _num_smc_sets, Mat2D::Zero(_num_particles, nmet()) );
-    _weights.clear(); //resize(_num_smc_sets);
+    _particle_parameters.clear();
+    _particle_metrics.clear();
+    _weights.clear();
 
     _predictive_prior.clear();
-    //_predictive_prior.resize(_num_smc_sets);
 
     vector< vector<int> > serials;
     read_SMC_sets_from_database(db, serials);
@@ -197,12 +196,12 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
     report_convergence_data(t);
     cerr << endl << endl;
 
-    //db.begintransaction();
-    db.Query("BEGIN EXCLUSIVE;").Next();
-    //ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
-    //_db_execute_stringstream(db, ss);
-
     if (_num_smc_sets > t+1) {
+
+        db.Query("BEGIN EXCLUSIVE;").Next();
+        //ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
+        //_db_execute_stringstream(db, ss);
+
         stringstream ss;
         Row pars;
         const int last_serial = serials.back().back();
@@ -216,19 +215,17 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
                                                << i << ", " 
                                                << time(NULL) 
                                                << ", NULL, 'Q', -1 );";
-            //cerr << ss.str() << endl;
             _db_execute_stringstream(db, ss);
-            //db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into jobs values ( %d, 0, %d, %d, NULL, 'Q', -1 );"), i, i, time(NULL))).Next();
 
             ss << "insert into parameters values ( " << serial; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
-            //cerr << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
             ss << "insert into metrics values ( " << serial; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
-            //cerr << ss.str() << endl;
             _db_execute_stringstream(db, ss);
         }
         db.CommitTransaction();
+    } else {
+        cerr << "Database already contains " << _num_smc_sets << " complete sets.\n";
     }
 
     return true;
