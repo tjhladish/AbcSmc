@@ -102,6 +102,7 @@ public:
   Convertor(sqlite3* db, sqlite3_stmt* stmt, int field);
 
   operator int() const;
+  operator unsigned long() const;
   operator long long() const;
   operator double() const;
   operator SQDB_STD_STRING() const;
@@ -109,6 +110,7 @@ public:
   operator Blob() const;
 
   int GetInt() const;
+  unsigned long GetUnsignedLong() const;
   long long GetLongLong() const;
   double GetDouble() const;
   SQDB_STD_STRING GetString() const;

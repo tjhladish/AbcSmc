@@ -215,12 +215,16 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
                                                << i << ", " 
                                                << time(NULL) 
                                                << ", NULL, 'Q', -1 );";
+            //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
-            ss << "insert into parameters values ( " << serial; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
+            const unsigned long int seed = gsl_rng_get(RNG); // seed for particle 
+            ss << "insert into parameters values ( " << serial << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
+            //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
             ss << "insert into metrics values ( " << serial; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
+            //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
         }
         db.CommitTransaction();
@@ -720,11 +724,11 @@ void AbcSmc::_particle_worker() {
 }
 
 
-bool AbcSmc::_run_simulator(Row &par, Row &met) {
+bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed) {
 //cerr << par << endl;
     bool particle_success = true;
     if (use_simulator) {
-        vector<float_type> met_vec = _simulator( as_vector(par), _mp );
+        vector<float_type> met_vec = _simulator( as_vector(par), rng_seed, _mp );
         if ((signed) met_vec.size() != nmet()) {
             cerr << "ERROR: simulator function returned the wrong number of metrics: expected " << nmet() << ", received " << met_vec.size() << endl; 
             particle_success = false;
@@ -816,7 +820,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         ss << "create table jobs( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration int, status text, posterior int );";
         _db_execute_stringstream(db, ss);
 
-        ss << "create table parameters( serial int primary key, " << _build_sql_create_par_string("") << ");";
+        ss << "create table parameters( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
         _db_execute_stringstream(db, ss);
 
         ss << "create table metrics( serial int primary key, " << _build_sql_create_met_string("") << ");";
@@ -841,8 +845,9 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         Statement s = db.Query("select last_insert_rowid() from jobs;");
         s.Next();
         const int rowid = ((int) s.GetField(0)) - 1; // indexing should start at 0
-
-        ss << "insert into parameters values ( " << rowid; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
+        
+        const unsigned long int seed = gsl_rng_get(RNG); // seed for particle 
+        ss << "insert into parameters values ( " << rowid << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
         _db_execute_stringstream(db, ss);
 
         ss << "insert into metrics values ( " << rowid; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
@@ -853,7 +858,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 }
 
 
-bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serials, vector<Row> &par_mat) {
+bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds) {
     bool db_success = false;
     try {
         //db.BeginTransaction();
@@ -865,7 +870,10 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
             Row pars(npar());
             const int serial = (int) s.GetField(0); 
             serials.push_back( serial );
-            for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i+1);
+            const unsigned long int seed = (unsigned long int) s.GetField(1);
+            rng_seeds.push_back(seed);
+            const int field_offset = 2;
+            for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i+field_offset);
             par_mat.push_back(pars);
 
             //job_ss << serial << ";";
@@ -917,7 +925,7 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
     return db_success;
 }
 
-
+/*
 bool AbcSmc::sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status) {
     stringstream ss;
     ss << "select status from jobs where " << sql_job_tag << ";";
@@ -951,7 +959,7 @@ bool AbcSmc::sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, s
         return false;
     }
 }
-
+*/
 
 bool AbcSmc::simulate_next_particles(const int n = 1) {
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
@@ -960,7 +968,7 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     vector<Row> met_mat;  //( n, Row(nmet()) );
 
     stringstream select_ss;
-    select_ss << "select J.serial, " << _build_sql_select_par_string("");
+    select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
     select_ss << "from parameters P, jobs J where P.serial = J.serial and J.status = 'Q' limit " << n << ";";
 
     const int overall_start_time = time(0);
@@ -969,7 +977,8 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     update_ss << "update jobs set startTime = " << overall_start_time << ", status = 'R' where serial = "; // we don't know the serial yet
 
     vector<int> serials;
-    bool ok_to_continue = fetch_particle_parameters(db, select_ss, update_ss, serials, par_mat);
+    vector<unsigned long int> rng_seeds;
+    bool ok_to_continue = fetch_particle_parameters(db, select_ss, update_ss, serials, par_mat, rng_seeds);
     vector<string> update_metrics_strings;
     vector<string> update_jobs_strings;
     stringstream ss;
@@ -978,7 +987,7 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
             const int start_time = time(0);
             const int serial = serials[i];
             met_mat.push_back( Row(nmet()) );
-            bool success = _run_simulator(par_mat[i], met_mat[i]);
+            bool success = _run_simulator(par_mat[i], met_mat[i], rng_seeds[i]);
             if (not success) exit(-209);
 
             stringstream ss;
@@ -1027,6 +1036,11 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
 }
 */
 
+void AbcSmc::_print_particle_table_header() {
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
+}
+
 void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     // Run PLS
     // Box-Cox transform data -- TODO?
@@ -1073,26 +1087,43 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     vector<int> sample(first, last);
     _predictive_prior[t] = sample;
 
+    cerr << "Observed:\n";
+    _print_particle_table_header();
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << "---"; } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_obs_val(); } cerr << endl;
+
+    vector<Col> posterior_pars(npar(), Col(_predictive_prior_size));
+    vector<Col> posterior_mets(nmet(), Col(_predictive_prior_size));
+    for (unsigned int i = 0; i < sample.size(); ++i) {
+        const int idx = sample[i];
+        for (int j = 0; j < npar(); j++) posterior_pars[j](i) = Y_orig(idx, j);
+        for (int j = 0; j < nmet(); j++) posterior_mets[j](i) = X_orig(idx, j);
+    }
+
+    cerr << "Posterior means:\n";
+    _print_particle_table_header();
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << mean(posterior_pars[i]); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << mean(posterior_mets[i]); } cerr << endl;
+
+    cerr << "Posterior medians:\n";
+    _print_particle_table_header();
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << median(posterior_pars[i]); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << median(posterior_mets[i]); } cerr << endl;
+
     cerr << "Best five:\n";
-    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
+    _print_particle_table_header();
     for (int q=0; q<5; q++) {
         const int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } 
-        cerr << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } 
-        cerr << endl;
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
     }
 
     cerr << "Worst five:\n";
-    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
+    _print_particle_table_header();
     for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
         const int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } 
-        cerr << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } 
-        cerr << endl;
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
     }
 }
 
