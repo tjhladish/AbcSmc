@@ -969,7 +969,10 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
 
     stringstream select_ss;
     select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
-    select_ss << "from parameters P, jobs J where P.serial = J.serial and J.status = 'Q' limit " << n << ";";
+    select_ss << "from parameters P, jobs J where P.serial = J.serial ";
+    // Do already running jobs as well, if there are not enough queued jobs
+    // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
+    select_ss << "and J.status = 'Q'  or J.status = 'R' order by status limit " << n << ";";
 
     const int overall_start_time = time(0);
     // build jobs update statement to indicate job is running
