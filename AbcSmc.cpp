@@ -1039,6 +1039,22 @@ bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
 }
 */
 
+long double AbcSmc::calculate_nrmse(vector<Col> posterior_mets) {
+    long double nrmse = 0.0;
+    int n = 0;
+    for (int i = 0; i<nmet(); i++) {
+        long double obs = _model_mets[i]->get_obs_val();
+        long double sim = mean(posterior_mets[i]);
+        if (obs != sim) { // also means they're not both zero
+            long double expected = (fabs(obs)+fabs(sim))/2;
+            nrmse += pow((sim-obs)/expected, 2);
+        }
+        n++;
+    }
+    assert(n>0);
+    return sqrt(nrmse/n);
+}
+
 void AbcSmc::_print_particle_table_header() {
     for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
     for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
@@ -1102,7 +1118,7 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
         for (int j = 0; j < npar(); j++) posterior_pars[j](i) = Y_orig(idx, j);
         for (int j = 0; j < nmet(); j++) posterior_mets[j](i) = X_orig(idx, j);
     }
-
+    cerr << "Normalized RMSE for metric means (lower is better):  " << calculate_nrmse(posterior_mets) << "\n";
     cerr << "Posterior means:\n";
     _print_particle_table_header();
     for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << mean(posterior_pars[i]); } cerr << " | ";

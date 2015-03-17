@@ -235,6 +235,7 @@ class AbcSmc {
 
         void _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig); 
         void _print_particle_table_header();
+        long double calculate_nrmse(vector<Col> posterior_mets);
         
         void set_resume( bool res ) { resume_flag = res; }
         bool resume() { return resume_flag; }
