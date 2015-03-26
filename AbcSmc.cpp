@@ -214,7 +214,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
                                                << t+1 << ", " 
                                                << i << ", " 
                                                << time(NULL) 
-                                               << ", NULL, 'Q', -1 );";
+                                               << ", NULL, 'Q', -1, 0 );";
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
@@ -817,7 +817,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         //ss << "create table sets( smcSet int primary key asc, status text, " << _build_sql_create_par_string("_dv") << ");";
         //_db_execute_stringstream(db, ss);
 
-        ss << "create table jobs( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration int, status text, posterior int );";
+        ss << "create table jobs( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration int, status text, posterior int, attempts int );";
         _db_execute_stringstream(db, ss);
 
         ss << "create table parameters( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
@@ -840,7 +840,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         pars = sample_priors(RNG);
         QueryStr qstr;
 
-        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into jobs values ( %d, 0, %d, %d, NULL, 'Q', -1 );"), i, i, time(NULL))).Next();
+        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into jobs values ( %d, 0, %d, %d, NULL, 'Q', -1, 0 );"), i, i, time(NULL))).Next();
 
         Statement s = db.Query("select last_insert_rowid() from jobs;");
         s.Next();
@@ -972,12 +972,12 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     select_ss << "from parameters P, jobs J where P.serial = J.serial ";
     // Do already running jobs as well, if there are not enough queued jobs
     // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
-    select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status limit " << n << ";";
+    select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts limit " << n << ";";
 
     const int overall_start_time = time(0);
     // build jobs update statement to indicate job is running
     stringstream update_ss;
-    update_ss << "update jobs set startTime = " << overall_start_time << ", status = 'R' where serial = "; // we don't know the serial yet
+    update_ss << "update jobs set startTime = " << overall_start_time << ", status = 'R', attempts = attempts + 1 where serial = "; // we don't know the serial yet
 
     vector<int> serials;
     vector<unsigned long int> rng_seeds;
@@ -997,13 +997,14 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
             ss << "update metrics set ";
             for (int j = 0; j<nmet()-1; j++) { ss << _model_mets[j]->get_short_name() << "=" << met_mat[i][j] << ", "; }
             ss << _model_mets.back()->get_short_name() << "=" << met_mat[i].rightCols(1) << " ";
-            ss << "where serial = " << serial << ";";
+            // only update metrics if job status is still 'R' or 'Q'
+            ss << "where serial = " << serial << " and (select (status is 'R' or status is 'Q') from jobs where jobs.serial=" << serial << ");";
             update_metrics_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
-                    
 
             // build jobs update statement to indicate job is running
-            ss << "update jobs set startTime = " << start_time << ", duration = " << time(0) - start_time << ", status = 'D' where serial = " << serial << ";";
+            ss << "update jobs set startTime = " << start_time << ", duration = " << time(0) - start_time 
+               << ", status = 'D' where serial = " << serial << " and (status = 'R' or status = 'Q');";
             update_jobs_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
         }
