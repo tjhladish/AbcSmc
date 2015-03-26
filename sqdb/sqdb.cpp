@@ -194,9 +194,6 @@ unsigned long Convertor::GetUnsignedLong() const
 {
   assert(m_stmt);
   const char* data = (char*) sqlite3_column_blob(m_stmt, m_field);
-  int size = sqlite3_column_bytes(m_stmt, m_field);
-//  char* tmp = new char[size];
-//  std::uninitialized_copy((char*)data, (char*)data + size, tmp); 
   return strtoul(data, NULL, 10);
 }
 
