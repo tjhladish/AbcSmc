@@ -39,6 +39,29 @@ bool AbcSmc::parse_config(string conf_filename) {
         return false;
     }
 
+    string executable = par.get("executable", "").asString();
+    if (executable != "") { set_executable( executable ); }
+
+    string resume_dir = par.get("resume_directory", "").asString();
+    if (resume_dir != "") {
+        if (_mp->mpi_rank == mpi_root) cerr << "Resuming in directory: " << resume_dir << endl;
+        set_resume_directory( resume_dir );
+        set_resume( true );
+    }
+
+    set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
+    set_num_samples( par["num_samples"].asInt() );
+    set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
+    set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
+    set_database_filename( par["database_filename"].asString() );
+    // are we going to have particles that use a posterior from an earlier ABC run
+    // to determine some of the parameter values?
+    set_posterior_database_filename( par.get("posterior_database_filename", "").asString() );
+    if (_posterior_database_filename != "" and _num_smc_sets > 1) {
+        cerr << "Using a posterior database as input is not currently supported with smc_iterations > 1. Aborting." << endl;
+        exit(-203);
+    }
+
     // Parse model parameters
     const Json::Value model_par = par["parameters"];
     for ( unsigned int i = 0; i < model_par.size(); ++i )  {// Iterates over the sequence elements.
@@ -53,6 +76,12 @@ bool AbcSmc::parse_config(string conf_filename) {
             ptype = NORMAL;
         } else if (ptype_str == "PSEUDO") {
             ptype = PSEUDO;
+        } else if (ptype_str == "POSTERIOR") {
+            ptype = POSTERIOR;
+            if (_posterior_database_filename == "") {
+                cerr << "Parameter specfied as type POSTERIOR, without previously specifying a posterior_database_filename.  Aborting." << endl;
+                exit(-204);
+            }
         } else {
             cerr << "Unknown parameter distribution type: " << ptype_str << ".  Aborting." << endl;
             exit(-205);
@@ -98,79 +127,9 @@ bool AbcSmc::parse_config(string conf_filename) {
         add_next_metric( name, short_name, ntype, val);
     }
 
-    string executable = par.get("executable", "").asString();
-    if (executable != "") { set_executable( executable ); }
-
-    string resume_dir = par.get("resume_directory", "").asString();
-    if (resume_dir != "") {
-        if (_mp->mpi_rank == mpi_root) cerr << "Resuming in directory: " << resume_dir << endl;
-        set_resume_directory( resume_dir );
-        set_resume( true );
-    }
-
-    set_smc_iterations( par["smc_iterations"].asInt() ); // or have it test for convergence
-    set_num_samples( par["num_samples"].asInt() );
-    set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
-    set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
-    set_particle_basefilename( par["particle_basefilename"].asString() );
-    set_predictive_prior_basefilename( par["predictive_prior_basefilename"].asString() );
-    set_database_filename( par["database_filename"].asString() );
-
     return true;
-
 }
 
-/*
-void AbcSmc::write_particle_file( const int t ) {
-    ofstream particle_file;
-    string pad = t < 10 ? "0" : "";
-    particle_file.open( (_particle_filename + "." + pad + toString(t)).c_str() );
-    if (particle_file.fail()) {
-       cerr << "ERROR: Particle file '" << _particle_filename << "' cannot be open for writing." << endl;
-       exit(-1);
-    }
-
-    // write header
-    particle_file << "iteration sample ";
-    for (int i = 0; i<npar(); i++) { particle_file << _model_pars[i]->get_short_name() << " "; }
-    for (int i = 0; i<nmet(); i++) { particle_file << _model_mets[i]->get_short_name() << " "; } 
-    particle_file << endl;
-
-    for (int i = 0; i < _num_particles; i++) {
-        particle_file << t << " " << i;
-        for (int j = 0; j < npar(); j++) { particle_file << " " << _particle_parameters[t](i,j); }
-        for (int j = 0; j < nmet(); j++) { particle_file << " " << _particle_metrics[t](i,j); }
-        particle_file << endl;
-    }
-    particle_file.close();
-}
-
-
-void AbcSmc::write_predictive_prior_file( const int t ) {
-    ofstream predictive_prior_file;
-    string pad = t < 10 ? "0" : "";
-    predictive_prior_file.open( (_predictive_prior_filename + "." + pad + toString(t)).c_str() );
-    if (predictive_prior_file.fail()) {
-       cerr << "ERROR: predictive prior file '" << _predictive_prior_filename << "' cannot be open for writing." << endl;
-       exit(-1);
-    }
-
-    // write header
-    predictive_prior_file << "iteration rank sample ";
-    for (int i = 0; i<npar(); i++) { predictive_prior_file << _model_pars[i]->get_short_name() << " "; }
-    for (int i = 0; i<nmet(); i++) { predictive_prior_file << _model_mets[i]->get_short_name() << " "; } 
-    predictive_prior_file << endl;
-
-    for (int rank = 0; rank < _predictive_prior_size; rank++) {
-        const int idx = _predictive_prior[t][rank];
-        predictive_prior_file << t << " " << rank << " " << idx;
-        for (int j = 0; j < npar(); j++) { predictive_prior_file << " " << _particle_parameters[t](idx, j); } 
-        for (int j = 0; j < nmet(); j++) { predictive_prior_file << " " << _particle_metrics[t](idx, j); } 
-        predictive_prior_file << endl;
-    }
-    predictive_prior_file.close();
-}
-*/
 
 bool AbcSmc::process_database(const gsl_rng* RNG) {
 
@@ -235,24 +194,6 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
     return true;
 }
 
-/*
-
-    getNextParictuleToSimulate() 
-    -> database empty
-    or
-    --> here is one .. 
-    or 
-    --> all compete..
-
-
-    (all compete ) -> PLS .., create new particles. . 
-    (here is one)  -> do simulation
-    (empty)         -> create database, and run the first one .
- 
-
-
-
-*/
 /*
 void AbcSmc::run(string executable, const gsl_rng* RNG) {
     // NEED TO ADD SANITY CHECKS HERE
@@ -472,101 +413,6 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
     return true;
 }
 
-/*
-bool AbcSmc::read_particle_set(int t, Mat2D &X_orig, Mat2D &Y_orig ) {
-    string pad = t < 10 ? "0" : "";
-    string existing_particle_filename = _particle_filename + "." + pad + toString(t);
-
-    ifstream iss(existing_particle_filename.c_str());
-    if (!iss) {
-        cerr << "WARNING: " << existing_particle_filename << " not found." << endl;
-        cerr << "         Starting generation of set " << t << "." << endl;
-        set_resume( false );
-        return false;
-    }
-
-    string buffer;
-    vector<vector<float_type> > fields;
-    int line_num=0;
-    while(std::getline(iss,buffer)){
-        line_num++;
-        vector<string>line = split(buffer,' ');
-        // not a header and #fields is correct
-        // first two columns are set num (t) and iteration
-        const int offset = 2;
-        if( line_num > 1 && (signed) line.size() == npar() + nmet() + offset ){
-            vector<float_type> row( npar() + nmet() );
-            for(unsigned int i=0; i < row.size(); i++){
-                row[i] = string2float_type(line[i+offset]);
-            }
-            fields.push_back(row);
-        }
-    }
-    iss.close();
-
-    if(fields.size()  == 0 ) {
-        cerr << "ERROR: " << existing_particle_filename << " missing data." << endl;
-        set_resume( false );
-        return false;
-    }
-
-cerr << "fields size, nmet, npar: " << fields.size() << " " << nmet() << " " << npar() << endl;
-    Y_orig.resize( fields.size(), npar() );
-    X_orig.resize( fields.size(), nmet() );
-    for ( unsigned int i=0; i < fields.size(); i++ ) {
-        for ( int j=0; j < npar(); j++ ) Y_orig(i,j)=fields[i][j];
-        for ( int j=npar(); j < npar()+nmet(); j++ ) X_orig(i,j-npar())=fields[i][j];
-    }
-
-    cerr << "Loaded particle set " << t << endl;
-    return true;
-}
-*/
-/*
-bool AbcSmc::read_predictive_prior( int t ) {
-    vector<int> ranking;
-
-    string pad = t < 10 ? "0" : "";
-    string existing_predictive_prior_filename = _predictive_prior_filename + "." + pad + toString(t);
-
-    ifstream iss(existing_predictive_prior_filename.c_str());
-    if (!iss) {
-        cerr << "WARNING: " << existing_predictive_prior_filename << " not found." << endl;
-        cerr << "         It appears a particle file exists for which there is no predictive prior file." << endl;
-        set_resume( false );
-        return false;
-    }
-
-    //iteration rank sample ndice sides sum sd
-    //0 0 953 129 7 525 1.91697
-    //0 1 503 3 10 24 2
-    string buffer;
-    vector<vector<float_type> > fields;
-    int line_num=0;
-    while(std::getline(iss,buffer)){
-        line_num++;
-        vector<string>line = split(buffer,' ');
-        // not a header and #fields is correct
-        // first two columns are set num (t) and iteration
-        const int offset = 3;
-        const int sample_idx = 2;
-        if( line_num > 1 && (signed) line.size() == npar() + nmet() + offset ){
-            ranking.push_back( string2int(line[sample_idx]) );
-        }
-    }
-    iss.close();
-
-    if ( ranking.size() == 0 ) {
-        cerr << "ERROR: " << existing_predictive_prior_filename << " missing data." << endl;
-        set_resume( false );
-        return false;
-    }
-
-    _predictive_prior[t] = ranking;
-    cerr << "Loaded predictive prior set " << t << endl;
-    return true;
-}
-*/
 /*
 bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
     // this is silly -- only 'true' is ever returned from this function
@@ -857,6 +703,21 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     return true;
 }
 
+/*
+bool AbcSmc::expand_database() {
+    //TODO: Read in new database
+    stringstream select_ss;
+    select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
+    select_ss << "from parameters P, jobs J where P.serial = J.serial ";
+    select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts limit " << n << ";";
+
+    //      Read in posterior database
+    //      Truncate parameters table in new DB
+    //      Alter parameters table in new DB
+    //      Populate new DB with new par rows X posterior par rows
+
+}*/
+
 
 bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds) {
     bool db_success = false;
@@ -997,14 +858,14 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
             ss << "update metrics set ";
             for (int j = 0; j<nmet()-1; j++) { ss << _model_mets[j]->get_short_name() << "=" << met_mat[i][j] << ", "; }
             ss << _model_mets.back()->get_short_name() << "=" << met_mat[i].rightCols(1) << " ";
-            // only update metrics if job status is still 'R' or 'Q'
-            ss << "where serial = " << serial << " and (select (status is 'R' or status is 'Q') from jobs where jobs.serial=" << serial << ");";
+            // only update metrics if job status is still 'R' or 'Q' or has been paused ('P')
+            ss << "where serial = " << serial << " and (select (status is 'R' or status is 'Q' or status is 'P') from jobs where jobs.serial=" << serial << ");";
             update_metrics_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
 
             // build jobs update statement to indicate job is running
             ss << "update jobs set startTime = " << start_time << ", duration = " << time(0) - start_time 
-               << ", status = 'D' where serial = " << serial << " and (status = 'R' or status = 'Q');";
+               << ", status = 'D' where serial = " << serial << " and (status = 'R' or status = 'Q' or status = 'P');";
             update_jobs_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
         }
@@ -1161,7 +1022,11 @@ Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
 Row AbcSmc::sample_priors(const gsl_rng* RNG) {
     Row par_sample = Row::Zero(_model_pars.size());
     bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
+    bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
     // for each parameter
+    string posterior_strings = "";
+    vector<int> posterior_indices;
+    int posterior_rank = 0;
     for (unsigned int i = 0; i < _model_pars.size(); i++) {
         Parameter* p = _model_pars[i];
         float_type val;
@@ -1180,8 +1045,20 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
                 } else {
                     p->increment_state();
                     increment_nonrandom_par = false;
+                    increment_posterior     = false;
                 }
             }
+        } else if (p->get_prior_type() == POSTERIOR) {
+            val = 0; // will be replaced later in function
+            posterior_indices.push_back(i);
+            if (posterior_strings == "") {
+                posterior_rank = (int) p->get_state();
+            } else {
+                posterior_strings += ", ";
+                // require that posterior pars be synchronized
+                assert(posterior_rank == (int) p->get_state());
+            }
+            posterior_strings += p->get_short_name();
         } else {
             // Random parameters get sampled independently from each other, and are therefore easy
             val = p->sample(RNG);
@@ -1189,7 +1066,30 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
 
         par_sample(i) = val;
     }
+
+    if (_posterior_database_filename != "") {
+        sqdb::Db db(_posterior_database_filename.c_str());
+        QueryStr qstr;
+
+        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT("select %s from parameters P, jobs J where P.serial = J.serial and posterior = %d order by P.serial desc limit 1;"), 
+                                           posterior_strings.c_str(), posterior_rank));
+
+        s.Next();
+        for (unsigned int i = 0; i < posterior_indices.size(); ++i) {
+            par_sample(posterior_indices[i]) = (double) s.GetField(i);
+            Parameter* p = _model_pars[posterior_indices[i]];
+
+            if (increment_posterior) {
+                if (p->get_state() >= p->get_prior_max()) {
+                    p->reset_state();
+                } else {
+                    p->increment_state();
+                }
+            }
+
+        }
 //cerr << "sample: " << par_sample << endl;
+    }
     return par_sample;
 }
 

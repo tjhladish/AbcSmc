@@ -4,8 +4,6 @@
     "predictive_prior_fraction" : 0.1,
     "pls_training_fraction"     : 0.5,
 
-    "particle_basefilename"         : "dice_particles",
-    "predictive_prior_basefilename" : "dice_predictive_prior",
     "database_filename"             : "dice.sqlite",
 
     "parameters" : [

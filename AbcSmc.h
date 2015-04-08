@@ -6,12 +6,9 @@
 #include "AbcUtil.h"
 #include "sqdb.h"
 
-enum PriorType {UNIFORM, NORMAL, PSEUDO};
+enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
 
-//enum AbcStatus {INCOMPLETE_SET, TOO_FEW_SETS, ABC_COMPLETE};
-//enum SetStatus {INCOMPLETE_PARTICLES, UNDEFINED_POSTERIOR, UNSAMPLED_PRIOR, SET_COMPLETE};
-//enum ParticleStatus {UNDEFINED_PARAMETERS, UNDEFINED_METRICS, PARTICLE_COMPLETE};
 
 class Parameter {
     public:
@@ -24,12 +21,18 @@ class Parameter {
                 fmax = val2;
                 mean = (val2 + val1) / 2.0;
                 stdev = sqrt(pow(val2-val1,2)/12);
-                state = 0; // dummy variable for UNIFORM
+                state = 0;   // dummy variable for UNIFORM
             } else if (ptype == PSEUDO) {
                 fmin = val1;
                 fmax = val2;
-                mean = 0;  // dummy variable for PSEUDO 
-                stdev = 0; // dummy variable for PSEUDO 
+                mean = 0;    // dummy variable for PSEUDO
+                stdev = 0;   // dummy variable for PSEUDO
+                state = fmin;
+            } else if (ptype == POSTERIOR) {
+                fmin = val1; // min index for posterior database, generally 0
+                fmax = val2; // max index for posterior database
+                mean = 0;    // dummy variable for PSEUDO
+                stdev = 0;   // dummy variable for PSEUDO
                 state = fmin;
             } else {
                 cerr << "Prior type " << ptype << " not supported.  Aborting." << endl;
@@ -163,12 +166,10 @@ class AbcSmc {
         void set_predictive_prior_size(int n) { assert(n > 0); assert(n <= _num_particles); _predictive_prior_size = n; }
         void set_predictive_prior_fraction(float f)        { assert(f > 0); assert(f <= 1); _predictive_prior_size = _num_particles * f; }
         void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
-        //void set_metric_basefilename( std::string name ) { _metrics_filename = name; }
         void set_executable( std::string name ) { _executable_filename = name; use_executable = true; }
         void set_simulator(vector<float_type> (*simulator) (vector<float_type>, const unsigned long int rng_seed, const MPI_par*)) { _simulator = simulator; use_simulator = true; }
-        void set_particle_basefilename( std::string name ) { _particle_filename = name; }
-        void set_predictive_prior_basefilename( std::string name ) { _predictive_prior_filename = name; }
         void set_database_filename( std::string name ) { _database_filename = name; }
+        void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
         void add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) { 
@@ -213,10 +214,8 @@ class AbcSmc {
         bool use_executable;
         bool resume_flag;
         std::string resume_directory;
-        //std::string _metrics_filename;
-        std::string _particle_filename;
-        std::string _predictive_prior_filename;
         std::string _database_filename;
+        std::string _posterior_database_filename;
         std::vector< Mat2D > _particle_metrics;
         std::vector< Mat2D > _particle_parameters;
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
