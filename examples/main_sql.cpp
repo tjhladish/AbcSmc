@@ -40,6 +40,7 @@ void usage() {
     cerr << "\n\tUsage: ./abc_sql abc_config_sql.json --process\n\n";
     cerr << "\t       ./abc_sql abc_config_sql.json --simulate\n\n";
     cerr << "\t       ./abc_sql abc_config_sql.json --simulate -n <number of simulations per database write>\n\n";
+    cerr << "\t       ./abc_sql abc_config_sql.json --process --simulate -n <number of simulations per database write>\n\n";
 
 }
 
