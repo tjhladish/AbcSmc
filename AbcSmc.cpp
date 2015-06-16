@@ -1022,6 +1022,7 @@ Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
 Row AbcSmc::sample_priors(const gsl_rng* RNG) {
     Row par_sample = Row::Zero(_model_pars.size());
     bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
+    bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
     // for each parameter
     string posterior_strings = "";
     vector<int> posterior_indices;
@@ -1044,10 +1045,11 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
                 } else {
                     p->increment_state();
                     increment_nonrandom_par = false;
+                    increment_posterior     = false;
                 }
             }
         } else if (p->get_prior_type() == POSTERIOR) {
-            val = 0; // will be replaced later
+            val = 0; // will be replaced later in function
             posterior_indices.push_back(i);
             if (posterior_strings == "") {
                 posterior_rank = (int) p->get_state();
@@ -1057,12 +1059,6 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
                 assert(posterior_rank == (int) p->get_state());
             }
             posterior_strings += p->get_short_name();
-
-            if (p->get_state() >= p->get_prior_max()) {
-                p->reset_state();
-            } else {
-                p->increment_state();
-            }
         } else {
             // Random parameters get sampled independently from each other, and are therefore easy
             val = p->sample(RNG);
@@ -1079,7 +1075,19 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
                                            posterior_strings.c_str(), posterior_rank));
 
         s.Next();
-        for (unsigned int i = 0; i < posterior_indices.size(); ++i) par_sample(posterior_indices[i]) = (double) s.GetField(i);
+        for (unsigned int i = 0; i < posterior_indices.size(); ++i) {
+            par_sample(posterior_indices[i]) = (double) s.GetField(i);
+            Parameter* p = _model_pars[posterior_indices[i]];
+
+            if (increment_posterior) {
+                if (p->get_state() >= p->get_prior_max()) {
+                    p->reset_state();
+                } else {
+                    p->increment_state();
+                }
+            }
+
+        }
 //cerr << "sample: " << par_sample << endl;
     }
     return par_sample;
