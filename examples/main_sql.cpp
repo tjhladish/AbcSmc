@@ -11,7 +11,8 @@ const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 // wrapper for simulator
 // must take vector of doubles (ABC paramters) 
 // and return vector of doubles (ABC metrics)
-vector<long double> simulator(vector<long double> args, const MPI_par* mp) {
+vector<long double> simulator(vector<long double> args, long unsigned int rng_seed, const MPI_par* mp) {
+    gsl_rng_set(RNG, rng_seed);
     int par1 = (int) args[0]; // number of dice
     int par2 = (int) args[1]; // number of sides on dice
 
@@ -70,11 +71,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    gsl_rng_set(RNG, time (NULL) * getpid()); // seed the rng using sys time and the process id
 
     AbcSmc* abc = new AbcSmc();
     abc->parse_config(string(argv[1]));
     if (process_db) {
+        gsl_rng_set(RNG, time (NULL) * getpid()); // seed the rng using sys time and the process id
         abc->process_database(RNG);
     } 
 
