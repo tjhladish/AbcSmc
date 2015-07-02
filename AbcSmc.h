@@ -193,9 +193,6 @@ class AbcSmc {
 
         bool simulate_next_particles(int n);
 
-        void run(const gsl_rng* RNG) { run(_executable_filename, RNG); }; 
-        void run(std::string executable, const gsl_rng* RNG); 
-           
         int npar() { return _model_pars.size(); }
         int nmet() { return _model_mets.size(); }
 

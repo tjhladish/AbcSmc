@@ -194,65 +194,12 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
     return true;
 }
 
-/*
-void AbcSmc::run(string executable, const gsl_rng* RNG) {
-    // NEED TO ADD SANITY CHECKS HERE
-    _executable_filename = executable;
-    _particle_parameters.clear();
-    _particle_metrics.clear();
-    _weights.clear();
 
-    cerr << std::setprecision(PREC);
-
-    if (_mp->mpi_rank == 0) {
-        // read in database here
-        // resize the following if they need to be bigger based on JSON file
-        _particle_parameters.resize( _num_smc_sets, Mat2D::Zero(_num_particles, npar()) );
-        _particle_metrics.resize( _num_smc_sets, Mat2D::Zero(_num_particles, nmet()) );
-        _weights.resize(_num_smc_sets);
-        _predictive_prior.clear(); // moved up into this mpi_root block
-        _predictive_prior.resize(_num_smc_sets); // moved up into this mpi_root block
-    }
-
-    for (int t = 0; t<_num_smc_sets; t++) {
-        // if status == unsampled prior, then sample prior; change status to incomplete particles
-        // if status == incomplete particles, simulate particles; change status to undefined posterior
-        // if status == undefined posterior, filter particles; change status to unweighted posterior
-        // if status == unweighted posterior, weight particles; change status to complete set
-        // if status == complete set, report convergence data; continue
-#ifdef USING_MPI
-        assert(_mp->mpi_size > 1);
-        bool success = _populate_particles_mpi( t, _particle_metrics[t], _particle_parameters[t], RNG );
-#else
-        bool success = _populate_particles( t, _particle_metrics[t], _particle_parameters[t], RNG );
-#endif
-
-        if (!success) { cerr << "MPI rank" << _mp->mpi_rank << " failed while generating particles." << endl;}
-        if (_mp->mpi_rank == mpi_root) {
-            write_particle_file(t);
-
-            // Select best scoring particles
-            cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
-            if (resume()) {
-                read_predictive_prior(t);
-            } else {
-                _filter_particles( t, _particle_metrics[t], _particle_parameters[t] );
-            }
-
-            calculate_predictive_prior_weights( t );
-
-            report_convergence_data(t);
-            cerr << endl << endl;
-
-            write_predictive_prior_file(t);
-        }
-    }
-}
-*/
 void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
     stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2 
                                                       << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
 }
+
 
 void AbcSmc::report_convergence_data(int t) {
     vector<double> last_means( npar(), 0 );
@@ -413,27 +360,6 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
     return true;
 }
 
-/*
-bool AbcSmc::_populate_particles_mpi(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
-    // this is silly -- only 'true' is ever returned from this function
-    int continue_flag = (int) true;
-    if (_mp->mpi_rank == mpi_root and resume() and read_particle_set( t, X_orig, Y_orig )) {
-        continue_flag = (int) false;
-    }
-#ifdef USING_MPI
-    MPI_Bcast(&continue_flag, 1, MPI_INT, mpi_root, _mp->comm);
-#endif
-    if (not (bool) continue_flag) return true; // resume was set, reading particles succeeded
-
-    if (_mp->mpi_rank == mpi_root) {
-        _particle_scheduler(t, X_orig, Y_orig, RNG);
-    } else {
-        _particle_worker();
-    }
-
-    return true;
-}
-*/
 
 void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
 #ifdef USING_MPI
@@ -703,21 +629,6 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     return true;
 }
 
-/*
-bool AbcSmc::expand_database() {
-    //TODO: Read in new database
-    stringstream select_ss;
-    select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
-    select_ss << "from parameters P, jobs J where P.serial = J.serial ";
-    select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts limit " << n << ";";
-
-    //      Read in posterior database
-    //      Truncate parameters table in new DB
-    //      Alter parameters table in new DB
-    //      Populate new DB with new par rows X posterior par rows
-
-}*/
-
 
 bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds) {
     bool db_success = false;
@@ -786,41 +697,6 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
     return db_success;
 }
 
-/*
-bool AbcSmc::sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status) {
-    stringstream ss;
-    ss << "select status from jobs where " << sql_job_tag << ";";
-    const string statementString = ss.str();
-    const char* sqlstring = statementString.c_str();
-
-    cerr << "Attempting: " << sqlstring << endl;
-    bool db_success = false;
-    int attempts = 0;
-    const int max_attempts = 1000;
-    while (not db_success and attempts < max_attempts) {
-        attempts++;
-        try {
-            Statement s = db.Query(sqlstring);
-            if (s.Next()) {
-                status = s.GetField(0).GetString();
-            }
-
-            db_success = true;
-            break;
-        } catch (const Exception& e) {
-            cerr << e.GetErrorMsg() << endl;
-            attempts++;
-        }
-        sleep(1);
-    }
-    if (not db_success) cerr << "Failed to get job status for tag " << sql_job_tag << " after " << attempts << "attempts\n";
-    if (status == "D") {
-        return true;
-    } else {
-        return false;
-    }
-}
-*/
 
 bool AbcSmc::simulate_next_particles(const int n = 1) {
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
@@ -877,29 +753,6 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     return true;
 }
 
-/*
-bool AbcSmc::_populate_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
-    bool success = true;
-    if (resume() and read_particle_set( t, X_orig, Y_orig )) {
-        return success;
-    }
-
-    for (int i = 0; i<_num_particles; i++) {
-        if (t == 0) { // sample priors
-            Y_orig.row(i) = sample_priors(RNG);
-        } else { // sample predictive priors
-            Y_orig.row(i) = sample_predictive_priors(t, RNG);
-        }
-       
-        Row pars = Y_orig.row(i);
-        Row mets = X_orig.row(i);
-        success = _run_simulator(pars, mets);
-        if (not success) return false;
-        X_orig.row(i) = mets;
-    }
-    return success;
-}
-*/
 
 long double AbcSmc::calculate_nrmse(vector<Col> posterior_mets) {
     long double nrmse = 0.0;
