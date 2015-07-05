@@ -1,7 +1,9 @@
-CC=g++
+CC = g++
 #CFLAGS = -g -std=c++0x
 CFLAGS = -O2
-ABCDIR = $(HOME)/work/AbcSmc
+MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+
+ABCDIR = $(MKFILE_PATH)/..
 ABC_INC = -I$(ABCDIR) -I../sqdb
 
 ifdef TACC_GSL_INC
