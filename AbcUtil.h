@@ -16,11 +16,18 @@
 
 using namespace std;
 
-class Fit {
-    public:
-        double m;
-        double b;
-        double rsq;
+struct LinearFit {
+    double m;
+    double b;
+    double rsq;
+};
+
+struct LogisticFit {
+    double beta0;
+    double beta1;
+    double simplex_size;
+    int status;
+    int iterations;
 };
 
 #ifdef USING_MPI
@@ -131,7 +138,9 @@ int gsl_rng_nonuniform_int(std::vector<double>& weights, const gsl_rng* rng);
 
 double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng); 
  
-Fit* lin_reg(const std::vector<double> &x, const std::vector<double> &y);
+LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y);
+
+LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector< pair<int,int> > &y);
 
 inline vector<float_type> as_vector(const Row data) {
     vector<float_type> vec(data.size());

@@ -6,7 +6,6 @@ MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)
 SQLDIR  = $(ABCDIR)/sqdb
 
-#INCLUDE = -I/usr/include/eigen3/ -I$(ABCDIR)
 INCLUDE = -I. -I$(ABCDIR) -I$(ABCDIR)/jsoncpp/include -I$(SQLDIR)
 ifdef TACC_GSL_INC
 INCLUDE += -I$$TACC_GSL_INC
@@ -15,7 +14,8 @@ ifdef HPC_GSL_INC
 INCLUDE += -I$$HPC_GSL_INC
 endif
 
-LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp -lpthread -ldl
+#LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp -lpthread -ldl
+LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas
 
 SOURCES =  AbcSmc.cpp AbcUtil.cpp CCRC32.cpp
 JSONDIR = $(ABCDIR)/jsoncpp/src
@@ -26,7 +26,6 @@ LIBABC  = libabc.a
 LIBJSON = libjsoncpp.a
 LIBSQL  = libsqdb.a
 
-#    g++ example/makedb.cpp -o dbmake sqdb.cpp sqlite3.o
 OBJECTS     = $(SOURCES:.cpp=.o)
 JSONOBJECTS = $(JSONSOURCES:.cpp=.o)
 SQLOBJECTS  = $(SQLSOURCES:.cpp=.o)
@@ -63,7 +62,7 @@ ifndef HPC_GSL_INC
 	@echo "Neither TACC_GSL_INC nor HPC_GSL_INC are defined. Do you need to run 'module load gsl'?"
 endif
 endif
-	$(CC) $(CFLAGS) -c $(INCLUDE) $< -o $@
+	$(CC) $(LIBS) $(CFLAGS) -c $(INCLUDE) $< -o $@
 
 clean:
 	rm -f $(OBJECTS) $(JSONOBJECTS) $(SQLOBJECTS) $(LIBABC) $(LIBJSON) $(LIBSQL)
