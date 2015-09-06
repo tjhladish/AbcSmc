@@ -552,6 +552,7 @@ LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector< pair<
     for (auto datum: data) delete datum;
 
     fit->status = status; // Status should be checked, and should equal GSL_SUCCESS before using beta0 and beta1
+    if (fit->status != GSL_SUCCESS) cerr << "WARNING: Logistic regression was unsuccessful (did not converge)\n";
     fit->beta0 = gsl_vector_get (s->x, 0);
     fit->beta1 = gsl_vector_get (s->x, 1);
     fit->simplex_size = size;
