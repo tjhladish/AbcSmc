@@ -1,5 +1,7 @@
 #include <limits>
 #include "AbcUtil.h"
+#include "gsl/gsl_multimin.h"
+#include "gsl/gsl_sf_gamma.h"
 
 using std::string;
 using std::vector;
@@ -427,9 +429,9 @@ double rand_trunc_normal(double mu, double sigma_squared, double min, double max
     }
 }
  
-Fit* lin_reg(const std::vector<double> &x, const std::vector<double> &y) {
+LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y) {
     assert( x.size() == y.size() );
-    Fit* fit = new Fit();
+    LinearFit* fit = new LinearFit();
     const int n = x.size();
     double sumx = 0.0;                        /* sum of x                      */
     double sumx2 = 0.0;                       /* sum of x**2                   */
@@ -460,4 +462,103 @@ Fit* lin_reg(const std::vector<double> &x, const std::vector<double> &y) {
     fit->rsq = pow((sumxy - sumx * sumy / n) / sqrt((sumx2 - pow(sumx,2)/n) * (sumy2 - pow(sumy,2)/n)),2);
 
     return fit; 
+}
+
+struct LogisticDatum{
+    LogisticDatum() : time(0.0), successes(0), attempts(0) {};
+    LogisticDatum(double t, int s, int a) : time(t), successes(s), attempts(a) {};
+    double time;
+    unsigned int successes;
+    unsigned int attempts;
+};
+
+double _logistic_likelihood(const gsl_vector *v, void* params) {
+    long double b0, b1;
+    vector<LogisticDatum*>* data = (vector<LogisticDatum*>*) params;
+
+    b0 = gsl_vector_get(v, 0);
+    b1 = gsl_vector_get(v, 1);
+
+    double total = 0;
+
+    // for each year, calculate probability of observing that # of severe cases; sum log probs
+    for (auto p: *data) {
+        const double time = p->time;
+        unsigned int suc = p->successes;
+        unsigned int all = p->attempts;
+        const long double prob = 1.0 / (1.0 + exp(-(b0 + b1*time)));
+        const long double lnchoosek = gsl_sf_lnchoose(all, suc);
+        const long double ldensity = lnchoosek + suc*log(prob) + (all-suc)*log(1.0-prob);
+        total += ldensity;
+    }
+
+    // total should always be <= 0.  0 would indicate a probability of 1.0
+    // give it a bad score (e.g., INT_MIN) if we got garbage
+    total = (std::isinf(total) or std::isnan(total)) ? INT_MIN : total;
+    // gsl is expecting a minimization; we're maximizing a probability
+    return -total;
+}
+
+
+LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector< pair<int,int> > &y) {
+    assert( x.size() == y.size() );
+    vector< LogisticDatum* > data;
+    for (unsigned int i = 0; i < x.size(); ++i) {
+        LogisticDatum* datum = new LogisticDatum(x[i], (unsigned) y[i].first, (unsigned) y[i].second);
+        data.push_back(datum);
+    }
+
+    LogisticFit* fit = new LogisticFit();
+
+    // Initial values for fitted parameters (beta0 and beta1)
+    // 0.0, 0.0 describes a flat line with 50% probability for all x
+    gsl_vector *betas;
+    betas = gsl_vector_alloc (2);
+    gsl_vector_set (betas, 0, 0.0); // beta 0
+    gsl_vector_set (betas, 1, 0.0); // beta 1
+
+    // Set initial step sizes to 0.01
+    gsl_vector *ss;
+    ss = gsl_vector_alloc (2);
+    gsl_vector_set_all (ss, 0.01);
+
+    // Initialize method and iterate
+    gsl_multimin_function multimin_func;
+    multimin_func.n = 2;
+    multimin_func.f = _logistic_likelihood;
+    multimin_func.params = &data;
+
+    const gsl_multimin_fminimizer_type *T = gsl_multimin_fminimizer_nmsimplex2;
+    gsl_multimin_fminimizer* s = gsl_multimin_fminimizer_alloc (T, 2);
+    gsl_multimin_fminimizer_set (s, &multimin_func, betas, ss);
+
+    int status = GSL_CONTINUE;
+    double size = 1.0;
+    for (int iter = 0; iter<10000; ++iter) {
+        fit->iterations = iter;
+        status = gsl_multimin_fminimizer_iterate(s);
+
+        if (status) break;
+
+        size = gsl_multimin_fminimizer_size (s);
+        status = gsl_multimin_test_size (size, 1e-4);
+
+        //if (status == GSL_SUCCESS) printf ("converged to minimum at\n");
+        //printf ("%5d %10.3e %10.3e f() = %7.3f size = %.5f\n", iter, gsl_vector_get (s->x, 0), gsl_vector_get (s->x, 1), s->fval, size);
+
+        if (status != GSL_CONTINUE) break;
+    }
+
+    for (auto datum: data) delete datum;
+
+    fit->status = status; // Status should be checked, and should equal GSL_SUCCESS before using beta0 and beta1
+    fit->beta0 = gsl_vector_get (s->x, 0);
+    fit->beta1 = gsl_vector_get (s->x, 1);
+    fit->simplex_size = size;
+
+    gsl_vector_free(betas);
+    gsl_vector_free(ss);
+    gsl_multimin_fminimizer_free(s);
+
+    return fit;
 }
