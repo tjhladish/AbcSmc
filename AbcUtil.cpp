@@ -306,6 +306,10 @@ float_type median(const Col data) {
     return median;
 }
 
+float_type quantile(const Col data, double q) {
+    return quantile(as_vector(data), q);
+}
+
 float_type variance(const Col data, float_type _mean) {
     if (data.size() < 2) { 
         cerr << "WARNING: Variance called with " << data.size() << " data values. Returning 0." << endl;
@@ -499,15 +503,7 @@ double _logistic_likelihood(const gsl_vector *v, void* params) {
     return -total;
 }
 
-
-LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector< pair<int,int> > &y) {
-    assert( x.size() == y.size() );
-    vector< LogisticDatum* > data;
-    for (unsigned int i = 0; i < x.size(); ++i) {
-        LogisticDatum* datum = new LogisticDatum(x[i], (unsigned) y[i].first, (unsigned) y[i].second);
-        data.push_back(datum);
-    }
-
+LogisticFit* logistic_reg(vector<LogisticDatum*> data) {
     LogisticFit* fit = new LogisticFit();
 
     // Initial values for fitted parameters (beta0 and beta1)
@@ -562,4 +558,25 @@ LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector< pair<
     gsl_multimin_fminimizer_free(s);
 
     return fit;
+}
+
+LogisticFit* logistic_reg(const vector<double> &x, const vector<int> &s, const vector<int> &a) {
+    assert( x.size() == s.size() );
+    assert( x.size() == a.size() );
+    vector<LogisticDatum*> data;
+    for (unsigned int i = 0; i < x.size(); ++i) {
+        LogisticDatum* datum = new LogisticDatum(x[i], (unsigned) s[i], (unsigned) a[i]);
+        data.push_back(datum);
+    }
+    return logistic_reg(data);
+}
+
+LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector< pair<int,int> > &y) {
+    assert( x.size() == y.size() );
+    vector<LogisticDatum*> data;
+    for (unsigned int i = 0; i < x.size(); ++i) {
+        LogisticDatum* datum = new LogisticDatum(x[i], (unsigned) y[i].first, (unsigned) y[i].second);
+        data.push_back(datum);
+    }
+    return logistic_reg(data);
 }

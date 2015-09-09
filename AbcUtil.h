@@ -11,6 +11,7 @@
 #include <Eigen/Eigenvalues>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
+#include "ranker.h"
 
 #include <math.h>
 
@@ -96,6 +97,8 @@ float_type mean(const Col data);
 
 float_type median(const Col data);
 
+float_type quantile(const Col data, double q);
+
 float_type variance(const Col data, float_type _mean);
 
 float_type max(const Col data);
@@ -141,6 +144,8 @@ double rand_trunc_normal(double mu, double sigma_squared, double min, double max
 LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y);
 
 LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector< pair<int,int> > &y);
+
+LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector<int> &successes, const std::vector<int> &attempts);
 
 inline vector<float_type> as_vector(const Row data) {
     vector<float_type> vec(data.size());
