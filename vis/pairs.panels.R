@@ -143,6 +143,7 @@ function (x,
         points.pch=20,
         cor.cex=2,
         points.cex=2,
+        line_wt=1,
         ...)   #combines a splom, histograms, and correlations
 {
 
@@ -198,8 +199,8 @@ function (x,
             color1 = if (col1 <= npar) 'green' else 'orange';
             color2 = if (col2 <= npar) 'green' else 'orange';
 
-            abline(v=x1, col=color1, lty=3)
-            abline(h=y1, col=color2, lty=3)
+            abline(v=x1, col=color1, lty=3, lwd=line_wt)
+            abline(h=y1, col=color2, lty=3, lwd=line_wt)
             # version 2
             # color1 = if (col1 <= npar) '#AB82FF' else 'orange';
             # color2 = if (col2 <= npar) '#AB82FF' else 'orange';
@@ -216,7 +217,7 @@ function (x,
             if (any(ok)) {
                 r  <- cor(x, y, use="pairwise", method=method)
                 col_idx = round(r*10) + 11
-                lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), col = colscale[col_idx], ...)
+                lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), col = colscale[col_idx], lwd = line_wt, ...)
                 #lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), col = col.smooth, ...)
             }
         }
@@ -245,9 +246,15 @@ function (x,
 #rug is a variable that is local to the entire function but is used only in the hist and hist.density functions.
 #having done the same trick for passing method, it is now time to change all of this to pass some of these other options
 
-    old.par <- par(no.readonly = TRUE) # save default, for resetting... 
+    old.par <- par(no.readonly = TRUE) # save default, for resetting...
     on.exit(par(old.par))     #and when we quit the function, restore to original values
 
-    pairs2(x, diag.panel = panel.hist, upper.panel = panel.cor, lower.panel = panel.smoother.noellipse, ...)
+   # pairs2(x, diag.panel = panel.hist, lower.panel = panel.smoother.noellipse, ...)
+    if (cor) {
+        upper.panel = panel.cor
+    } else {
+        upper.panel = NULL
+    }
+pairs2(x, diag.panel = panel.hist, upper.panel = upper.panel, lower.panel = panel.smoother.noellipse, ...)
 #pairs(x, diag.panel = panel.hist.density, upper.panel = panel.cor, lower.panel = panel.smoother.noellipse, ...)
 }

@@ -1,4 +1,3 @@
-source("pairs.panels.R")
 require('rjson')
 require("RSQLite")
 
@@ -41,12 +40,16 @@ dm[dm$sim==F, par_cols] = apply(dm[dm$sim==T,par_cols], 2, median)
 #names(dm)[13] = "Autocorr"
 #names(dm)[14] = "Autocorr"
 
-pdf("pairs-a.pdf", width=16, height=16)
-#png("pairs-a-varEIP00.png", width=1800, height=1340, res=150)
-pairs.panels(dm[,c(par_cols, met_cols)], dm[,dim(dm)[2]], npar, nmet, points.col='#00000012', box.col='black', box.lwd=0.5, gap=0.5)
+source("pairs.panels.R")
+#pdf("pairs-a.pdf", width=16, height=16)
+png("pairs-a.png", width=1800, height=1340, res=120)
+pairs.panels(dm[,c(par_cols, met_cols)], dm[,dim(dm)[2]], npar, nmet, points.col='#00000012', 
+             box.col='black', box.lwd=0.5, gap=0.5, cor=F)
 dev.off()
 
-#names(dm)[c(6,7,10,11)] = c('log10(Daily intros)', 'Mosq/loc', 'Median', 'Std deviation')
-#png("pairs-b-varEIP00.png", width=1800, height=1340, res=200)
-#pairs.panels(dm[,c(6,7,10,11)], dm[,15], npar=2, nmet=2, points.col='#00000012', box.lwd=1, gap=0.5)
-#dev.off()
+#miniplot_subset =c(par_cols[c(5,6,3)], met_cols[c(4,11)]) 
+# names(dm)[miniplot_subset] = c('Mosq/loc', 'Bite & Transmit', "Post-pri. severity", 'Median','Severe prev.')
+# png("pairs-b.png", width=1800, height=1340, res=180)
+# pairs.panels(dm[,miniplot_subset], dm[,dim(dm)[2]], npar=3, nmet=2, points.col='#00000012', 
+#              box.col='black', box.lwd=0.5, gap=0.5, cor=F, line_wt=2)
+# dev.off()
