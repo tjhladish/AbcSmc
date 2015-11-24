@@ -245,6 +245,7 @@ class AbcSmc {
         string _build_sql_create_met_string(string tag);
 
         bool _db_execute_stringstream(sqdb::Db &db, stringstream &ss);
+        bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
 
         bool _update_sets_table(sqdb::Db &db, int t);
         bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);

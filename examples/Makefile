@@ -1,4 +1,4 @@
-CC = g++
+CC = g++-4.9 # Eigen is not currently compatible with optimization in gcc 5
 #CFLAGS = -g -std=c++0x
 CFLAGS = -O2
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))

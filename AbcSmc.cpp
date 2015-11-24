@@ -343,15 +343,15 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         } else {
             cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
             _filter_particles( t, _particle_metrics[t], _particle_parameters[t] );
-
+            vector<string> update_strings(_predictive_prior_size);
             for (int i = 0; i < _predictive_prior_size; i++) { // best to worst performing particle in posterior?
                 const int particle_idx = _predictive_prior[t][i];
                 const int particle_serial = serials[t][particle_idx];
                 stringstream ss;
                 ss << "update jobs set posterior = " << i << " where serial = " << particle_serial << ";";
-                _db_execute_stringstream(db, ss);
+                update_strings[i] = ss.str();
             }
-
+            _db_execute_strings(db, update_strings);
         }
         calculate_predictive_prior_weights( t );
 
@@ -567,8 +567,29 @@ string AbcSmc::_build_sql_select_met_string() {
 }
 
 
+bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
+    bool db_success = false;
+    db.Query("BEGIN EXCLUSIVE;").Next();
+    try {
+        for (unsigned int i = 0; i < update_buffer.size(); ++i) {
+            db.Query(update_buffer[i].c_str()).Next();
+        }
+        db_success = true;
+        db.CommitTransaction();
+    } catch (const Exception& e) {
+        db.RollbackTransaction();
+        cerr << "CAUGHT E: ";
+        cerr << e.GetErrorMsg() << endl;
+    } catch (const exception& e) {
+        db.RollbackTransaction();
+        cerr << "CAUGHT e: ";
+        cerr << e.what() << endl;
+    }
+    return db_success;
+}
+
+
 bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
-//    cerr << ss.str() << endl;
     bool success = false;
     try {
         success = db.Query(ss.str().c_str()).Next();
@@ -658,11 +679,11 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
         db_success = true;
     } catch (const Exception& e) {
         db.RollbackTransaction();
-        cerr << "CAUGHT E: "; 
+        cerr << "CAUGHT E: ";
         cerr << e.GetErrorMsg() << endl;
     } catch (const exception& e) {
         db.RollbackTransaction();
-        cerr << "CAUGHT e: "; 
+        cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
     }
 
@@ -676,9 +697,7 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
 
     try {
         for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
-//            cerr << "Attempting: " << update_metrics_strings[i] << endl;
             db.Query(update_metrics_strings[i].c_str()).Next(); // update metrics table
-//            cerr << "Attempting: " << update_jobs_strings[i] << endl;
             db.Query(update_jobs_strings[i].c_str()).Next(); // update jobs table
         }
 
@@ -686,11 +705,11 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
         db.CommitTransaction();
     } catch (const Exception& e) {
         db.RollbackTransaction();
-        cerr << "CAUGHT E: "; 
+        cerr << "CAUGHT E: ";
         cerr << e.GetErrorMsg() << endl;
     } catch (const exception& e) {
         db.RollbackTransaction();
-        cerr << "CAUGHT e: "; 
+        cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
     }
 

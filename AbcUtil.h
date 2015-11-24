@@ -7,7 +7,6 @@
 #include <assert.h>
 #include <iomanip>
 #include <fstream>
-#include <Eigen/Core>
 #include <Eigen/Eigenvalues>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>

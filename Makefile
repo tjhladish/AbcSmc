@@ -1,4 +1,4 @@
-CC = g++
+CC = g++-4.9 # Eigen is not currently compatible with optimization in gcc 5
 MPICC = mpicxx
 
 CFLAGS = -O2
@@ -29,11 +29,12 @@ LIBSQL  = libsqdb.a
 OBJECTS     = $(SOURCES:.cpp=.o)
 JSONOBJECTS = $(JSONSOURCES:.cpp=.o)
 SQLOBJECTS  = $(SQLSOURCES:.cpp=.o)
+ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h
 
 default: all_no_mpi
 .all:  $(LIBJSON) sqlite3.o $(LIBSQL) $(SOURCES) $(LIBABC)
 
-all_no_mpi: CFLAGS += -Wall -std=c++11 --pedantic
+all_no_mpi: CFLAGS += -Wall -std=c++11 --pedantic -Wno-deprecated-declarations 
 all_no_mpi: .all
 
 all_ubuntu_mpi: CC = $(MPICC)
@@ -47,7 +48,7 @@ all_mpi: .all
 sqlite3.o: $(SQLDIR)/sqlite3.c $(SQLDIR)/sqlite3.h
 	gcc -g -c $(SQLDIR)/sqlite3.c -I$(SQLDIR)
 
-$(LIBABC): $(OBJECTS) $(LIBSQL)
+$(LIBABC): $(ABC_HEADER) $(OBJECTS) $(LIBSQL)
 	$(AR) -rv $(LIBABC) $(LIBSQL) $(OBJECTS)
 
 $(LIBJSON): $(JSONOBJECTS)
@@ -56,7 +57,7 @@ $(LIBJSON): $(JSONOBJECTS)
 $(LIBSQL): $(SQLOBJECTS)
 	$(AR) -rv $(LIBSQL) $(SQLOBJECTS)
 
-.cpp.o:
+%.o: %.cpp $(ABC_HEADER)
 ifndef TACC_GSL_INC
 ifndef HPC_GSL_INC
 	@echo "Neither TACC_GSL_INC nor HPC_GSL_INC are defined. Do you need to run 'module load gsl'?"
