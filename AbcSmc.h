@@ -14,7 +14,7 @@ class Parameter {
     public:
         Parameter() {};
 
-        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2, double val_step ) 
+        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2, double val_step )
             : name(s), short_name(ss), ptype(p), ntype(n), step(val_step) {
             if (ptype == UNIFORM) {
                 fmin = val1;
@@ -47,12 +47,12 @@ class Parameter {
             }*/
         }
 
-        double sample(const gsl_rng* RNG) { 
+        double sample(const gsl_rng* RNG) {
             if (ptype == UNIFORM) {
                 if (ntype == INT) {
                      // + 1 makes it out of [fmin, fmax], instead of [fmin, fmax)
                     return gsl_rng_uniform_int(RNG, fmax-fmin + 1) + fmin;
-                } else { 
+                } else {
                     return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
                 }
             } else {
@@ -106,19 +106,19 @@ class Metric {
 class Particle {
 //enum ParticleStatus {UNDEFINED_PARAMETERS, UNDEFINED_METRICS, PARTICLE_COMPLETE};
     public:
-        Particle() { 
-            status = UNDEFINED_PARAMETERS; serial = -1; posterior_rank = -1; weight = -1; 
+        Particle() {
+            status = UNDEFINED_PARAMETERS; serial = -1; posterior_rank = -1; weight = -1;
         }
-        Particle(int s):serial(s) { 
+        Particle(int s):serial(s) {
             status = UNDEFINED_PARAMETERS; posterior_rank = -1; weight = -1;
         }
-        Particle(int s, std::vector<long double> p):serial(s), pars(p) { 
+        Particle(int s, std::vector<long double> p):serial(s), pars(p) {
             status = UNDEFINED_METRICS; posterior_rank = -1; weight = -1;
         }
-        Particle(int s, std::vector<long double> p, vector<long double> m):serial(s), pars(p), mets(m) { 
+        Particle(int s, std::vector<long double> p, vector<long double> m):serial(s), pars(p), mets(m) {
             status = PARTICLE_COMPLETE; posterior_rank = -1; weight = -1;
         }
-        Particle(int s, std::vector<long double> p, vector<long double> m, int r, double w):serial(s), pars(p), mets(m), posterior_rank(r), weight(w) { 
+        Particle(int s, std::vector<long double> p, vector<long double> m, int r, double w):serial(s), pars(p), mets(m), posterior_rank(r), weight(w) {
             status = PARTICLE_COMPLETE;
         }
 
@@ -148,7 +148,7 @@ class ParticleSet {
     public:
         ParticleSet() { status = UNSAMPLED_PRIOR; }
         SetStatus get_status() const { return status; }
-        void set_status(SetStatus s) { status = s; } 
+        void set_status(SetStatus s) { status = s; }
 
     private:
         std::vector<Particle*> particles;
@@ -159,7 +159,7 @@ class ParticleSet {
 class AbcSmc {
     public:
         AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
-        AbcSmc( MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
+        AbcSmc( ABC::MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
         void set_num_samples(int n) { _num_particles = n; }
@@ -167,28 +167,28 @@ class AbcSmc {
         void set_predictive_prior_fraction(float f)        { assert(f > 0); assert(f <= 1); _predictive_prior_size = _num_particles * f; }
         void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
         void set_executable( std::string name ) { _executable_filename = name; use_executable = true; }
-        void set_simulator(vector<float_type> (*simulator) (vector<float_type>, const unsigned long int rng_seed, const MPI_par*)) { _simulator = simulator; use_simulator = true; }
+        void set_simulator(vector<ABC::float_type> (*simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const ABC::MPI_par*)) { _simulator = simulator; use_simulator = true; }
         void set_database_filename( std::string name ) { _database_filename = name; }
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
-        void add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) { 
-            _model_mets.push_back(new Metric(name, short_name, ntype, obs_val)); 
+        void add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
+            _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
         }
         void add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step) {
             _model_pars.push_back(new Parameter(name, short_name, ptype, ntype, val1, val2, step));
         }
-        
+
         bool parse_config(std::string conf_filename);
         void report_convergence_data(int);
 
 
         bool build_database(const gsl_rng* RNG);
         bool process_database(const gsl_rng* RNG);
-        bool read_SMC_set_from_database (int t, Mat2D &X_orig, Mat2D &Y_orig);
+        bool read_SMC_set_from_database (int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
 
         bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
-        bool fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serial, vector<Row> &par_mat, vector<unsigned long int> &seeds); 
+        bool fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serial, vector<ABC::Row> &par_mat, vector<unsigned long int> &seeds);
         bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
 
         bool simulate_next_particles(int n);
@@ -197,15 +197,15 @@ class AbcSmc {
         int nmet() { return _model_mets.size(); }
 
     private:
-        Mat2D X_orig;
-        Mat2D Y_orig;
+        ABC::Mat2D X_orig;
+        ABC::Mat2D Y_orig;
         std::vector<Parameter*> _model_pars;
         std::vector<Metric*> _model_mets;
         int _num_smc_sets;
         int _num_particles;
         int _pls_training_set_size;
         int _predictive_prior_size; // number of particles that will be used to inform predictive prior
-        vector<float_type> (*_simulator) (vector<float_type>, const unsigned long int rng_seed, const MPI_par*);
+        vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const ABC::MPI_par*);
         bool use_simulator;
         std::string _executable_filename;
         bool use_executable;
@@ -213,30 +213,30 @@ class AbcSmc {
         std::string resume_directory;
         std::string _database_filename;
         std::string _posterior_database_filename;
-        std::vector< Mat2D > _particle_metrics;
-        std::vector< Mat2D > _particle_parameters;
+        std::vector< ABC::Mat2D > _particle_metrics;
+        std::vector< ABC::Mat2D > _particle_parameters;
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
         std::vector< std::vector<double> > _weights;
 
         //mpi specific variables
-        MPI_par *_mp;
+        ABC::MPI_par *_mp;
 
-        bool _run_simulator(Row &par, Row &met, const unsigned long int rng_seed);
+        bool _run_simulator(ABC::Row &par, ABC::Row &met, const unsigned long int rng_seed);
 
-        bool _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
+        bool _populate_particles( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG );
 
-        bool _populate_particles_mpi( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG ); 
-        void _particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG);
+        bool _populate_particles_mpi( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG );
+        void _particle_scheduler(int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG);
         void _particle_worker();
 
-        void _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig); 
+        void _filter_particles ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
         void _print_particle_table_header();
-        long double calculate_nrmse(vector<Col> posterior_mets);
-        
+        long double calculate_nrmse(vector<ABC::Col> posterior_mets);
+
         void set_resume( bool res ) { resume_flag = res; }
         bool resume() { return resume_flag; }
         void set_resume_directory( std::string res_dir ) { resume_directory = res_dir; }
-        bool read_particle_set( int t, Mat2D &X_orig, Mat2D &Y_orig );
+        bool read_particle_set( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig );
         bool read_predictive_prior( int t );
 
         string _build_sql_select_par_string(string tag);
@@ -251,19 +251,19 @@ class AbcSmc {
         bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
 
-        Col euclidean( Row obs_met, Mat2D sim_met ); 
+        ABC::Col euclidean( ABC::Row obs_met, ABC::Mat2D sim_met );
 
-        Row sample_priors( const gsl_rng* RNG );
+        ABC::Row sample_priors( const gsl_rng* RNG );
 
-        void calculate_doubled_variances( int t ); 
+        void calculate_doubled_variances( int t );
 
-        void normalize_weights( std::vector<double>& weights ); 
+        void normalize_weights( std::vector<double>& weights );
 
-        void calculate_predictive_prior_weights( int set_num ); 
+        void calculate_predictive_prior_weights( int set_num );
 
-        Row sample_predictive_priors( int set_num, const gsl_rng* RNG ); 
+        ABC::Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
 
-        Row _z_transform_observed_metrics( Row& means, Row& stdevs ); 
+        ABC::Row _z_transform_observed_metrics( ABC::Row& means, ABC::Row& stdevs );
 };
 
 #endif

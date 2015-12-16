@@ -21,6 +21,7 @@ using std::ofstream;
 using std::setw;
 
 using namespace sqdb;
+using namespace ABC;
 
 const string double_bar = "=========================================================================================";
 const int PREC = 5;
