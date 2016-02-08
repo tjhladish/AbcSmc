@@ -1,7 +1,14 @@
-CC = g++-4.9 # Eigen is not currently compatible with optimization in gcc 5
-MPICC = mpicxx
+SHELL=/bin/bash
+G++VER := $(shell command -v g++-4.9)
 
-CFLAGS = -O2
+# Eigen is not currently compatible with optimization in gcc 5
+ifndef G++VER
+CPP:=g++
+else
+CPP:=g++-4.9
+endif
+
+CFLAGS = -O2 -Wall -std=c++11 --pedantic -Wno-deprecated-declarations 
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)
 SQLDIR  = $(ABCDIR)/sqdb
@@ -14,7 +21,6 @@ ifdef HPC_GSL_INC
 INCLUDE += -I$$HPC_GSL_INC
 endif
 
-#LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas -L$(ABCDIR) -labc -ljsoncpp -lpthread -ldl
 LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas
 
 SOURCES =  AbcSmc.cpp AbcUtil.cpp CCRC32.cpp
@@ -31,19 +37,8 @@ JSONOBJECTS = $(JSONSOURCES:.cpp=.o)
 SQLOBJECTS  = $(SQLSOURCES:.cpp=.o)
 ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h
 
-default: all_no_mpi
+default: .all
 .all:  $(LIBJSON) sqlite3.o $(LIBSQL) $(SOURCES) $(LIBABC)
-
-all_no_mpi: CFLAGS += -Wall -std=c++11 --pedantic -Wno-deprecated-declarations 
-all_no_mpi: .all
-
-all_ubuntu_mpi: CC = $(MPICC)
-all_ubuntu_mpi: CFLAGS += -Wall -std=c++11 -D USING_MPI -D MPICH_IGNORE_CXX_SEEK -D MPICH_SKIP_MPICXX
-all_ubuntu_mpi: .all
-
-all_mpi: CC = $(MPICC)
-all_mpi: CFLAGS += -w0 -std=c++11 -cxx=icc -D USING_MPI -D MPICH_IGNORE_CXX_SEEK -D MPICH_SKIP_MPICXX
-all_mpi: .all
 
 sqlite3.o: $(SQLDIR)/sqlite3.c $(SQLDIR)/sqlite3.h
 	gcc -g -c $(SQLDIR)/sqlite3.c -I$(SQLDIR)
@@ -63,7 +58,7 @@ ifndef HPC_GSL_INC
 	@echo "Neither TACC_GSL_INC nor HPC_GSL_INC are defined. Do you need to run 'module load gsl'?"
 endif
 endif
-	$(CC) $(LIBS) $(CFLAGS) -c $(INCLUDE) $< -o $@
+	$(CPP) $(LIBS) $(CFLAGS) -c $(INCLUDE) $< -o $@
 
 clean:
 	rm -f $(OBJECTS) $(JSONOBJECTS) $(SQLOBJECTS) $(LIBABC) $(LIBJSON) $(LIBSQL)
