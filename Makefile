@@ -8,7 +8,7 @@ else
 CPP:=g++-4.9
 endif
 
-CFLAGS = -O2 -Wall -std=c++11 --pedantic -Wno-deprecated-declarations 
+CFLAGS = -O2 -Wall -std=c++11 --pedantic -Wno-deprecated-declarations
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)
 SQLDIR  = $(ABCDIR)/sqdb
