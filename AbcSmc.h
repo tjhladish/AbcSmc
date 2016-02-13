@@ -167,7 +167,7 @@ class AbcSmc {
         void set_predictive_prior_fraction(float f)        { assert(f > 0); assert(f <= 1); _predictive_prior_size = _num_particles * f; }
         void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
         void set_executable( std::string name ) { _executable_filename = name; use_executable = true; }
-        void set_simulator(vector<ABC::float_type> (*simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const ABC::MPI_par*)) { _simulator = simulator; use_simulator = true; }
+        void set_simulator(vector<ABC::float_type> (*simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*)) { _simulator = simulator; use_simulator = true; }
         void set_database_filename( std::string name ) { _database_filename = name; }
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
         void write_particle_file( const int t );
@@ -205,7 +205,7 @@ class AbcSmc {
         int _num_particles;
         int _pls_training_set_size;
         int _predictive_prior_size; // number of particles that will be used to inform predictive prior
-        vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const ABC::MPI_par*);
+        vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
         bool use_simulator;
         std::string _executable_filename;
         bool use_executable;
@@ -221,7 +221,7 @@ class AbcSmc {
         //mpi specific variables
         ABC::MPI_par *_mp;
 
-        bool _run_simulator(ABC::Row &par, ABC::Row &met, const unsigned long int rng_seed);
+        bool _run_simulator(ABC::Row &par, ABC::Row &met, const unsigned long int rng_seed, const unsigned long int serial);
 
         bool _populate_particles( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG );
 

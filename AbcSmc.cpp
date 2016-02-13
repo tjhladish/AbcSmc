@@ -497,11 +497,11 @@ void AbcSmc::_particle_worker() {
 }
 
 
-bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed) {
+bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed, const unsigned long int serial) {
 //cerr << par << endl;
     bool particle_success = true;
     if (use_simulator) {
-        vector<float_type> met_vec = _simulator( as_vector(par), rng_seed, _mp );
+        vector<float_type> met_vec = _simulator( as_vector(par), rng_seed, serial, _mp );
         if ((signed) met_vec.size() != nmet()) {
             cerr << "ERROR: simulator function returned the wrong number of metrics: expected " << nmet() << ", received " << met_vec.size() << endl; 
             particle_success = false;
@@ -747,7 +747,7 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
             const int start_time = time(0);
             const int serial = serials[i];
             met_mat.push_back( Row(nmet()) );
-            bool success = _run_simulator(par_mat[i], met_mat[i], rng_seeds[i]);
+            bool success = _run_simulator(par_mat[i], met_mat[i], rng_seeds[i], serial);
             if (not success) exit(-209);
 
             stringstream ss;
