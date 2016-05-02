@@ -55,7 +55,7 @@ namespace ABC {
       using namespace mpfr;
       typedef mpreal float_type;
   #else
-      typedef long double float_type;
+      typedef double float_type;
   #endif 
 
   typedef Matrix<float_type,Dynamic,Dynamic> Mat2D;
