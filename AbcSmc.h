@@ -17,6 +17,7 @@ class Parameter {
         Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2, double val_step )
             : name(s), short_name(ss), ptype(p), ntype(n), step(val_step) {
             if (ptype == UNIFORM) {
+                assert(val1 < val2);
                 fmin = val1;
                 fmax = val2;
                 mean = (val2 + val1) / 2.0;

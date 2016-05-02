@@ -422,6 +422,7 @@ namespace ABC {
   }
 
   double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng) {
+      assert(min < max);
       double sigma = sqrt(sigma_squared);
       // Don't like this, but it will work
       // as long as min and max are reasonable
