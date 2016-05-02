@@ -44,17 +44,19 @@ class PLS_Model {
         if (algorithm == KERNEL_TYPE2) XX = X.transpose() * X;
 
         for (int i=0; i<A; i++) {
+            cerr << "i in ABC: " << i << endl;
             Colc w, p, q, r, t; 
             complex<float_type> tt;
             if (M==1) {
                 w = XY.cast<complex<float_type> >();
             } else {
+                cerr << "solving: " << XY.transpose() * XY << endl;
                 EigenSolver<Mat2D> es( (XY.transpose() * XY) );
                 q = dominant_eigenvector(es);
                 w = (XY*q);
             }
 
-            w /= sqrt((w.transpose()*w)(0,0)); // use normalize function from eigen?
+            w = w / sqrt((w.transpose()*w)(0,0)); // use normalize function from eigen?
             r=w;
             for (int j=0; j<=i-1; j++) {
                 r -= (P.col(j).transpose()*w)(0,0)*R.col(j);
@@ -67,13 +69,30 @@ class PLS_Model {
                 tt = (r.transpose()*XX*r)(0,0);
                 p.noalias() = (r.transpose()*XX).transpose();
             }
-            p /= tt;
-            q.noalias() = (r.transpose()*XY).transpose(); q /= tt;
-            XY -= ((p*q.transpose())*tt).real(); // is casting this to 'real' always safe?
+
+
+            p = p / tt;
+            q.noalias() = (r.transpose()*XY).transpose(); 
+            q = q / tt;
+
+            cerr << "p=" << p << endl;
+            cerr << "q'=" << q.transpose() << endl;
+            cerr << "tt=" << tt << endl;
+            cerr << "XY=" << XY << endl;
+            cerr << "p*q'=" << p*q.transpose() << endl; 
+            cerr << "product=" << ((p*q.transpose())*tt) << endl; 
+            cerr << "real=" << ((p*q.transpose())*tt).real();
+            XY = XY - ((p*q.transpose())*tt).real(); // is casting this to 'real' always safe?
+            cerr << "p=" << p << endl;
+            cerr << "q=" << q << endl;
+            cerr << "tt=" << tt << endl;
+            cerr << "XY=" << XY << endl;
             W.col(i)=w;
             P.col(i)=p;
             Q.col(i)=q;
             R.col(i)=r;
+
+
             if (algorithm == KERNEL_TYPE1) T.col(i) = t;
         }
         return; 

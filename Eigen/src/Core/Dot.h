@@ -153,7 +153,13 @@ MatrixBase<Derived>::normalized() const
 template<typename Derived>
 inline void MatrixBase<Derived>::normalize()
 {
-  *this /= norm();
+  std::cerr << "aha!\n";
+  std::cerr << *this << std::endl;
+  std::cerr << norm() << std::endl;
+  std::cerr << "rs size: " << sizeof(RealScalar) << std::endl;
+  std::cerr << *this / norm() << std::endl;
+  *this = *this / norm();
+  //*this /= norm();
 }
 
 //---------- implementation of other norms ----------

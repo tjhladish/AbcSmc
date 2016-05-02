@@ -12,6 +12,10 @@
 #define EIGEN_EIGENSOLVER_H
 
 #include "./RealSchur.h"
+#include <iostream>
+
+using std::endl;
+using std::cerr;
 
 namespace Eigen { 
 
@@ -38,7 +42,7 @@ namespace Eigen {
   * \f$ satisfying \f$ A V = V D \f$, just like the eigendecomposition, if the
   * matrix \f$ D \f$ is not required to be diagonal, but if it is allowed to
   * have blocks of the form
-  * \f[ \begin{bmatrix} u & v \\ -v & u \end{bmatrix} \f]
+  * \f[ \begi{bmatrix} u & v \\ -v & u \end{bmatrix} \f]
   * (where \f$ u \f$ and \f$ v \f$ are real numbers) on the diagonal.  These
   * blocks correspond to complex eigenvalue pairs \f$ u \pm iv \f$. We call
   * this variant of the eigendecomposition the pseudo-eigendecomposition.
@@ -152,6 +156,7 @@ template<typename _MatrixType> class EigenSolver
         m_matT(matrix.rows(), matrix.cols()), 
         m_tmp(matrix.cols())
     {
+      cerr << "calling EigenSolver\n";
       compute(matrix, computeEigenvectors);
     }
 
@@ -324,8 +329,10 @@ MatrixType EigenSolver<MatrixType>::pseudoEigenvalueMatrix() const
   MatrixType matD = MatrixType::Zero(n,n);
   for (Index i=0; i<n; ++i)
   {
-    if (internal::isMuchSmallerThan(numext::imag(m_eivalues.coeff(i)), numext::real(m_eivalues.coeff(i))))
+    cerr << i << endl;
+    if (internal::isMuchSmallerThan(numext::imag(m_eivalues.coeff(i)), numext::real(m_eivalues.coeff(i)))) {
       matD.coeffRef(i,i) = numext::real(m_eivalues.coeff(i));
+    }
     else
     {
       matD.template block<2,2>(i,i) <<  numext::real(m_eivalues.coeff(i)), numext::imag(m_eivalues.coeff(i)),
@@ -343,16 +350,26 @@ typename EigenSolver<MatrixType>::EigenvectorsType EigenSolver<MatrixType>::eige
   eigen_assert(m_eigenvectorsOk && "The eigenvectors have not been computed together with the eigenvalues.");
   Index n = m_eivec.cols();
   EigenvectorsType matV(n,n);
+  cerr << "ES\n";
   for (Index j=0; j<n; ++j)
   {
+    cerr << j << endl;
     if (internal::isMuchSmallerThan(numext::imag(m_eivalues.coeff(j)), numext::real(m_eivalues.coeff(j))) || j+1==n)
     {
+      cerr << "option A\n";
       // we have a real eigen value
       matV.col(j) = m_eivec.col(j).template cast<ComplexScalar>();
+      cerr << "Before" << endl;
+      cerr << matV.col(j) << endl << endl;
+
       matV.col(j).normalize();
+
+      cerr << "After" << endl;
+      cerr << matV.col(j) << endl << endl;
     }
     else
     {
+      cerr << "option B\n";
       // we have a pair of complex eigen values
       for (Index i=0; i<n; ++i)
       {
@@ -407,8 +424,10 @@ EigenSolver<MatrixType>::compute(const MatrixType& matrix, bool computeEigenvect
     }
     
     // Compute eigenvectors.
-    if (computeEigenvectors)
+    if (computeEigenvectors) {
+      cerr << "calling doComputeEigenvectors" << endl;
       doComputeEigenvectors();
+    }
   }
 
   m_isInitialized = true;
@@ -441,6 +460,7 @@ std::complex<Scalar> cdiv(const Scalar& xr, const Scalar& xi, const Scalar& yr, 
 template<typename MatrixType>
 void EigenSolver<MatrixType>::doComputeEigenvectors()
 {
+  std::cerr << "doComputeEigenvectors\n";
   using std::abs;
   const Index size = m_eivec.cols();
   const Scalar eps = NumTraits<Scalar>::epsilon();
@@ -460,12 +480,16 @@ void EigenSolver<MatrixType>::doComputeEigenvectors()
 
   for (Index n = size-1; n >= 0; n--)
   {
+    std::cerr << "m " << m_eivalues << std::endl;
     Scalar p = m_eivalues.coeff(n).real();
     Scalar q = m_eivalues.coeff(n).imag();
 
+    std::cerr << "p " << p << " " << n << std::endl;
+    std::cerr << "q " << q << " " << n << std::endl;
     // Scalar vector
     if (q == Scalar(0))
     {
+      std::cerr << "A " << q << " " << n << std::endl;
       Scalar lastr(0), lastw(0);
       Index l = n;
 
@@ -512,6 +536,9 @@ void EigenSolver<MatrixType>::doComputeEigenvectors()
     }
     else if (q < Scalar(0) && n > 0) // Complex vector
     {
+
+      std::cerr << "B " << q << " " << n << std::endl;
+
       Scalar lastra(0), lastsa(0), lastw(0);
       Index l = n-1;
 
