@@ -308,7 +308,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         // join all three tables for rows with smcSet = t, slurp and store values
         string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string() 
                             + "from jobs J, metrics M, parameters P where J.serial = M.serial and J.serial = P.serial "
-                            + "and J.smcSet = " + to_string(t) + ";";
+                            + "and J.smcSet = " + to_string((long long) t) + ";";
 
         serials.push_back( vector<int>(completed_set_size) );
 
@@ -324,6 +324,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             const int particle_idx = s2.GetField(1);
             const int posterior_rank = s2.GetField(2);
 
+            if (particle_counter != particle_idx) cerr << "ERROR: particle_counter != particle_idx (" << particle_counter << " != " << particle_idx << ")\n";
             assert(particle_counter == particle_idx);
             serials[t][particle_counter] = serial;
             if (posterior_rank > -1) posterior_pairs.push_back(make_pair( posterior_rank, particle_idx ) );
@@ -671,7 +672,7 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
             par_mat.push_back(pars);
 
             //job_ss << serial << ";";
-            string job_str = update_jobs_ss.str() + to_string(serial) + ";";
+            string job_str = update_jobs_ss.str() + to_string((long long) serial) + ";";
 //            cerr << "Attempting: " << job_str << endl;
             db.Query(job_str.c_str()).Next(); // update jobs table
         }
@@ -944,6 +945,8 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
         sqdb::Db db(_posterior_database_filename.c_str());
         QueryStr qstr;
 
+        // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
+        // TODO - also, best guess is this is REALLY slow for building large derivative databases, since it's fetching a row at a time and not buffering
         Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT("select %s from parameters P, jobs J where P.serial = J.serial and posterior = %d order by P.serial desc limit 1;"), 
                                            posterior_strings.c_str(), posterior_rank));
 
