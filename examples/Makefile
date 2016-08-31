@@ -1,13 +1,4 @@
-SHELL=/bin/bash
-G++VER := $(shell command -v g++-4.9)
-
-# Eigen is not currently compatible with optimization in gcc 5
-ifndef G++VER
 CPP:=g++
-else
-CPP:=g++-4.9
-endif
-
 CFLAGS = -O2 -Wall -std=c++11 --pedantic -Wno-deprecated-declarations
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)/..
