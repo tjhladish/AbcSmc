@@ -582,10 +582,14 @@ bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
         db.RollbackTransaction();
         cerr << "CAUGHT E: ";
         cerr << e.GetErrorMsg() << endl;
+        cerr << "Failed query:" << endl;
+        for (unsigned int i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
     } catch (const exception& e) {
         db.RollbackTransaction();
         cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
+        cerr << "Failed query:" << endl;
+        for (unsigned int i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
     }
     return db_success;
 }
@@ -683,10 +687,12 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
         db.RollbackTransaction();
         cerr << "CAUGHT E: ";
         cerr << e.GetErrorMsg() << endl;
+        cerr << "Failed while fetching particle parameters" << endl;
     } catch (const exception& e) {
         db.RollbackTransaction();
         cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
+        cerr << "Failed while fetching particle parameters" << endl;
     }
 
     return db_success;
@@ -709,10 +715,20 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
         db.RollbackTransaction();
         cerr << "CAUGHT E: ";
         cerr << e.GetErrorMsg() << endl;
+        cerr << "Failed while updating metrics:" << endl;
+        for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
+            cerr << update_metrics_strings[i] << endl;
+            cerr << update_jobs_strings[i] << endl;
+        }
     } catch (const exception& e) {
         db.RollbackTransaction();
         cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
+        cerr << "Failed while updating metrics:" << endl;
+        for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
+            cerr << update_metrics_strings[i] << endl;
+            cerr << update_jobs_strings[i] << endl;
+        }
     }
 
     return db_success;
