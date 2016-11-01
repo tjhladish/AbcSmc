@@ -333,6 +333,7 @@ namespace ABC {
   float_type skewness(const Col data) {
       float_type _x = mean(data);
       float_type _v = variance(data, _x);
+      if (_v == 0) return 0; // Avoids nans.  If variance is 0, define skewness as 0
       return ((data.array() - _x).pow(3).sum() / data.size() ) / pow(_v, 1.5);
   }
 
