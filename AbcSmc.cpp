@@ -661,10 +661,10 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
     bool db_success = false;
     try {
         //db.BeginTransaction();
+        cerr << "Attempting: " << select_pars_ss.str() << endl;
         db.Query("BEGIN EXCLUSIVE;").Next();
-
+        cerr << "Lock obtained" << endl;
         Statement s = db.Query(select_pars_ss.str().c_str());
-//        cerr << "Attempting: " << select_pars_ss.str() << endl;
         while (s.Next()) {
             Row pars(npar());
             const int serial = (int) s.GetField(0); 
@@ -677,7 +677,7 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
 
             //job_ss << serial << ";";
             string job_str = update_jobs_ss.str() + to_string((long long) serial) + ";";
-//            cerr << "Attempting: " << job_str << endl;
+            cerr << "Attempting: " << job_str << endl;
             db.Query(job_str.c_str()).Next(); // update jobs table
         }
 
@@ -747,6 +747,8 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     // Do already running jobs as well, if there are not enough queued jobs
     // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
     select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts limit " << n << ";";
+    //  line below is much faster for very large dbs, but not all particles will get run e.g. if some particles are killed by scheduler
+    //    select_ss << "and J.status = 'Q' limit " << n << ";";
 
     const int overall_start_time = time(0);
     // build jobs update statement to indicate job is running
