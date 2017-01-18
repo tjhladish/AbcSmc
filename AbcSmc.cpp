@@ -10,7 +10,7 @@
 #include <sstream>
 #include <fstream>
 
-// need a positive int that is very unlikely 
+// need a positive int that is very unlikely
 // to be less than the number of particles
 #define STOP_TAG 10000000
 
@@ -25,7 +25,7 @@ using namespace ABC;
 
 const string double_bar = "=========================================================================================";
 const int PREC = 5;
-const int WIDTH = 12; 
+const int WIDTH = 12;
 
 bool AbcSmc::parse_config(string conf_filename) {
     Json::Value par;   // will contains the par value after parsing.
@@ -69,7 +69,7 @@ bool AbcSmc::parse_config(string conf_filename) {
         string name = model_par[i]["name"].asString();
         string short_name = model_par[i].get("short_name", "").asString();
 
-        PriorType ptype = UNIFORM; 
+        PriorType ptype = UNIFORM;
         string ptype_str = model_par[i]["dist_type"].asString();
         if (ptype_str == "UNIFORM") {
             ptype = UNIFORM;
@@ -88,7 +88,7 @@ bool AbcSmc::parse_config(string conf_filename) {
             exit(-205);
         }
 
-        NumericType ntype = INT; 
+        NumericType ntype = INT;
         string ntype_str = model_par[i]["num_type"].asString();
         if (ntype_str == "INT") {
             ntype = INT;
@@ -99,20 +99,59 @@ bool AbcSmc::parse_config(string conf_filename) {
             exit(-206);
         }
 
+        double (*_untransform)(const double);
+        // linear rescaling [min, max] not for par as sampled, but as input to sim
+        // NB: if par is not on [0, 1] after untransforming, this is still a linear rescaling, but not onto [min, max]
+        pair<double, double> par_rescale = {0.0, 1.0};
+        //auto _untransform = [](const double t) { return t; };
+        if (not model_par[i].isMember("untransform")) {
+            _untransform = [](const double t) { return t; };
+        } else if (model_par[i]["untransform"].type() == Json::ValueType::stringValue) {
+            string ttype_str = model_par[i].get("untransform", "NONE").asString();
+
+            if (ttype_str == "NONE") {
+                _untransform = [](const double t) { return t; };
+                //ttype = UNTRANSFORMED;
+            } else if (ttype_str == "POW_10") {
+                _untransform = [](const double t) { return pow(10.0, t); };
+                //ttype = LOG_10;
+                use_transformed_pars = true;
+            } else if (ttype_str == "LOGISTIC") {
+                _untransform = [](const double t) { return ABC::logistic(t); };
+                //ttype = LOGIT;
+                use_transformed_pars = true;
+            } else {
+                cerr << "Unknown parameter transformation type: " << ttype_str << ".  Aborting." << endl;
+                exit(-206);
+            }
+
+        } else if (model_par[i]["untransform"].type() == Json::ValueType::objectValue) {
+            string ttype_str = model_par[i]["untransform"]["type"].asString();
+            if (ttype_str != "LOGISTIC") {
+                cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
+                exit(-207);
+            }
+            par_rescale = {model_par[i]["untransform"]["min"].asDouble(), model_par[i]["untransform"]["max"].asDouble()};
+            _untransform = [](const double t) { return ABC::logistic(t); };
+        } else {
+            cerr << "Unsupported JSON data type associated with 'untransform' parameter key.\n";
+            exit(-208);
+        }
+
         double par1 = model_par[i]["par1"].asDouble();
         double par2 = model_par[i]["par2"].asDouble();
         double step = model_par[i].get("step", 1.0).asDouble(); // default increment is 1
 
-        add_next_parameter( name, short_name, ptype, ntype, par1, par2, step);
+        add_next_parameter(name, short_name, ptype, ntype, par1, par2, step, _untransform, par_rescale);
     }
 
-    // Parse model metrics 
+    // Parse model metrics
     const Json::Value model_met = par["metrics"];
     for ( unsigned int i = 0; i < model_met.size(); ++i )  {// Iterates over the sequence elements.
         string name = model_met[i]["name"].asString();
         string short_name = model_met[i].get("short_name", "").asString();
 
-        NumericType ntype = INT; 
+        NumericType ntype = INT;
         string ntype_str = model_met[i]["num_type"].asString();
         if (ntype_str == "INT") {
             ntype = INT;
@@ -120,12 +159,12 @@ bool AbcSmc::parse_config(string conf_filename) {
             ntype = FLOAT;
         } else {
             cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
-            exit(-207);
+            exit(-209);
         }
 
         double val = model_met[i]["value"].asDouble();
 
-        add_next_metric( name, short_name, ntype, val);
+        add_next_metric(name, short_name, ntype, val);
     }
 
     return true;
@@ -140,14 +179,9 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
     _particle_parameters.clear();
     _particle_metrics.clear();
     _weights.clear();
+    _predictive_prior.clear();
 
     cerr << std::setprecision(PREC);
-
-    _particle_parameters.clear();
-    _particle_metrics.clear();
-    _weights.clear();
-
-    _predictive_prior.clear();
 
     vector< vector<int> > serials;
     read_SMC_sets_from_database(db, serials);
@@ -170,18 +204,23 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             pars = sample_predictive_priors(t+1, RNG);
             QueryStr qstr;
 
-            ss << "insert into jobs values ( " << serial << ", " 
-                                               << t+1 << ", " 
-                                               << i << ", " 
-                                               << time(NULL) 
+            ss << "insert into jobs values ( " << serial << ", "
+                                               << t+1 << ", "
+                                               << i << ", "
+                                               << time(NULL)
                                                << ", NULL, 'Q', -1, 0 );";
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
-            const unsigned long int seed = gsl_rng_get(RNG); // seed for particle 
+            const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
             ss << "insert into parameters values ( " << serial << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
+
+            if (use_transformed_pars) {
+                ss << "insert into uparameters values ( " << serial << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << _model_pars[j]->untransform(pars[j]); ss << " );";
+                _db_execute_stringstream(db, ss);
+            }
 
             ss << "insert into metrics values ( " << serial; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
@@ -197,7 +236,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
 
 
 void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
-    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2 
+    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2
                                                       << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
 }
 
@@ -214,7 +253,7 @@ void AbcSmc::report_convergence_data(int t) {
             current_means[j] += par_value;
         }
         current_means[j] /= N;
-        
+
         if (t > 0) {
             int N2 = _predictive_prior[t-1].size();
             for (int i = 0; i < N2; i++) {
@@ -301,12 +340,12 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         if (set_size != completed_set_size) {
             cerr << "ERROR: Failed to read SMC set from database because not all particles are complete in set " << t << "\n";
             return false;
-        } 
+        }
         _particle_parameters.push_back( Mat2D::Zero( completed_set_size, npar() ) );
         _particle_metrics.push_back( Mat2D::Zero( completed_set_size, nmet() ) );
 
         // join all three tables for rows with smcSet = t, slurp and store values
-        string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string() 
+        string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
                             + "from jobs J, metrics M, parameters P where J.serial = M.serial and J.serial = P.serial "
                             + "and J.smcSet = " + to_string((long long) t) + ";";
 
@@ -328,19 +367,19 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             assert(particle_counter == particle_idx);
             serials[t][particle_counter] = serial;
             if (posterior_rank > -1) posterior_pairs.push_back(make_pair( posterior_rank, particle_idx ) );
-            for(int i=offset; i < offset + npar(); i++) _particle_parameters[t](particle_counter,i-offset) = (double) s2.GetField(i); 
+            for(int i=offset; i < offset + npar(); i++) _particle_parameters[t](particle_counter,i-offset) = (double) s2.GetField(i);
             offset += npar();
-            for(int i=offset; i < offset + nmet(); i++) _particle_metrics[t](particle_counter,i-offset) = (double) s2.GetField(i); 
+            for(int i=offset; i < offset + nmet(); i++) _particle_metrics[t](particle_counter,i-offset) = (double) s2.GetField(i);
             particle_counter++;
         }
-       
-        const int posterior_size = posterior_pairs.size() > 0 ? posterior_pairs.size() : _predictive_prior_size; 
+
+        const int posterior_size = posterior_pairs.size() > 0 ? posterior_pairs.size() : _predictive_prior_size;
         _predictive_prior.push_back( vector<int>(posterior_size) );
         if (posterior_pairs.size() > 0) {
             for (unsigned int i = 0; i < posterior_pairs.size(); i++) {
                 const int rank = posterior_pairs[i].first;
                 const int idx = posterior_pairs[i].second;
-                _predictive_prior.back()[rank] = idx; 
+                _predictive_prior.back()[rank] = idx;
             }
         } else {
             cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
@@ -358,7 +397,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         calculate_predictive_prior_weights( t );
 
     }
- 
+
     return true;
 }
 
@@ -393,11 +432,11 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
                  particle_id,                     // message tag
                  _mp->comm);                      // always use this
     }
-    
+
     // Receive a result from any worker and dispatch a new work request
     long double rec_buffer[nmet()];
     particle_id++; // move cursor to next particle to be sent
-    while ( particle_id < _num_particles ) { 
+    while ( particle_id < _num_particles ) {
         MPI_Recv(&rec_buffer,                     // message buffer
                  nmet(),                          // message size
                  MPI_LONG_DOUBLE,                 // of type double
@@ -415,20 +454,20 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
                  _mp->comm);                      // always use this
         particle_id++; // move cursor
     }
-    
-    // receive results for outstanding work requests--there are exactly 'num_workers' 
+
+    // receive results for outstanding work requests--there are exactly 'num_workers'
     // or '_num_particles' left, whichever is smaller
     for (int rank = 1; rank < _mp->mpi_size and rank <= _num_particles; ++rank) {
-        MPI_Recv(&rec_buffer, 
-                 nmet(), 
-                 MPI_LONG_DOUBLE, 
+        MPI_Recv(&rec_buffer,
+                 nmet(),
+                 MPI_LONG_DOUBLE,
                  MPI_ANY_SOURCE,
-                 MPI_ANY_TAG, 
-                 _mp->comm, 
+                 MPI_ANY_TAG,
+                 _mp->comm,
                  &status);
         for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
     }
-     
+
     // Tell all the workers they're done for now
     for (int rank = 1; rank < _mp->mpi_size; ++rank) {
         MPI_Send(0, 0, MPI_INT, rank, STOP_TAG, _mp->comm);
@@ -442,7 +481,7 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
             X_orig(i,j) = rec_data[i*nmet() + j];
         }
     }
-    
+
     // bandaid, in case simulator returns nonsense values
     for (unsigned int i = 0; i < bad_particle_idx.size(); i++) {
         X_orig.row(i).fill(numeric_limits<float_type>::min());
@@ -462,12 +501,12 @@ void AbcSmc::_particle_worker() {
     long double *local_X_data = new long double[nmet()]();
 
     while (1) {
-        MPI_Recv(local_Y_data, 
-                 npar(), 
-                 MPI_LONG_DOUBLE, 
-                 mpi_root, 
+        MPI_Recv(local_Y_data,
+                 npar(),
+                 MPI_LONG_DOUBLE,
+                 mpi_root,
                  MPI_ANY_TAG,
-                 _mp->comm, 
+                 _mp->comm,
                  &status);
 
         // Check the tag of the received message.
@@ -483,15 +522,15 @@ void AbcSmc::_particle_worker() {
         for (int j = 0; j<npar(); j++) { pars[j] = local_Y_data[j]; }
 
         bool success = _run_simulator(pars, mets);
-        if (not success) exit(-208);
+        if (not success) exit(-210);
 
         for (int j = 0; j<nmet(); j++) { local_X_data[j] = mets[j]; }
 
-        MPI_Send(local_X_data, 
-                 nmet(), 
-                 MPI_LONG_DOUBLE, 
-                 mpi_root, 
-                 status.MPI_TAG, 
+        MPI_Send(local_X_data,
+                 nmet(),
+                 MPI_LONG_DOUBLE,
+                 mpi_root,
+                 status.MPI_TAG,
                  _mp->comm);
     }
 #endif
@@ -504,7 +543,7 @@ bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed
     if (use_simulator) {
         vector<float_type> met_vec = _simulator( as_vector(par), rng_seed, serial, _mp );
         if ((signed) met_vec.size() != nmet()) {
-            cerr << "ERROR: simulator function returned the wrong number of metrics: expected " << nmet() << ", received " << met_vec.size() << endl; 
+            cerr << "ERROR: simulator function returned the wrong number of metrics: expected " << nmet() << ", received " << met_vec.size() << endl;
             particle_success = false;
         }
         met = as_row(met_vec);
@@ -622,9 +661,13 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         ss << "create table parameters( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
         _db_execute_stringstream(db, ss);
 
+        if (use_transformed_pars) {
+            ss << "create table uparameters( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
+            _db_execute_stringstream(db, ss);
+        }
+
         ss << "create table metrics( serial int primary key, " << _build_sql_create_met_string("") << ");";
         _db_execute_stringstream(db, ss);
-
     } else {
         return false;
     }
@@ -644,10 +687,15 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         Statement s = db.Query("select last_insert_rowid() from jobs;");
         s.Next();
         const int rowid = ((int) s.GetField(0)) - 1; // indexing should start at 0
-        
-        const unsigned long int seed = gsl_rng_get(RNG); // seed for particle 
+
+        const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
         ss << "insert into parameters values ( " << rowid << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
         _db_execute_stringstream(db, ss);
+
+        if (use_transformed_pars) {
+            ss << "insert into uparameters values ( " << rowid << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << _model_pars[j]->untransform(pars[j]); ss << " );";
+            _db_execute_stringstream(db, ss);
+        }
 
         ss << "insert into metrics values ( " << rowid; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
         _db_execute_stringstream(db, ss);
@@ -667,7 +715,7 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
         Statement s = db.Query(select_pars_ss.str().c_str());
         while (s.Next()) {
             Row pars(npar());
-            const int serial = (int) s.GetField(0); 
+            const int serial = (int) s.GetField(0);
             serials.push_back( serial );
             const unsigned long int seed = (unsigned long int) s.GetField(1);
             rng_seeds.push_back(seed);
@@ -767,7 +815,7 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
             const int serial = serials[i];
             met_mat.push_back( Row(nmet()) );
             bool success = _run_simulator(par_mat[i], met_mat[i], rng_seeds[i], serial);
-            if (not success) exit(-209);
+            if (not success) exit(-211);
 
             stringstream ss;
             ss << "update metrics set ";
@@ -779,7 +827,7 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
             ss.str(string()); ss.clear();
 
             // build jobs update statement to indicate job is running
-            ss << "update jobs set startTime = " << start_time << ", duration = " << time(0) - start_time 
+            ss << "update jobs set startTime = " << start_time << ", duration = " << time(0) - start_time
                << ", status = 'D' where serial = " << serial << " and (status = 'R' or status = 'Q' or status = 'P');";
             update_jobs_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
@@ -834,12 +882,12 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     plsm.plsr(X.topRows(_pls_training_set_size), Y.topRows(_pls_training_set_size), KERNEL_TYPE1);
 
     // A is number of components to use
-    for (int A = 1; A<=ncomp; A++) { 
+    for (int A = 1; A<=ncomp; A++) {
         // How well did we do with this many components?
         cerr << setw(2) << A << " components ";
         cerr << "explained variance: " << plsm.explained_variance(X, Y, A);
         //cerr << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
-        cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl; 
+        cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl;
     }
 
     const int test_set_size = nobs - _pls_training_set_size;
@@ -908,7 +956,7 @@ Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
         }
         distances(r) = sqrt( distances(r) );
     }
-    return distances; 
+    return distances;
 }
 
 Row AbcSmc::sample_priors(const gsl_rng* RNG) {
@@ -965,7 +1013,7 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
 
         // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
         // TODO - also, best guess is this is REALLY slow for building large derivative databases, since it's fetching a row at a time and not buffering
-        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT("select %s from parameters P, jobs J where P.serial = J.serial and posterior = %d order by P.serial desc limit 1;"), 
+        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT("select %s from parameters P, jobs J where P.serial = J.serial and posterior = %d order by P.serial desc limit 1;"),
                                            posterior_strings.c_str(), posterior_rank));
 
         s.Next();
@@ -1025,15 +1073,19 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
         // weights from set - 1 are needed to calculate weights for current set
         _weights.push_back( vector<double>( _predictive_prior[set_num].size(), 0.0 ) );
         //_weights[set_num].resize( _predictive_prior[set_num].size() );
-        
-        double numerator = 1;
-        for (int j = 0; j<npar(); j++) {
-            Parameter* par = _model_pars[j];
-            numerator *= uniform_pdf(par->get_prior_min(), par->get_prior_max());
-        }
 
         for (unsigned int i = 0; i < _predictive_prior[set_num].size(); i++) {
+            double numerator = 1;
             double denominator = 0.0;
+            for (int j = 0; j < npar(); j++) {
+                Parameter* par = _model_pars[j];
+                // UNIFORM pars don't require evaluating pdf, since it is the same for all particles
+                if (par->get_prior_type() == NORMAL) {
+                    double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
+                    numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
+                }
+            }
+
             for (unsigned int k = 0; k < _predictive_prior[set_num - 1].size(); k++) {
                 double running_product = _weights[set_num - 1][k];
                 for (int j = 0; j < npar(); j++) {

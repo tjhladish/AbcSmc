@@ -3,19 +3,19 @@
 
 #define mpi_root 0
 
+#include <cfloat>
 #include "AbcUtil.h"
 #include "sqdb.h"
 
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
 
-
 class Parameter {
     public:
         Parameter() {};
 
-        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2, double val_step )
-            : name(s), short_name(ss), ptype(p), ntype(n), step(val_step) {
+        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2, double val_step, double (*u)(const double), std::pair<double, double> r )
+            : name(s), short_name(ss), ptype(p), ntype(n), step(val_step), untran_func(u), rescale(r) {
             if (ptype == UNIFORM) {
                 assert(val1 < val2);
                 fmin = val1;
@@ -23,6 +23,11 @@ class Parameter {
                 mean = (val2 + val1) / 2.0;
                 stdev = sqrt(pow(val2-val1,2)/12);
                 state = 0;   // dummy variable for UNIFORM
+            } else if (ptype == NORMAL) {
+                fmin = DBL_MIN;
+                fmax = DBL_MAX;
+                mean = val1;
+                stdev = val2;
             } else if (ptype == PSEUDO) {
                 fmin = val1;
                 fmax = val2;
@@ -40,12 +45,6 @@ class Parameter {
                 exit(-200);
             }
 
-            /*else if (ptype == NORMAL) {
-                fmin = DBL_MIN;
-                fmax = DBL_MAX;
-                mean = val1;
-                stdev = val2;
-            }*/
         }
 
         double sample(const gsl_rng* RNG) {
@@ -56,6 +55,13 @@ class Parameter {
                 } else {
                     return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
                 }
+            } else if (ptype == NORMAL) {
+                if (ntype == INT) {
+                    cerr << "Integer type not supported for normal distributions.  Aborting." << endl;
+                    exit(-199);
+                } else {
+                    return gsl_ran_gaussian(RNG, stdev) + mean;
+                }
             } else {
                 cerr << "Prior type " << ptype << " not supported for random sampling.  Aborting." << endl;
                 exit(-200);
@@ -65,6 +71,7 @@ class Parameter {
         // doubled variance of particles
         double get_doubled_variance(int t) const { return doubled_variance[t]; }
         void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
+        void set_prior_limits(double min, double max) { fmin = min; fmax = max; }
         double get_prior_min() const { return fmin; }
         double get_prior_max() const { return fmax; }
         double get_prior_mean() const { return mean; }
@@ -76,6 +83,7 @@ class Parameter {
         std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
         PriorType get_prior_type() const { return ptype; }
         NumericType get_numeric_type() const { return ntype; }
+        double untransform(const double t) const { return (rescale.second - rescale.first) * untran_func(t) + rescale.first; }
 
     private:
         std::string name;
@@ -84,6 +92,8 @@ class Parameter {
         NumericType ntype;
         double fmin, fmax, mean, stdev, state, step;
         std::vector<double> doubled_variance;
+        double (*untran_func) (const double);
+        std::pair<double, double> rescale;
 };
 
 class Metric {
@@ -159,8 +169,8 @@ class ParticleSet {
 
 class AbcSmc {
     public:
-        AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
-        AbcSmc( ABC::MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
+        AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; use_transformed_pars = false; };
+        AbcSmc( ABC::MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; use_transformed_pars = false; };
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
         void set_num_samples(int n) { _num_particles = n; }
@@ -173,11 +183,15 @@ class AbcSmc {
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
-        void add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
+        Metric* add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
+            Metric* m = new Metric(name, short_name, ntype, obs_val);
             _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
+            return m;
         }
-        void add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step) {
-            _model_pars.push_back(new Parameter(name, short_name, ptype, ntype, val1, val2, step));
+        Parameter* add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step,double (*u)(const double), std::pair<double, double> r) {
+            Parameter* p = new Parameter(name, short_name, ptype, ntype, val1, val2, step, u, r);
+            _model_pars.push_back(p);
+            return p;
         }
 
         bool parse_config(std::string conf_filename);
@@ -211,6 +225,7 @@ class AbcSmc {
         std::string _executable_filename;
         bool use_executable;
         bool resume_flag;
+        bool use_transformed_pars;
         std::string resume_directory;
         std::string _database_filename;
         std::string _posterior_database_filename;

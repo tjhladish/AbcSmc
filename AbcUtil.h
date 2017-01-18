@@ -73,6 +73,9 @@ namespace ABC {
 
   std::string slurp(std::string filename);
 
+  inline float_type logit(const float_type p) { assert(p <= 1.0); assert (p >= 0.0); return log( p / (1.0 - p) ); }
+  inline float_type logistic(const float_type l) { return 1.0 / (1.0 + exp(-l)); }
+
   inline Row col_means( Mat2D mat ) { return mat.colwise().sum() / mat.rows(); }
 
   //int _sgn(float_type val) { return (0 < val) - (val < 0); }
