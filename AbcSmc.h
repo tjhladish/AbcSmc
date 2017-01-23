@@ -262,6 +262,8 @@ class AbcSmc {
 
         void calculate_predictive_prior_weights( int set_num );
 
+        ABC::Row sample_mvn_predictive_priors(int set_num, const gsl_rng* RNG );
+
         ABC::Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
 
         ABC::Row _z_transform_observed_metrics( ABC::Row& means, ABC::Row& stdevs );

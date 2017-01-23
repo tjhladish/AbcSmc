@@ -1054,6 +1054,48 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
     }
 }
 
+Row AbcSmc::sample_mvn_predictive_priors(int set_num, const gsl_rng* RNG ) {
+    Row par_values = Row::Zero(npar());
+    gsl_matrix* posterior_par_vals = gsl_matrix_alloc(_particle_parameters[set_num-1].rows(), _particle_parameters[set_num-1].cols());
+    gsl_matrix* sigma_hat = gsl_matrix_alloc(_particle_parameters[set_num-1].cols(), _particle_parameters[set_num-1].cols());
+    for (unsigned int i = 0; i < _predictive_prior[set_num-1].size(); i++) {
+        for (int j = 0; j<npar(); j++) {
+            const int particle_idx = _predictive_prior[set_num-1][i];
+            gsl_matrix_set(posterior_par_vals, i, j, _particle_parameters[set_num-1](particle_idx, j));
+        }
+    }
+    gsl_ran_multivariate_gaussian_vcov(posterior_par_vals, sigma_hat);
+    vector<double> par_mins(npar());
+    vector<double> par_maxs(npar());
+    for (int j = 0; j<npar(); j++) {
+        //double doubled_variance = parameter->get_doubled_variance(set_num-1);
+        double doubled_variance = gsl_matrix_get(sigma_hat, j, j);
+        gsl_matrix_set(sigma_hat, j, j, doubled_variance);
+
+        const Parameter* parameter = _model_pars[j];
+        par_mins[j] = parameter->get_prior_min();
+        par_maxs[j] = parameter->get_prior_max();
+    }
+    // Select a particle index r to use from the predictive prior
+    int r = gsl_rng_nonuniform_int(_weights[set_num-1], RNG);
+    gsl_vector* par_vals = gsl_vector_alloc(npar());
+    for (int j = 0; j<npar(); j++) {
+        const int particle_idx = _predictive_prior[set_num-1][r];
+        const double par_value = _particle_parameters[set_num-1](particle_idx, j);
+        gsl_vector_set(par_vals, j, par_value);
+    }
+    par_values = rand_trunc_mv_normal( posterior_par_vals, sigma_hat, par_mins, par_maxs, RNG );
+    gsl_vector* result = gsl_vector_alloc(npar());
+    gsl_ran_multivariate_gaussian(RNG, par_vals, sigma_hat, result);
+    for (int j = 0; j<npar(); j++) {
+        par_values[j] = gsl_vector_get(result, j);
+        if (_model_pars[j]->get_numeric_type() == INT) par_values(j) = (double) ((int) (par_values(j) + 0.5));
+    }
+    gsl_vector_free(result);
+
+    return par_values;
+}
+
 Row AbcSmc::sample_predictive_priors(int set_num, const gsl_rng* RNG ) {
     Row par_values = Row::Zero(npar());
     // Select a particle index r to use from the predictive prior

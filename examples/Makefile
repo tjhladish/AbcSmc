@@ -2,7 +2,7 @@ CPP:=g++
 CFLAGS = -O2 -Wall -std=c++11 --pedantic -Wno-deprecated-declarations
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)/..
-ABC_INC = -I$(ABCDIR) -I../sqdb
+ABC_INC = -I$(ABCDIR) -I../sqdb -I$(ABCDIR)/gsl-2.2.1
 
 ifdef TACC_GSL_INC
 GSL_INC = -I$$TACC_GSL_INC
@@ -12,7 +12,8 @@ GSL_INC = -I$$HPC_GSL_INC
 endif
 
 ABC_LIB = -L$(ABCDIR) -labc -ljsoncpp -lsqdb ../sqlite3.o
-GSL_LIB = -lm -L$$TACC_GSL_LIB/ -L$$HPC_GSL_LIB/ -lgsl -lgslcblas -lpthread -ldl
+#GSL_LIB = -lm -L$$TACC_GSL_LIB/ -L$$HPC_GSL_LIB/ -lgsl -lgslcblas -lpthread -ldl
+GSL_LIB = -lm -L../gsl-2.2.1 -lgsl_subset -lpthread -ldl
 
 default: libabc dice abc
 

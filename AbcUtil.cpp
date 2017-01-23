@@ -58,8 +58,8 @@ namespace ABC {
 
       Mat2D X( (int) M.size(), (int) M[0].size() );
       for( unsigned int i=0; i < M.size(); i++ ) {
-          for( unsigned int j=0; j < M[i].size(); j++ ) {  
-              X(i,j)=M[i][j]; 
+          for( unsigned int j=0; j < M[i].size(); j++ ) {
+              X(i,j)=M[i][j];
           }
       }
       return X;
@@ -118,8 +118,8 @@ namespace ABC {
       means = col_means( mat );
       stdev = col_stdev( mat, means );
 
-      // This is not technically correct, since z scores are undefined if the stdev is 0.  
-      // In our case, however, the resulting scores cannot be nan, or downstream calculations 
+      // This is not technically correct, since z scores are undefined if the stdev is 0.
+      // In our case, however, the resulting scores cannot be nan, or downstream calculations
       // are fouled up, so we basically setting them to 0 as a stop-gap solution.  A better solution
       // would be to not pass this parameter in to the PLS regression.  This should be possible
       // but needs to be implemented with care.
@@ -167,7 +167,7 @@ namespace ABC {
   // Take a list of values, return original indices sorted by value
   vector<int> ordered(Col const& values) {
 
-      vector<pair<float_type,int> > pairs(values.size()); 
+      vector<pair<float_type,int> > pairs(values.size());
       for(unsigned int pos=0; pos<values.size(); pos++) {
           pairs[pos] = make_pair(values[pos],pos);
       }
@@ -208,7 +208,7 @@ namespace ABC {
   // If probw is small enough, conclude that model#1 is better
   //
   // Based on Matlab code from
-  // Thomas E. V. Non-parametric statistical methods for multivariate calibration 
+  // Thomas E. V. Non-parametric statistical methods for multivariate calibration
   // model selection and comparison. J. Chemometrics 2003; 17: 653–659
   //
   float_type wilcoxon(const Col err_1, const Col err_2) {
@@ -220,7 +220,7 @@ namespace ABC {
       for (int i=0; i<del.size(); i++)  sdel(i) = (0 < del(i)) - (del(i) < 0); // get the sign of each element
       Col adel = del.cwiseAbs();
       // 's' gives the original positions (indices) of the sorted values
-      vector<int> s = ordered(adel); 
+      vector<int> s = ordered(adel);
       float d = 0;
       for (int i=0; i<n; i++) d += (i+1)*sdel(s[i]);
       float t  = n*(n+1)/2.0;
@@ -312,7 +312,7 @@ namespace ABC {
   }
 
   float_type variance(const Col data, float_type _mean) {
-      if (data.size() < 2) { 
+      if (data.size() < 2) {
           cerr << "WARNING: Variance called with " << data.size() << " data values. Returning 0." << endl;
           return 0;
       } else {
@@ -422,6 +422,21 @@ namespace ABC {
       exit(100);
   }
 
+  Row rand_trunc_mv_normal(gsl_matrix* mu, gsl_matrix* sigma_squared, vector<double> min, vector<double> max, const gsl_rng* rng) {
+      assert(min.size() == max.size());
+      for (unsigned int i = 0; i < min.size(); ++i) assert(min[i] < max[i]);
+      double sigma = sqrt(sigma_squared);
+      // Don't like this, but it will work
+      // as long as min and max are reasonable
+      // (relative to the pdf)
+      while (1) {
+          double dev = gsl_ran_gaussian(rng, sigma) + mu;
+          if (dev >= min and dev <= max) {
+              return dev;
+          }
+      }
+  }
+
   double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng) {
       assert(min < max);
       double sigma = sqrt(sigma_squared);
@@ -429,13 +444,13 @@ namespace ABC {
       // as long as min and max are reasonable
       // (relative to the pdf)
       while (1) {
-          double dev = gsl_ran_gaussian(rng, sigma) + mu; 
+          double dev = gsl_ran_gaussian(rng, sigma) + mu;
           if (dev >= min and dev <= max) {
               return dev;
           }
       }
   }
-   
+
   LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y) {
       assert( x.size() == y.size() );
       LinearFit* fit = new LinearFit();
@@ -446,13 +461,13 @@ namespace ABC {
       double sumy = 0.0;                        /* sum of y                      */
       double sumy2 = 0.0;                       /* sum of y**2                   */
 
-      for (int i=0; i<n; i++)   { 
-          sumx  += x[i];       
-          sumx2 += pow(x[i],2);  
+      for (int i=0; i<n; i++)   {
+          sumx  += x[i];
+          sumx2 += pow(x[i],2);
           sumxy += x[i] * y[i];
-          sumy  += y[i];      
-          sumy2 += pow(y[i],2); 
-      } 
+          sumy  += y[i];
+          sumy2 += pow(y[i],2);
+      }
 
       double denom = n * sumx2 - pow(sumx,2);
       if (denom == 0) {
@@ -468,7 +483,7 @@ namespace ABC {
       // compute correlation coeff
       fit->rsq = pow((sumxy - sumx * sumy / n) / sqrt((sumx2 - pow(sumx,2)/n) * (sumy2 - pow(sumy,2)/n)),2);
 
-      return fit; 
+      return fit;
   }
 
   struct LogisticDatum{
