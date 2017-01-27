@@ -9,6 +9,7 @@
 #include <string>
 #include <sstream>
 #include <fstream>
+#include "AbcSmc.h"
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -61,6 +62,13 @@ bool AbcSmc::parse_config(string conf_filename) {
     if (_posterior_database_filename != "" and _num_smc_sets > 1) {
         cerr << "Using a posterior database as input is not currently supported with smc_iterations > 1. Aborting." << endl;
         exit(-203);
+    }
+
+    string noise = par.get("noise", "INDEPENDENT").asString();
+    use_mvn_noise = (noise == "MULTIVARIATE");
+    if (noise != "INDEPENDENT" and noise != "MULTIVARIATE") {
+        cerr << "Unknown parameter noise type specified: " << noise << ". Aborting." << endl;
+        exit(-210);
     }
 
     // Parse model parameters
@@ -199,9 +207,17 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
         stringstream ss;
         Row pars;
         const int last_serial = serials.back().back();
+        gsl_matrix* L = setup_mvn_sampler(t+1);
+
+        string noise_type = use_mvn_noise ? "MULTIVARIATE" : "INDEPENDENT";
+        cerr << "Populating next set using " << noise_type << " noising of parameters.\n";
         for (int i = 0; i<_num_particles; i++) {
             const int serial = last_serial + 1 + i;
-            pars = sample_predictive_priors(t+1, RNG);
+            if (use_mvn_noise) {
+                pars = sample_mvn_predictive_priors(t+1, RNG, L);
+            } else {
+                pars = sample_predictive_priors(t+1, RNG);
+            }
             QueryStr qstr;
 
             ss << "insert into jobs values ( " << serial << ", "
@@ -227,6 +243,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             _db_execute_stringstream(db, ss);
         }
         db.CommitTransaction();
+        gsl_matrix_free(L);
     } else {
         cerr << "Database already contains " << _num_smc_sets << " complete sets.\n";
     }
@@ -1108,7 +1125,65 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
     }
 }
 
-Row AbcSmc::sample_predictive_priors(int set_num, const gsl_rng* RNG ) {
+
+gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
+    // ALLOCATE DATA STRUCTURES
+    // variance-covariance matrix calculated from pred prior values
+    // NB: always allocate this small matrix, so that we don't have to check whether it's safe to free later
+    gsl_matrix* sigma_hat = gsl_matrix_alloc(_particle_parameters[set_num-1].cols(), _particle_parameters[set_num-1].cols());
+
+    if (use_mvn_noise) {
+        // container for predictive prior aka posterior from last set
+        gsl_matrix* posterior_par_vals = gsl_matrix_alloc(_particle_parameters[set_num-1].rows(), _particle_parameters[set_num-1].cols());
+
+        // INITIALIZE DATA STRUCTURES
+        for (unsigned int i = 0; i < _predictive_prior[set_num-1].size(); i++) {
+            for (int j = 0; j<npar(); j++) {
+                // copy values from pred prior into a gsl matrix
+                const int particle_idx = _predictive_prior[set_num-1][i];
+                gsl_matrix_set(posterior_par_vals, i, j, _particle_parameters[set_num-1](particle_idx, j));
+            }
+        }
+        // calculate maximum likelihood estimate of variance-covariance matrix sigma_hat
+        gsl_ran_multivariate_gaussian_vcov(posterior_par_vals, sigma_hat);
+
+        for (int j = 0; j<npar(); j++) {
+            // sampling is done using a kernel with a broader kernel than found in pred prior values
+            const double doubled_variance = 2 * gsl_matrix_get(sigma_hat, j, j);
+            gsl_matrix_set(sigma_hat, j, j, doubled_variance);
+        }
+        // not a nice interface, gsl.  sigma_hat is converted in place from a variance-covariance matrix
+        // to the same values in the upper triangle, and the diagonal and lower triangle equal to L,
+        // the Cholesky decomposition
+        gsl_linalg_cholesky_decomp1(sigma_hat);
+
+        gsl_matrix_free(posterior_par_vals);
+    }
+
+    return sigma_hat;
+}
+
+
+Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L ) {
+    // container for sampled values
+    Row par_values = Row::Zero(npar());
+    // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
+    int r = gsl_rng_nonuniform_int(_weights[set_num-1], RNG);
+    gsl_vector* par_val_hat = gsl_vector_alloc(npar());
+    for (int j = 0; j<npar(); j++) {
+        const int particle_idx = _predictive_prior[set_num-1][r];
+        const double par_value = _particle_parameters[set_num-1](particle_idx, j);
+        gsl_vector_set(par_val_hat, j, par_value);
+    }
+    par_values = rand_trunc_mv_normal( _model_pars, par_val_hat, L, RNG );
+
+    gsl_vector_free(par_val_hat);
+    //gsl_matrix_free(sigma_hat);
+
+    return par_values;
+}
+
+Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
     Row par_values = Row::Zero(npar());
     // Select a particle index r to use from the predictive prior
     int r = gsl_rng_nonuniform_int(_weights[set_num-1], RNG);

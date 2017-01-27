@@ -10,11 +10,16 @@
 #include <Eigen/Eigenvalues>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
+#include <gsl/gsl_vector.h>
+#include <gsl/gsl_matrix.h>
+#include <gsl/gsl_blas.h>
+#include <gsl/gsl_linalg.h>
 #include "ranker.h"
-
 #include <math.h>
 
 using namespace std;
+
+class Parameter;
 
 namespace ABC {
 
@@ -56,7 +61,7 @@ namespace ABC {
       typedef mpreal float_type;
   #else
       typedef double float_type;
-  #endif 
+  #endif
 
   typedef Matrix<float_type,Dynamic,Dynamic> Mat2D;
   typedef Matrix<float_type, Dynamic, 1>  Col;
@@ -80,7 +85,7 @@ namespace ABC {
 
   //int _sgn(float_type val) { return (0 < val) - (val < 0); }
 
-  Mat2D read_matrix_file(std::string filename, char sep); 
+  Mat2D read_matrix_file(std::string filename, char sep);
 
   Row col_stdev( Mat2D mat, Row means );
 
@@ -143,8 +148,9 @@ namespace ABC {
 
   int gsl_rng_nonuniform_int(std::vector<double>& weights, const gsl_rng* rng);
 
-  double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng); 
-   
+  double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng);
+  Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng);
+
   LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y);
 
   LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector< pair<int,int> > &y);

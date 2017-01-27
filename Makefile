@@ -4,7 +4,7 @@ MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)
 SQLDIR  = $(ABCDIR)/sqdb
 
-INCLUDE = -I. -I$(ABCDIR) -I$(ABCDIR)/jsoncpp/include -I$(SQLDIR)
+INCLUDE = -I. -I$(ABCDIR) -I$(ABCDIR)/gsl_local/include -I$(ABCDIR)/jsoncpp/include -I$(SQLDIR)
 ifdef TACC_GSL_INC
 INCLUDE += -I$$TACC_GSL_INC
 endif
@@ -12,7 +12,8 @@ ifdef HPC_GSL_INC
 INCLUDE += -I$$HPC_GSL_INC
 endif
 
-LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas
+#LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas
+LIBS = -lm -L./gsl_local/lib/ -lgsl -lgslcblas
 
 SOURCES =  AbcSmc.cpp AbcUtil.cpp CCRC32.cpp
 JSONDIR = $(ABCDIR)/jsoncpp/src
