@@ -15,10 +15,11 @@
 #include <gsl/gsl_blas.h>
 #include <gsl/gsl_linalg.h>
 #include "ranker.h"
-
 #include <math.h>
 
 using namespace std;
+
+class Parameter;
 
 namespace ABC {
 
@@ -145,7 +146,7 @@ namespace ABC {
   int gsl_rng_nonuniform_int(std::vector<double>& weights, const gsl_rng* rng);
 
   double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng);
-  Row rand_trunc_mv_normal(gsl_matrix* mu, gsl_matrix* sigma_squared, vector<double> min, vector<double> max, const gsl_rng* rng);
+  Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng);
 
   LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y);
 

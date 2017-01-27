@@ -1,5 +1,6 @@
 #include <limits>
 #include "AbcUtil.h"
+#include "AbcSmc.h"
 #include "gsl/gsl_multimin.h"
 #include "gsl/gsl_sf_gamma.h"
 
@@ -120,7 +121,7 @@ namespace ABC {
 
       // This is not technically correct, since z scores are undefined if the stdev is 0.
       // In our case, however, the resulting scores cannot be nan, or downstream calculations
-      // are fouled up, so we basically setting them to 0 as a stop-gap solution.  A better solution
+      // are fouled up, so we basically set them to 0 as a stop-gap solution.  A better solution
       // would be to not pass this parameter in to the PLS regression.  This should be possible
       // but needs to be implemented with care.
       for (int c = 0; c<stdev.size(); c++) if (stdev[c] == 0) stdev[c] = 1;
@@ -422,19 +423,22 @@ namespace ABC {
       exit(100);
   }
 
-  Row rand_trunc_mv_normal(gsl_matrix* mu, gsl_matrix* sigma_squared, vector<double> min, vector<double> max, const gsl_rng* rng) {
-      assert(min.size() == max.size());
-      for (unsigned int i = 0; i < min.size(); ++i) assert(min[i] < max[i]);
-      double sigma = sqrt(sigma_squared);
-      // Don't like this, but it will work
-      // as long as min and max are reasonable
-      // (relative to the pdf)
-      while (1) {
-          double dev = gsl_ran_gaussian(rng, sigma) + mu;
-          if (dev >= min and dev <= max) {
-              return dev;
+  Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng) {
+      const int npar = _model_pars.size();
+      Row par_values = Row::Zero(npar);
+      gsl_vector* result = gsl_vector_alloc(npar);
+      bool success = false;
+      while (not success) {
+          success = true;
+          gsl_ran_multivariate_gaussian(rng, mu, L, result);
+          for (int j = 0; j < npar; j++) {
+              par_values[j] = gsl_vector_get(result, j);
+              if (_model_pars[j]->get_numeric_type() == INT) par_values(j) = (double) ((int) (par_values(j) + 0.5));
+              if (par_values[j] < _model_pars[j]->get_prior_min() or par_values[j] > _model_pars[j]->get_prior_max()) success = false;
           }
       }
+      gsl_vector_free(result);
+      return par_values;
   }
 
   double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng) {

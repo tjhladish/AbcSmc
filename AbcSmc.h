@@ -36,7 +36,7 @@ class Parameter {
                 stdev = 0;   // dummy variable for PSEUDO
                 state = fmin;
             } else {
-                cerr << "Prior type " << ptype << " not supported.  Aborting." << endl;
+                std::cerr << "Prior type " << ptype << " not supported.  Aborting." << std::endl;
                 exit(-200);
             }
 
@@ -57,7 +57,7 @@ class Parameter {
                     return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
                 }
             } else {
-                cerr << "Prior type " << ptype << " not supported for random sampling.  Aborting." << endl;
+                std::cerr << "Prior type " << ptype << " not supported for random sampling.  Aborting." << std::endl;
                 exit(-200);
             }
         }
@@ -159,8 +159,8 @@ class ParticleSet {
 
 class AbcSmc {
     public:
-        AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
-        AbcSmc( ABC::MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; };
+        AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; use_mvn_noise = false; };
+        AbcSmc( ABC::MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; use_mvn_noise = false; };
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
         void set_num_samples(int n) { _num_particles = n; }
@@ -218,6 +218,7 @@ class AbcSmc {
         std::vector< ABC::Mat2D > _particle_parameters;
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
         std::vector< std::vector<double> > _weights;
+        bool use_mvn_noise;
 
         //mpi specific variables
         ABC::MPI_par *_mp;
@@ -262,7 +263,8 @@ class AbcSmc {
 
         void calculate_predictive_prior_weights( int set_num );
 
-        ABC::Row sample_mvn_predictive_priors(int set_num, const gsl_rng* RNG );
+        gsl_matrix* setup_mvn_sampler(const int);
+        ABC::Row sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L );
 
         ABC::Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
 
