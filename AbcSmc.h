@@ -3,7 +3,7 @@
 
 #define mpi_root 0
 
-#include <cfloat>
+#include <map>
 #include "AbcUtil.h"
 #include "sqdb.h"
 
@@ -14,8 +14,8 @@ class Parameter {
     public:
         Parameter() {};
 
-        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2, double val_step, double (*u)(const double), std::pair<double, double> r )
-            : name(s), short_name(ss), ptype(p), ntype(n), step(val_step), untran_func(u), rescale(r) {
+        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2, double val_step, double (*u)(const double), std::pair<double, double> r, std::map< std::string, std::vector<int> > mm )
+            : name(s), short_name(ss), ptype(p), ntype(n), step(val_step), untran_func(u), rescale(r), par_modification_map(mm) {
             if (ptype == UNIFORM) {
                 assert(val1 < val2);
                 fmin = val1;
@@ -24,8 +24,8 @@ class Parameter {
                 stdev = sqrt(pow(val2-val1,2)/12);
                 state = 0;   // dummy variable for UNIFORM
             } else if (ptype == NORMAL) {
-                fmin = DBL_MIN;
-                fmax = DBL_MAX;
+                fmin = std::numeric_limits<double>::lowest(); // NOT min()!!!! That's the smallest representable positive value.
+                fmax = std::numeric_limits<double>::max();
                 mean = val1;
                 stdev = val2;
             } else if (ptype == PSEUDO) {
@@ -44,7 +44,6 @@ class Parameter {
                 std::cerr << "Prior type " << ptype << " not supported.  Aborting." << std::endl;
                 exit(-200);
             }
-
         }
 
         double sample(const gsl_rng* RNG) {
@@ -83,7 +82,18 @@ class Parameter {
         std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
         PriorType get_prior_type() const { return ptype; }
         NumericType get_numeric_type() const { return ntype; }
-        double untransform(const double t) const { return (rescale.second - rescale.first) * untran_func(t) + rescale.first; }
+        //double untransform(const double t) const { return (rescale.second - rescale.first) * untran_func(t) + rescale.first; }
+        std::map < std::string, std::vector<int> > get_par_modification_map() const { return par_modification_map; }
+        double untransform(const double t, vector<double> pars) const {
+            double new_t = t + pars[0];
+            new_t *= pars[1];
+            new_t = untran_func(new_t);
+            new_t += pars[2];
+            new_t *= pars[3];
+//std::cerr << "t | mods | new_t | scaled_t : " << t << " | "
+//          << pars[0] << " " << pars[1] << " " << pars[2] << " " << pars[3] << " | "
+//          << new_t << " | " << (rescale.second - rescale.first) * new_t + rescale.first << endl;
+        return (rescale.second - rescale.first) * new_t + rescale.first; }
 
     private:
         std::string name;
@@ -94,6 +104,7 @@ class Parameter {
         std::vector<double> doubled_variance;
         double (*untran_func) (const double);
         std::pair<double, double> rescale;
+        std::map < std::string, std::vector<int> > par_modification_map; // how this par modifies others
 };
 
 class Metric {
@@ -188,8 +199,8 @@ class AbcSmc {
             _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
             return m;
         }
-        Parameter* add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step,double (*u)(const double), std::pair<double, double> r) {
-            Parameter* p = new Parameter(name, short_name, ptype, ntype, val1, val2, step, u, r);
+        Parameter* add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step,double (*u)(const double), std::pair<double, double> r, std::map<std::string, std::vector<int> > mm) {
+            Parameter* p = new Parameter(name, short_name, ptype, ntype, val1, val2, step, u, r, mm);
             _model_pars.push_back(p);
             return p;
         }
@@ -207,6 +218,13 @@ class AbcSmc {
         bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
 
         bool simulate_next_particles(int n);
+
+        Parameter* get_parameter_by_name(string name) {
+            Parameter* p = nullptr;
+            for (auto _p: _model_pars) { if (_p->get_name() == name) p = _p;}
+            assert(p);
+            return p;
+        }
 
         int npar() { return _model_pars.size(); }
         int nmet() { return _model_mets.size(); }
@@ -271,6 +289,8 @@ class AbcSmc {
         ABC::Col euclidean( ABC::Row obs_met, ABC::Mat2D sim_met );
 
         ABC::Row sample_priors( const gsl_rng* RNG );
+
+        std::vector<double> do_complicated_untransformations( std::vector<Parameter*>& _model_pars, ABC::Row& pars );
 
         void calculate_doubled_variances( int t );
 

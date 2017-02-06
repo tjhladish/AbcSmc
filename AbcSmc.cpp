@@ -73,6 +73,13 @@ bool AbcSmc::parse_config(string conf_filename) {
 
     // Parse model parameters
     const Json::Value model_par = par["parameters"];
+    map<string, int> par_name_idx;
+    for ( unsigned int i = 0; i < model_par.size(); ++i )  {// Build name lookup
+        string name = model_par[i]["name"].asString();
+        assert(par_name_idx.count(name) == 0);
+        par_name_idx[name] = i;
+    }
+
     for ( unsigned int i = 0; i < model_par.size(); ++i )  {// Iterates over the sequence elements.
         string name = model_par[i]["name"].asString();
         string short_name = model_par[i].get("short_name", "").asString();
@@ -107,25 +114,25 @@ bool AbcSmc::parse_config(string conf_filename) {
             exit(-206);
         }
 
-        double (*_untransform)(const double);
+        double (*_untransform_func)(const double);
         // linear rescaling [min, max] not for par as sampled, but as input to sim
         // NB: if par is not on [0, 1] after untransforming, this is still a linear rescaling, but not onto [min, max]
         pair<double, double> par_rescale = {0.0, 1.0};
+        map<string, vector<int> > mod_map { {"transformed_addend", {}}, {"transformed_factor", {}}, {"untransformed_addend", {}}, {"untransformed_factor", {}} };
         //auto _untransform = [](const double t) { return t; };
         if (not model_par[i].isMember("untransform")) {
-            _untransform = [](const double t) { return t; };
+            _untransform_func = [](const double t) { return t; };
         } else if (model_par[i]["untransform"].type() == Json::ValueType::stringValue) {
             string ttype_str = model_par[i].get("untransform", "NONE").asString();
-
-            if (ttype_str == "NONE") {
-                _untransform = [](const double t) { return t; };
+            if (ttype_str == "NONE") { // TODO - it's possible this may not actually ever be called
+                _untransform_func = [](const double t) { return t; };
                 //ttype = UNTRANSFORMED;
             } else if (ttype_str == "POW_10") {
-                _untransform = [](const double t) { return pow(10.0, t); };
+                _untransform_func = [](const double t) { return pow(10.0, t); };
                 //ttype = LOG_10;
                 use_transformed_pars = true;
             } else if (ttype_str == "LOGISTIC") {
-                _untransform = [](const double t) { return ABC::logistic(t); };
+                _untransform_func = [](const double t) { return ABC::logistic(t); };
                 //ttype = LOGIT;
                 use_transformed_pars = true;
             } else {
@@ -134,13 +141,21 @@ bool AbcSmc::parse_config(string conf_filename) {
             }
 
         } else if (model_par[i]["untransform"].type() == Json::ValueType::objectValue) {
-            string ttype_str = model_par[i]["untransform"]["type"].asString();
+            Json::Value untransform = model_par[i]["untransform"];
+            string ttype_str = untransform["type"].asString();
             if (ttype_str != "LOGISTIC") {
                 cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
                 exit(-207);
             }
-            par_rescale = {model_par[i]["untransform"]["min"].asDouble(), model_par[i]["untransform"]["max"].asDouble()};
-            _untransform = [](const double t) { return ABC::logistic(t); };
+            par_rescale = {untransform["min"].asDouble(), untransform["max"].asDouble()};
+            _untransform_func = [](const double t) { return ABC::logistic(t); };
+            //Json::ValueType mod_type = untransform["transformed_addend"].type();
+
+            for (auto& mod_type: mod_map) {
+                if (untransform.isMember(mod_type.first)) {
+                    for (auto json_val: untransform[mod_type.first]) mod_type.second.push_back(par_name_idx[json_val.asString()]);
+                }
+            }
         } else {
             cerr << "Unsupported JSON data type associated with 'untransform' parameter key.\n";
             exit(-208);
@@ -150,7 +165,7 @@ bool AbcSmc::parse_config(string conf_filename) {
         double par2 = model_par[i]["par2"].asDouble();
         double step = model_par[i].get("step", 1.0).asDouble(); // default increment is 1
 
-        add_next_parameter(name, short_name, ptype, ntype, par1, par2, step, _untransform, par_rescale);
+        add_next_parameter(name, short_name, ptype, ntype, par1, par2, step, _untransform_func, par_rescale, mod_map);
     }
 
     // Parse model metrics
@@ -176,6 +191,26 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     return true;
+}
+
+
+vector<double> AbcSmc::do_complicated_untransformations(vector<Parameter*>& _model_pars, Row& pars) {
+    assert( (signed) _model_pars.size() == npar() );
+    assert( (signed) pars.size() == npar() );
+    const vector<double> identities = {0.0, 1.0, 0.0, 1.0};
+    vector<double> upars(npar());
+    for (int i = 0; i < npar(); ++i) {
+//cerr << "Parameter " << i << ": " << _model_pars[i]->get_name() << endl;
+        const Parameter* mpar = _model_pars[i];
+        vector<double> modifiers(identities); // TODO -- double check that this is a legit copy constructor
+        map<string, vector<int> > mod_map = mpar->get_par_modification_map();
+        for (unsigned int j = 0; j < mod_map["transformed_addend"].size(); ++j)   modifiers[0] += pars[mod_map["transformed_addend"][j]];
+        for (unsigned int j = 0; j < mod_map["transformed_factor"].size(); ++j)   modifiers[1] *= pars[mod_map["transformed_factor"][j]];
+        for (unsigned int j = 0; j < mod_map["untransformed_addend"].size(); ++j) modifiers[2] += pars[mod_map["untransformed_addend"][j]];
+        for (unsigned int j = 0; j < mod_map["untransformed_factor"].size(); ++j) modifiers[3] *= pars[mod_map["untransformed_factor"][j]];
+        upars[i] = mpar->untransform(pars[i], modifiers);
+    }
+    return upars;
 }
 
 
@@ -234,7 +269,9 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             _db_execute_stringstream(db, ss);
 
             if (use_transformed_pars) {
-                ss << "insert into uparameters values ( " << serial << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << _model_pars[j]->untransform(pars[j]); ss << " );";
+                vector<double> upars = do_complicated_untransformations(_model_pars, pars);
+                ss << "insert into uparameters values ( " << serial << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << upars[j]; ss << " );";
+                //cerr << "attempting: " << ss.str() << endl;
                 _db_execute_stringstream(db, ss);
             }
 
@@ -710,7 +747,8 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         _db_execute_stringstream(db, ss);
 
         if (use_transformed_pars) {
-            ss << "insert into uparameters values ( " << rowid << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << _model_pars[j]->untransform(pars[j]); ss << " );";
+            vector<double> upars = do_complicated_untransformations(_model_pars, pars);
+            ss << "insert into uparameters values ( " << rowid << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << upars[j]; ss << " );";
             _db_execute_stringstream(db, ss);
         }
 
@@ -803,12 +841,13 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
 bool AbcSmc::simulate_next_particles(const int n = 1) {
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
     sqdb::Db db(_database_filename.c_str());
+    string model_par_table = db.TableExists("uparameters") ? "uparameters" : "parameters";
     vector<Row> par_mat;  //( n, Row(npar()) ); -- expected size, if n rows are available
     vector<Row> met_mat;  //( n, Row(nmet()) );
 
     stringstream select_ss;
     select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
-    select_ss << "from parameters P, jobs J where P.serial = J.serial ";
+    select_ss << "from " << model_par_table << " P, jobs J where P.serial = J.serial ";
     // Do already running jobs as well, if there are not enough queued jobs
     // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
     select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts limit " << n << ";";
