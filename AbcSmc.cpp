@@ -27,6 +27,10 @@ using namespace ABC;
 const string double_bar = "=========================================================================================";
 const int PREC = 5;
 const int WIDTH = 12;
+const string JOB_TABLE  = "job";
+const string MET_TABLE  = "met";
+const string PAR_TABLE  = "par";
+const string UPAR_TABLE = "upar";
 
 bool AbcSmc::parse_config(string conf_filename) {
     Json::Value par;   // will contains the par value after parsing.
@@ -248,6 +252,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
         cerr << "Populating next set using " << noise_type << " noising of parameters.\n";
         for (int i = 0; i<_num_particles; i++) {
             const int serial = last_serial + 1 + i;
+
             if (use_mvn_noise) {
                 pars = sample_mvn_predictive_priors(t+1, RNG, L);
             } else {
@@ -255,7 +260,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             }
             QueryStr qstr;
 
-            ss << "insert into jobs values ( " << serial << ", "
+            ss << "insert into " << JOB_TABLE << " values ( " << serial << ", "
                                                << t+1 << ", "
                                                << i << ", "
                                                << time(NULL)
@@ -264,18 +269,18 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             _db_execute_stringstream(db, ss);
 
             const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-            ss << "insert into parameters values ( " << serial << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
+            ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
             if (use_transformed_pars) {
                 vector<double> upars = do_complicated_untransformations(_model_pars, pars);
-                ss << "insert into uparameters values ( " << serial << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << upars[j]; ss << " );";
+                ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << upars[j]; ss << " );";
                 //cerr << "attempting: " << ss.str() << endl;
                 _db_execute_stringstream(db, ss);
             }
 
-            ss << "insert into metrics values ( " << serial; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
+            ss << "insert into " << MET_TABLE << " values ( " << serial; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
         }
@@ -376,14 +381,14 @@ bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
 bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
 
     // make sure database looks intact
-    if ( !db.TableExists("jobs") or !db.TableExists("parameters") or !db.TableExists("metrics") ) {
+    if ( !db.TableExists(JOB_TABLE.c_str()) or !db.TableExists(PAR_TABLE.c_str()) or !db.TableExists(MET_TABLE.c_str()) ) {
         cerr << "ERROR: Failed to read SMC set from database because one or more tables are missing.\n";
         return false;
     }
 
     // make sure set t is a completed set
     QueryStr qstr;
-    Statement s = db.Query("select smcSet, count(*), COUNT(case status when 'D' then 1 else null end) from jobs group by smcSet order by smcSet;");
+    Statement s = db.Query(("select smcSet, count(*), COUNT(case status when 'D' then 1 else null end) from " + JOB_TABLE + " group by smcSet order by smcSet;").c_str());
     serials.clear();
     _particle_parameters.clear();
     _particle_metrics.clear();
@@ -400,7 +405,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
 
         // join all three tables for rows with smcSet = t, slurp and store values
         string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
-                            + "from jobs J, metrics M, parameters P where J.serial = M.serial and J.serial = P.serial "
+                            + "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE + " P where J.serial = M.serial and J.serial = P.serial "
                             + "and J.smcSet = " + to_string((long long) t) + ";";
 
         serials.push_back( vector<int>(completed_set_size) );
@@ -443,7 +448,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
                 const int particle_idx = _predictive_prior[t][i];
                 const int particle_serial = serials[t][particle_idx];
                 stringstream ss;
-                ss << "update jobs set posterior = " << i << " where serial = " << particle_serial << ";";
+                ss << "update " << JOB_TABLE << " set posterior = " << i << " where serial = " << particle_serial << ";";
                 update_strings[i] = ss.str();
             }
             _db_execute_strings(db, update_strings);
@@ -705,54 +710,51 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     sqdb::Db db(_database_filename.c_str());
 
     stringstream ss;
-    if ( !db.TableExists("jobs") and !db.TableExists("parameters") and !db.TableExists("metrics") ) {
+    if ( !db.TableExists(JOB_TABLE.c_str()) and !db.TableExists(PAR_TABLE.c_str()) and !db.TableExists(MET_TABLE.c_str()) ) {
         //ss << "create table sets( smcSet int primary key asc, status text, " << _build_sql_create_par_string("_dv") << ");";
         //_db_execute_stringstream(db, ss);
 
-        ss << "create table jobs( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration int, status text, posterior int, attempts int );";
+        ss << "create table " << JOB_TABLE << " ( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration int, status text, posterior int, attempts int );";
         _db_execute_stringstream(db, ss);
 
-        ss << "create table parameters( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
+        ss << "create table " << PAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
         _db_execute_stringstream(db, ss);
 
         if (use_transformed_pars) {
-            ss << "create table uparameters( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
+            ss << "create table " << UPAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
             _db_execute_stringstream(db, ss);
         }
 
-        ss << "create table metrics( serial int primary key, " << _build_sql_create_met_string("") << ");";
+        ss << "create table " << MET_TABLE << " ( serial int primary key, " << _build_sql_create_met_string("") << ");";
         _db_execute_stringstream(db, ss);
     } else {
         return false;
     }
 
-    //db.BeginTransaction();
     db.Query("BEGIN EXCLUSIVE;").Next();
-    //ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
-    //_db_execute_stringstream(db, ss);
 
     Row pars;
     for (int i = 0; i<_num_particles; i++) {
         pars = sample_priors(RNG);
         QueryStr qstr;
 
-        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into jobs values ( %d, 0, %d, %d, NULL, 'Q', -1, 0 );"), i, i, time(NULL))).Next();
+        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, 0, %d, %d, NULL, 'Q', -1, 0 );"), JOB_TABLE.c_str(), i, i, time(NULL))).Next();
 
-        Statement s = db.Query("select last_insert_rowid() from jobs;");
+        Statement s = db.Query(("select last_insert_rowid() from " + JOB_TABLE + ";").c_str());
         s.Next();
         const int rowid = ((int) s.GetField(0)) - 1; // indexing should start at 0
 
         const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-        ss << "insert into parameters values ( " << rowid << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
+        ss << "insert into " << PAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << pars[j]; ss << " );";
         _db_execute_stringstream(db, ss);
 
         if (use_transformed_pars) {
             vector<double> upars = do_complicated_untransformations(_model_pars, pars);
-            ss << "insert into uparameters values ( " << rowid << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << upars[j]; ss << " );";
+            ss << "insert into " << UPAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (int j = 0; j<npar(); j++)  ss << ", " << upars[j]; ss << " );";
             _db_execute_stringstream(db, ss);
         }
 
-        ss << "insert into metrics values ( " << rowid; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
+        ss << "insert into " << MET_TABLE << " values ( " << rowid; for (int j = 0; j<nmet(); j++) ss << ", NULL"; ss << " );";
         _db_execute_stringstream(db, ss);
     }
     db.CommitTransaction();
@@ -763,7 +765,6 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds) {
     bool db_success = false;
     try {
-        //db.BeginTransaction();
         cerr << "Attempting: " << select_pars_ss.str() << endl;
         db.Query("BEGIN EXCLUSIVE;").Next();
         cerr << "Lock obtained" << endl;
@@ -841,13 +842,13 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
 bool AbcSmc::simulate_next_particles(const int n = 1) {
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
     sqdb::Db db(_database_filename.c_str());
-    string model_par_table = db.TableExists("uparameters") ? "uparameters" : "parameters";
+    string model_par_table = db.TableExists(UPAR_TABLE.c_str()) ? UPAR_TABLE : PAR_TABLE;
     vector<Row> par_mat;  //( n, Row(npar()) ); -- expected size, if n rows are available
     vector<Row> met_mat;  //( n, Row(nmet()) );
 
     stringstream select_ss;
     select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
-    select_ss << "from " << model_par_table << " P, jobs J where P.serial = J.serial ";
+    select_ss << "from " << model_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial ";
     // Do already running jobs as well, if there are not enough queued jobs
     // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
     select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts limit " << n << ";";
@@ -857,7 +858,7 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     const int overall_start_time = time(0);
     // build jobs update statement to indicate job is running
     stringstream update_ss;
-    update_ss << "update jobs set startTime = " << overall_start_time << ", status = 'R', attempts = attempts + 1 where serial = "; // we don't know the serial yet
+    update_ss << "update " << JOB_TABLE << " set startTime = " << overall_start_time << ", status = 'R', attempts = attempts + 1 where serial = "; // we don't know the serial yet
 
     vector<int> serials;
     vector<unsigned long int> rng_seeds;
@@ -874,16 +875,16 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
             if (not success) exit(-211);
 
             stringstream ss;
-            ss << "update metrics set ";
+            ss << "update " << MET_TABLE << " set ";
             for (int j = 0; j<nmet()-1; j++) { ss << _model_mets[j]->get_short_name() << "=" << met_mat[i][j] << ", "; }
             ss << _model_mets.back()->get_short_name() << "=" << met_mat[i].rightCols(1) << " ";
             // only update metrics if job status is still 'R' or 'Q' or has been paused ('P')
-            ss << "where serial = " << serial << " and (select (status is 'R' or status is 'Q' or status is 'P') from jobs where jobs.serial=" << serial << ");";
+            ss << "where serial = " << serial << " and (select (status is 'R' or status is 'Q' or status is 'P') from " << JOB_TABLE << " J where J.serial=" << serial << ");";
             update_metrics_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
 
             // build jobs update statement to indicate job is running
-            ss << "update jobs set startTime = " << start_time << ", duration = " << time(0) - start_time
+            ss << "update " << JOB_TABLE << " set startTime = " << start_time << ", duration = " << time(0) - start_time
                << ", status = 'D' where serial = " << serial << " and (status = 'R' or status = 'Q' or status = 'P');";
             update_jobs_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
@@ -1069,8 +1070,8 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
 
         // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
         // TODO - also, best guess is this is REALLY slow for building large derivative databases, since it's fetching a row at a time and not buffering
-        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT("select %s from parameters P, jobs J where P.serial = J.serial and posterior = %d order by P.serial desc limit 1;"),
-                                           posterior_strings.c_str(), posterior_rank));
+        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT("select %s from %s P, %s J where P.serial = J.serial and posterior = %d order by P.serial desc limit 1;"),
+                                           posterior_strings.c_str(), PAR_TABLE.c_str(), JOB_TABLE.c_str(), posterior_rank));
 
         s.Next();
         for (unsigned int i = 0; i < posterior_indices.size(); ++i) {
