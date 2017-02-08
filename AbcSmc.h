@@ -281,6 +281,7 @@ class AbcSmc {
 
         bool _db_execute_stringstream(sqdb::Db &db, stringstream &ss);
         bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
+        bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
 
         bool _update_sets_table(sqdb::Db &db, int t);
         bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);

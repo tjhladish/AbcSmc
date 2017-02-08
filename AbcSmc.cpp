@@ -231,7 +231,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
     cerr << std::setprecision(PREC);
 
     vector< vector<int> > serials;
-    read_SMC_sets_from_database(db, serials);
+    if (not read_SMC_sets_from_database(db, serials)) return false;
     const int t = serials.size()-1; // this set number
 
     report_convergence_data(t);
@@ -379,9 +379,8 @@ bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
 */
 
 bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
-
     // make sure database looks intact
-    if ( !db.TableExists(JOB_TABLE.c_str()) or !db.TableExists(PAR_TABLE.c_str()) or !db.TableExists(MET_TABLE.c_str()) ) {
+    if ( not _db_tables_exist(db, {JOB_TABLE, PAR_TABLE, MET_TABLE}) ) {
         cerr << "ERROR: Failed to read SMC set from database because one or more tables are missing.\n";
         return false;
     }
@@ -694,15 +693,65 @@ bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
 
 
 bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
-    bool success = false;
+    // We don't need BEGIN EXCLUSIVE here because the calling function has already done it
+    bool db_success = false;
     try {
-        success = db.Query(ss.str().c_str()).Next();
+        db_success = db.Query(ss.str().c_str()).Next();
     } catch (const Exception& e) {
+        cerr << "CAUGHT E: ";
         cerr << e.GetErrorMsg() << endl;
+        cerr << "Failed query:" << endl;
+        cerr << ss.str() << endl;
+    } catch (const exception& e) {
+        cerr << "CAUGHT e: ";
+        cerr << e.what() << endl;
+        cerr << "Failed query:" << endl;
+        cerr << ss.str() << endl;
     }
     ss.str(string());
     ss.clear();
-    return success;
+    return db_success;
+}
+
+
+bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
+    // Note that retval here is whether tables exist, rather than whether
+    // db transaction was successful.  A failed transaction will throw
+    // an exception and exit.
+    bool tables_exist = true;
+
+    db.Query("BEGIN EXCLUSIVE;").Next();
+    try {
+        for(string table_name: table_names) {
+            string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
+            //cerr << "Attempting: " << query_str << endl;
+            Statement s = db.Query( query_str.c_str() );
+            s.Next();
+            const int count = s.GetField(0);
+            if (count < 1) {
+                cerr << "Table " << table_name << " does not exist in database.\n";
+                tables_exist = false;
+            }
+        }
+        db.CommitTransaction();
+    } catch (const Exception& e) {
+        db.RollbackTransaction();
+        cerr << "CAUGHT E: ";
+        cerr << e.GetErrorMsg() << endl;
+        cerr << "Failed while checking whether the following tables exist:";
+        for(string table_name: table_names) cerr << " " << table_name;
+        cerr << endl;
+        exit(-212);
+    } catch (const exception& e) {
+        db.RollbackTransaction();
+        cerr << "CAUGHT e: ";
+        cerr << e.what() << endl;
+        cerr << "Failed while checking whether the following tables exist:";
+        for(string table_name: table_names) cerr << " " << table_name;
+        cerr << endl;
+        exit(-213);
+    }
+    return tables_exist;
 }
 
 
@@ -710,10 +759,8 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     sqdb::Db db(_database_filename.c_str());
 
     stringstream ss;
-    if ( !db.TableExists(JOB_TABLE.c_str()) and !db.TableExists(PAR_TABLE.c_str()) and !db.TableExists(MET_TABLE.c_str()) ) {
-        //ss << "create table sets( smcSet int primary key asc, status text, " << _build_sql_create_par_string("_dv") << ");";
-        //_db_execute_stringstream(db, ss);
-
+    if ( !_db_tables_exist(db, {JOB_TABLE}) and !_db_tables_exist(db, {PAR_TABLE}) and !_db_tables_exist(db, {MET_TABLE}) ) {
+        db.Query("BEGIN EXCLUSIVE;").Next();
         ss << "create table " << JOB_TABLE << " ( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration int, status text, posterior int, attempts int );";
         _db_execute_stringstream(db, ss);
 
@@ -727,6 +774,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 
         ss << "create table " << MET_TABLE << " ( serial int primary key, " << _build_sql_create_met_string("") << ");";
         _db_execute_stringstream(db, ss);
+        db.CommitTransaction();
     } else {
         return false;
     }
@@ -842,7 +890,7 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
 bool AbcSmc::simulate_next_particles(const int n = 1) {
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
     sqdb::Db db(_database_filename.c_str());
-    string model_par_table = db.TableExists(UPAR_TABLE.c_str()) ? UPAR_TABLE : PAR_TABLE;
+    string model_par_table = _db_tables_exist(db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
     vector<Row> par_mat;  //( n, Row(npar()) ); -- expected size, if n rows are available
     vector<Row> met_mat;  //( n, Row(nmet()) );
 
