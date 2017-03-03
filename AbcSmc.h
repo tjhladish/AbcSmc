@@ -286,10 +286,11 @@ class AbcSmc {
         bool _update_sets_table(sqdb::Db &db, int t);
         bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
-
         ABC::Col euclidean( ABC::Row obs_met, ABC::Mat2D sim_met );
 
-        ABC::Row sample_priors( const gsl_rng* RNG );
+        ABC::Mat2D slurp_posterior();
+
+        ABC::Row sample_priors( const gsl_rng* RNG, ABC::Mat2D& posterior );
 
         std::vector<double> do_complicated_untransformations( std::vector<Parameter*>& _model_pars, ABC::Row& pars );
 

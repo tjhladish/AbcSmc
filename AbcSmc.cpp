@@ -33,6 +33,7 @@ const string PAR_TABLE  = "par";
 const string UPAR_TABLE = "upar";
 
 bool AbcSmc::parse_config(string conf_filename) {
+    // TODO - Make sure any existing database actually reflects what is expected in JSON, particularly that par and met tables are legit
     Json::Value par;   // will contains the par value after parsing.
     Json::Reader reader;
     string json_data = slurp(conf_filename);
@@ -301,6 +302,11 @@ void print_stats(ostream& stream, string str1, string str2, double val1, double 
 
 
 void AbcSmc::report_convergence_data(int t) {
+    if((signed) _predictive_prior.size() <= t) {
+        cerr << "ERROR: attempting to report stats for set " << t << ", but data aren't available.\n"
+             << "       This can happen if --process is called on a database that is not ready to be processed.\n";
+        exit(-214);
+    }
     vector<double> last_means( npar(), 0 );
     vector<double> current_means( npar(), 0 );
     for (int j = 0; j < npar(); j++) {
@@ -714,12 +720,14 @@ bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
 }
 
 
+//bool AbcSmc::_db_exists(string db_name){ }
+
+
 bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     // Note that retval here is whether tables exist, rather than whether
     // db transaction was successful.  A failed transaction will throw
     // an exception and exit.
     bool tables_exist = true;
-
     db.Query("BEGIN EXCLUSIVE;").Next();
     try {
         for(string table_name: table_names) {
@@ -779,11 +787,16 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         return false;
     }
 
+    Mat2D posterior;
+    if (_posterior_database_filename != "") {
+        posterior = slurp_posterior();
+    }
+
     db.Query("BEGIN EXCLUSIVE;").Next();
 
     Row pars;
     for (int i = 0; i<_num_particles; i++) {
-        pars = sample_priors(RNG);
+        pars = sample_priors(RNG, posterior);
         QueryStr qstr;
 
         db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, 0, %d, %d, NULL, 'Q', -1, 0 );"), JOB_TABLE.c_str(), i, i, time(NULL))).Next();
@@ -1064,14 +1077,56 @@ Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
     return distances;
 }
 
-Row AbcSmc::sample_priors(const gsl_rng* RNG) {
+
+Mat2D AbcSmc::slurp_posterior() {
+    // TODO - handle sql/sqlite errors
+    // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
+
+    // determine dimensions of results we're going to read in
+    sqdb::Db post_db(_posterior_database_filename.c_str());
+    Statement posterior_query = post_db.Query(("select count(*) from " + JOB_TABLE + " where posterior > -1;").c_str());
+    posterior_query.Next();
+    const int posterior_size = posterior_query.GetField(0); // num of rows
+
+    int num_posterior_pars = 0; // num of cols
+    string posterior_strings = "";
+    for (Parameter* p: _model_pars) {
+        if (p->get_prior_type() == POSTERIOR) {
+            ++num_posterior_pars;
+            if (posterior_strings != "") {
+                posterior_strings += ", ";
+            }
+            posterior_strings += p->get_short_name();
+        }
+    }
+
+    Mat2D posterior = Mat2D::Zero( posterior_size, num_posterior_pars );
+
+    // Identify table to pull parameter values from
+    string post_par_table = _db_tables_exist(post_db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
+    stringstream ss;
+    ss << "select " << posterior_strings << " from " << post_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial and posterior > -1;";
+    posterior_query = post_db.Query(ss.str().c_str());
+
+    int r = 0;
+    while(posterior_query.Next()) {
+        for (int c = 0; c < num_posterior_pars; ++c) {
+            posterior(r,c) = (double) posterior_query.GetField(c);
+        }
+        ++r;
+    }
+
+    return posterior;
+}
+
+
+Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior) {
     Row par_sample = Row::Zero(_model_pars.size());
     bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
     bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
-    // for each parameter
-    string posterior_strings = "";
     vector<int> posterior_indices;
     int posterior_rank = 0;
+    // for each parameter
     for (unsigned int i = 0; i < _model_pars.size(); i++) {
         Parameter* p = _model_pars[i];
         float_type val;
@@ -1095,15 +1150,13 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
             }
         } else if (p->get_prior_type() == POSTERIOR) {
             val = 0; // will be replaced later in function
-            posterior_indices.push_back(i);
-            if (posterior_strings == "") {
+            if (posterior_indices.size() == 0) {
                 posterior_rank = (int) p->get_state();
             } else {
-                posterior_strings += ", ";
                 // require that posterior pars be synchronized
                 assert(posterior_rank == (int) p->get_state());
             }
-            posterior_strings += p->get_short_name();
+            posterior_indices.push_back(i);
         } else {
             // Random parameters get sampled independently from each other, and are therefore easy
             val = p->sample(RNG);
@@ -1111,20 +1164,11 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
 
         par_sample(i) = val;
     }
-
     if (_posterior_database_filename != "") {
-        sqdb::Db db(_posterior_database_filename.c_str());
-        QueryStr qstr;
 
-        // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
-        // TODO - also, best guess is this is REALLY slow for building large derivative databases, since it's fetching a row at a time and not buffering
-        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT("select %s from %s P, %s J where P.serial = J.serial and posterior = %d order by P.serial desc limit 1;"),
-                                           posterior_strings.c_str(), PAR_TABLE.c_str(), JOB_TABLE.c_str(), posterior_rank));
-
-        s.Next();
-        for (unsigned int i = 0; i < posterior_indices.size(); ++i) {
-            par_sample(posterior_indices[i]) = (double) s.GetField(i);
-            Parameter* p = _model_pars[posterior_indices[i]];
+        for (unsigned int c = 0; c < posterior_indices.size(); ++c) {
+            par_sample(posterior_indices[c]) = posterior(posterior_rank, c);
+            Parameter* p = _model_pars[posterior_indices[c]];
 
             if (increment_posterior) {
                 if (p->get_state() >= p->get_prior_max()) {
@@ -1135,6 +1179,7 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG) {
             }
 
         }
+
 //cerr << "sample: " << par_sample << endl;
     }
     return par_sample;
