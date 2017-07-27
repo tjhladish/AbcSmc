@@ -64,6 +64,7 @@ bool AbcSmc::parse_config(string conf_filename) {
     // are we going to have particles that use a posterior from an earlier ABC run
     // to determine some of the parameter values?
     set_posterior_database_filename( par.get("posterior_database_filename", "").asString() );
+    set_retain_posterior_rank( par.get("retain_posterior_rank", "false").asString() );
     if (_posterior_database_filename != "" and _num_smc_sets > 1) {
         cerr << "Using a posterior database as input is not currently supported with smc_iterations > 1. Aborting." << endl;
         exit(-203);
@@ -796,10 +797,12 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 
     Row pars;
     for (int i = 0; i<_num_particles; i++) {
-        pars = sample_priors(RNG, posterior);
+        int posterior_rank = -1;
+        pars = sample_priors(RNG, posterior, posterior_rank);
+        if (not _retain_posterior_rank) posterior_rank = -1;
         QueryStr qstr;
 
-        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, 0, %d, %d, NULL, 'Q', -1, 0 );"), JOB_TABLE.c_str(), i, i, time(NULL))).Next();
+        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, 0, %d, %d, NULL, 'Q', %d, 0 );"), JOB_TABLE.c_str(), i, i, time(NULL), posterior_rank)).Next();
 
         Statement s = db.Query(("select last_insert_rowid() from " + JOB_TABLE + ";").c_str());
         s.Next();
@@ -1120,12 +1123,11 @@ Mat2D AbcSmc::slurp_posterior() {
 }
 
 
-Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior) {
+Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank) {
     Row par_sample = Row::Zero(_model_pars.size());
     bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
     bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
     vector<int> posterior_indices;
-    int posterior_rank = 0;
     // for each parameter
     for (unsigned int i = 0; i < _model_pars.size(); i++) {
         Parameter* p = _model_pars[i];

@@ -192,6 +192,7 @@ class AbcSmc {
         void set_simulator(vector<ABC::float_type> (*simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*)) { _simulator = simulator; use_simulator = true; }
         void set_database_filename( std::string name ) { _database_filename = name; }
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
+        void set_retain_posterior_rank( std::string retain_rank ) { _retain_posterior_rank = (retain_rank == "true"); }
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
         Metric* add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
@@ -247,6 +248,7 @@ class AbcSmc {
         std::string resume_directory;
         std::string _database_filename;
         std::string _posterior_database_filename;
+        bool _retain_posterior_rank;
         std::vector< ABC::Mat2D > _particle_metrics;
         std::vector< ABC::Mat2D > _particle_parameters;
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
@@ -290,7 +292,7 @@ class AbcSmc {
 
         ABC::Mat2D slurp_posterior();
 
-        ABC::Row sample_priors( const gsl_rng* RNG, ABC::Mat2D& posterior );
+        ABC::Row sample_priors( const gsl_rng* RNG, ABC::Mat2D& posterior, int &posterior_rank );
 
         std::vector<double> do_complicated_untransformations( std::vector<Parameter*>& _model_pars, ABC::Row& pars );
 
