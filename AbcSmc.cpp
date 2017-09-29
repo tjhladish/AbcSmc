@@ -764,7 +764,18 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
 }
 
 
+bool file_exists(const char *fileName) {
+    std::ifstream infile(fileName);
+    return infile.good();
+}
+
+
 bool AbcSmc::build_database(const gsl_rng* RNG) {
+    if (_posterior_database_filename != "" and not file_exists(_posterior_database_filename.c_str())) {
+        cerr << "ERROR: Cannot read in posterior database: " << _posterior_database_filename << " does not exist\n";
+        exit(-215);
+    }
+
     sqdb::Db db(_database_filename.c_str());
 
     stringstream ss;
@@ -1079,7 +1090,6 @@ Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
     }
     return distances;
 }
-
 
 Mat2D AbcSmc::slurp_posterior() {
     // TODO - handle sql/sqlite errors
