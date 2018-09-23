@@ -1,3 +1,5 @@
+-include local.mk
+
 CPP:=g++
 CFLAGS = -O2 -Wall -std=c++11 --pedantic -Wno-deprecated-declarations
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
@@ -35,14 +37,16 @@ default: .all
 sqlite3.o: $(SQLDIR)/sqlite3.c $(SQLDIR)/sqlite3.h
 	gcc -c $(SQLDIR)/sqlite3.c -I$(SQLDIR)
 
+ARCHIVE ?= $(AR) -rv
+
 $(LIBABC): $(ABC_HEADER) $(OBJECTS) $(LIBSQL)
-	$(AR) -rv $(LIBABC) $(LIBSQL) $(OBJECTS)
+	$(ARCHIVE) $@ $(LIBSQL) $(OBJECTS)
 
 $(LIBJSON): $(JSONOBJECTS)
-	$(AR) -rv $(LIBJSON) $(JSONOBJECTS)
+	$(ARCHIVE) $@ $(JSONOBJECTS)
 
 $(LIBSQL): $(SQLOBJECTS)
-	$(AR) -rv $(LIBSQL) $(SQLOBJECTS)
+	$(ARCHIVE) $@ $(SQLOBJECTS)
 
 %.o: %.cpp $(ABC_HEADER)
 	$(CPP) $(LIBS) $(CFLAGS) -c $(INCLUDE) $< -o $@
