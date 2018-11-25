@@ -928,7 +928,7 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
     select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts limit " << n << ";";
     //  line below is much faster for very large dbs, but not all particles will get run e.g. if some particles are killed by scheduler
-    //    select_ss << "and J.status = 'Q' limit " << n << ";";
+    //  select_ss << "and J.status = 'Q' limit " << n << ";";
 
     const int overall_start_time = time(0);
     // build jobs update statement to indicate job is running
@@ -1275,15 +1275,17 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
     // ALLOCATE DATA STRUCTURES
     // variance-covariance matrix calculated from pred prior values
     // NB: always allocate this small matrix, so that we don't have to check whether it's safe to free later
-    gsl_matrix* sigma_hat = gsl_matrix_alloc(_particle_parameters[set_num-1].cols(), _particle_parameters[set_num-1].cols());
+    const int num_pars = _particle_parameters[set_num-1].cols();
+    const int pred_prior_size = _predictive_prior[set_num-1].size();
+    gsl_matrix* sigma_hat = gsl_matrix_alloc(num_pars, num_pars);
 
     if (use_mvn_noise) {
         // container for predictive prior aka posterior from last set
-        gsl_matrix* posterior_par_vals = gsl_matrix_alloc(_particle_parameters[set_num-1].rows(), _particle_parameters[set_num-1].cols());
+        gsl_matrix* posterior_par_vals = gsl_matrix_alloc(pred_prior_size, num_pars);
 
         // INITIALIZE DATA STRUCTURES
-        for (unsigned int i = 0; i < _predictive_prior[set_num-1].size(); i++) {
-            for (int j = 0; j<npar(); j++) {
+        for (int i = 0; i < pred_prior_size; ++i) {
+            for (int j = 0; j < num_pars; ++j) {
                 // copy values from pred prior into a gsl matrix
                 const int particle_idx = _predictive_prior[set_num-1][i];
                 gsl_matrix_set(posterior_par_vals, i, j, _particle_parameters[set_num-1](particle_idx, j));
@@ -1297,6 +1299,7 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
             const double doubled_variance = 2 * gsl_matrix_get(sigma_hat, j, j);
             gsl_matrix_set(sigma_hat, j, j, doubled_variance);
         }
+
         // not a nice interface, gsl.  sigma_hat is converted in place from a variance-covariance matrix
         // to the same values in the upper triangle, and the diagonal and lower triangle equal to L,
         // the Cholesky decomposition
@@ -1321,9 +1324,7 @@ Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_m
         gsl_vector_set(par_val_hat, j, par_value);
     }
     par_values = rand_trunc_mv_normal( _model_pars, par_val_hat, L, RNG );
-
     gsl_vector_free(par_val_hat);
-    //gsl_matrix_free(sigma_hat);
 
     return par_values;
 }
