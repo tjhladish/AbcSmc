@@ -1,7 +1,7 @@
 -include local.mk
 
 CPP:=g++
-CFLAGS = -O2 -Wall -std=c++11 --pedantic -Wno-deprecated-declarations -Wno-ignored-attributes -Wno-int-in-bool-context -Wno-misleading-indentation
+CFLAGS = -O2 -Wall -std=c++11 --pedantic
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)
 SQLDIR  = $(ABCDIR)/sqdb

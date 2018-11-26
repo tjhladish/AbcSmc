@@ -1,5 +1,5 @@
 CPP:=g++
-CFLAGS = -O2 -Wall -std=c++11 --pedantic -Wno-deprecated-declarations
+CFLAGS = -O2 -Wall -std=c++11 --pedantic
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)/..
 ABC_INC = -I$(ABCDIR) -I../sqdb
