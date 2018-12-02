@@ -784,6 +784,9 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         ss << "create table " << JOB_TABLE << " ( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration int, status text, posterior int, attempts int );";
         _db_execute_stringstream(db, ss);
 
+        ss << "create index idx1 on " << JOB_TABLE << " (status, attempts);";
+        _db_execute_stringstream(db, ss);
+
         ss << "create table " << PAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
         _db_execute_stringstream(db, ss);
 
