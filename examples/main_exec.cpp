@@ -1,5 +1,6 @@
 #include "AbcSmc.h"
 #include <gsl/gsl_rng.h>
+#include <unistd.h>
 
 using namespace std;
 const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
