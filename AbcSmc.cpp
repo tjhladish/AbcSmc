@@ -675,8 +675,8 @@ string AbcSmc::_build_sql_select_met_string() {
 
 bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
     bool db_success = false;
-    db.Query("BEGIN EXCLUSIVE;").Next();
     try {
+        db.Query("BEGIN EXCLUSIVE;").Next();
         for (unsigned int i = 0; i < update_buffer.size(); ++i) {
             db.Query(update_buffer[i].c_str()).Next();
         }
@@ -721,16 +721,13 @@ bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
 }
 
 
-//bool AbcSmc::_db_exists(string db_name){ }
-
-
 bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     // Note that retval here is whether tables exist, rather than whether
     // db transaction was successful.  A failed transaction will throw
     // an exception and exit.
     bool tables_exist = true;
-    db.Query("BEGIN EXCLUSIVE;").Next();
     try {
+        //db.Query("BEGIN EXCLUSIVE;").Next();
         for(string table_name: table_names) {
             string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
             //cerr << "Attempting: " << query_str << endl;
@@ -742,7 +739,7 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
                 tables_exist = false;
             }
         }
-        db.CommitTransaction();
+        //db.CommitTransaction();
     } catch (const Exception& e) {
         db.RollbackTransaction();
         cerr << "CAUGHT E: ";
@@ -883,9 +880,9 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
 
 bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings) {
     bool db_success = false;
-    db.Query("BEGIN EXCLUSIVE;").Next();
 
     try {
+        db.Query("BEGIN EXCLUSIVE;").Next();
         for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
             db.Query(update_metrics_strings[i].c_str()).Next(); // update metrics table
             db.Query(update_jobs_strings[i].c_str()).Next(); // update jobs table
