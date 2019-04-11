@@ -1154,7 +1154,9 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_r
             // have reached their max values and are being reset
             if (increment_nonrandom_par) {
                 // This parameter has reached it's max value and gets reset to minimum
-                if (p->get_state() >= p->get_prior_max()) {
+                // Because of possible floating point errors, we check whether the state is within step/10,000 from the max
+                const float_type PSEUDO_EPSILON = 0.0001 * p->get_step();
+                if (p->get_state() + PSEUDO_EPSILON >= p->get_prior_max()) {
                     p->reset_state();
                 // otherwise, increment this one and prevent others from being incremented
                 } else {

@@ -76,6 +76,7 @@ class Parameter {
         double get_prior_mean() const { return mean; }
         double get_prior_stdev() const { return stdev; }
         double get_state() const { return state; }
+        double get_step() const { return step; }
         double increment_state() { return state += step; }
         double reset_state() { state = get_prior_min(); return state; }
         std::string get_name() const { return name; }
