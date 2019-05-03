@@ -37,6 +37,21 @@ namespace ABC {
   }
 
 
+  string get_nth_line(const std::string& filename, int N) {
+       ifstream in(filename.c_str());
+
+       string s;
+       //setting a max expected line length might improve performance
+       //s.reserve(some_reasonable_max_line_length);
+
+       //skip N lines
+       for(int i = 0; i < N; ++i) std::getline(in, s);
+
+       std::getline(in,s);
+       return s;
+  }
+
+
   Mat2D read_matrix_file(string filename, char sep) {
       cerr << "Loading " << filename << endl;
       ifstream myfile(filename.c_str());

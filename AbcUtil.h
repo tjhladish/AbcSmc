@@ -77,6 +77,7 @@ namespace ABC {
   inline float_type string2float_type(const std::string& s){ std::istringstream i(s); float_type x = 0; i >> x; return x; }
 
   std::string slurp(std::string filename);
+  std::string get_nth_line(const std::string& filename, int N);
 
   inline float_type logit(const float_type p) { assert(p <= 1.0); assert (p >= 0.0); return log( p / (1.0 - p) ); }
   inline float_type logistic(const float_type l) { return 1.0 / (1.0 + exp(-l)); }
