@@ -56,10 +56,26 @@ bool AbcSmc::parse_config(string conf_filename) {
         set_resume( true );
     }
 
-    set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
-    set_num_samples( par["num_samples"].asInt() );
-    set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
-    set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
+    if (par.isMember("num_samples")) {
+      set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
+      set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
+      set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
+    } else {
+      cerr << "Since 'num_samples' unset, assuming forecasting mode" << endl
+           << "Setting smc_iterations = 1, predictive_prior_fraction = 1.0, pls_training_fraction = 1.0" << endl;
+      set_smc_iterations(1);
+      set_predictive_prior_fraction( 1.0 );
+      set_pls_validation_training_fraction( 1.0 ); // fraction of runs to use for training
+    }
+
+    bool computedSamples = !par.isMember("num_samples");
+    int nsamples = 1;
+    if (not computedSamples) {
+      nsamples *= par["num_samples"].asInt();
+    } else {
+      cerr << "Computing num_samples from product (all PSEUDO parameters) * POSTERIOR size..." << endl;
+    }
+
     set_database_filename( par["database_filename"].asString() );
     // are we going to have particles that use a posterior from an earlier ABC run
     // to determine some of the parameter values?
@@ -85,6 +101,8 @@ bool AbcSmc::parse_config(string conf_filename) {
         assert(par_name_idx.count(name) == 0);
         par_name_idx[name] = i;
     }
+
+    int posterior_size = 1;
 
     for ( unsigned int i = 0; i < model_par.size(); ++i )  {// Iterates over the sequence elements.
         string name = model_par[i]["name"].asString();
@@ -171,8 +189,21 @@ bool AbcSmc::parse_config(string conf_filename) {
         double par2 = model_par[i]["par2"].asDouble();
         double step = model_par[i].get("step", 1.0).asDouble(); // default increment is 1
 
+        if (ptype == POSTERIOR) {
+          posterior_size = static_cast<int>(floor((par2-par1)/step)+1); // overwrites; TODO assert overwriting with same size
+        } else if (ptype == PSEUDO and computedSamples) { // only updating pseudo samples
+          nsamples *= static_cast<int>(floor((par2-par1)/step)+1);
+        }
+
         add_next_parameter(name, short_name, ptype, ntype, par1, par2, step, _untransform_func, par_rescale, mod_map);
     }
+
+    if (computedSamples) {
+      nsamples *= posterior_size;
+      cerr << "The computed num_samples is " << nsamples << endl; 
+    }
+
+    set_num_samples( nsamples );
 
     // Parse model metrics
     const Json::Value model_met = par["metrics"];
@@ -1359,4 +1390,3 @@ Row AbcSmc::_z_transform_observed_metrics(Row& means, Row& stdevs) {
     for (int i = 0; i<nmet(); i++) { zmat(i) = (_model_mets[i]->get_obs_val() - means(i)) / stdevs(i); }
     return zmat;
 }
-
