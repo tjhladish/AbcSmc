@@ -192,7 +192,9 @@ bool AbcSmc::parse_config(string conf_filename) {
         if (ptype == POSTERIOR) {
           posterior_size = static_cast<int>(floor((par2-par1)/step)+1); // overwrites; TODO assert overwriting with same size
         } else if (ptype == PSEUDO and computedSamples) { // only updating pseudo samples
-          nsamples *= static_cast<int>(floor((par2-par1)/step)+1);
+          int span = (par2-par1 < step) ? 1 : static_cast<int>(round((par2-par1)/step)+1);
+          cout << name << " : " << span <<  "(" << par1 << " , " << par2 << " by " << step << ")" << endl;
+          nsamples *= span;
         }
 
         add_next_parameter(name, short_name, ptype, ntype, par1, par2, step, _untransform_func, par_rescale, mod_map);
@@ -200,7 +202,7 @@ bool AbcSmc::parse_config(string conf_filename) {
 
     if (computedSamples) {
       nsamples *= posterior_size;
-      cerr << "The computed num_samples is " << nsamples << endl; 
+      cerr << "The computed num_samples is " << nsamples << endl;
     }
 
     set_num_samples( nsamples );
