@@ -178,6 +178,7 @@ class ParticleSet {
         AbcStatus status;
 };*/
 
+typedef vector<ABC::float_type> (*SimFunc)(vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
 
 class AbcSmc {
     public:
@@ -190,7 +191,7 @@ class AbcSmc {
         void set_predictive_prior_fraction(float f)        { assert(f > 0); assert(f <= 1); _predictive_prior_size = _num_particles * f; }
         void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
         void set_executable( std::string name ) { _executable_filename = name; use_executable = true; }
-        void set_simulator(vector<ABC::float_type> (*simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*)) { _simulator = simulator; use_simulator = true; }
+        void set_simulator(SimFunc simulator) { _simulator = simulator; use_simulator = true; }
         void set_database_filename( std::string name ) { _database_filename = name; }
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
         void set_retain_posterior_rank( std::string retain_rank ) { _retain_posterior_rank = (retain_rank == "true"); }
@@ -240,7 +241,7 @@ class AbcSmc {
         int _num_particles;
         int _pls_training_set_size;
         int _predictive_prior_size; // number of particles that will be used to inform predictive prior
-        vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
+        SimFunc _simulator;
         bool use_simulator;
         std::string _executable_filename;
         bool use_executable;
