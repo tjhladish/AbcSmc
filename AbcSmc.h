@@ -199,7 +199,7 @@ class AbcSmc {
         void write_predictive_prior_file( const int t );
         Metric* add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
             Metric* m = new Metric(name, short_name, ntype, obs_val);
-            _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
+            _model_mets.push_back(m);
             return m;
         }
         Parameter* add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step,double (*u)(const double), std::pair<double, double> r, std::map<std::string, std::vector<int> > mm) {
