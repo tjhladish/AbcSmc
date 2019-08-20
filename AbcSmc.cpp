@@ -193,7 +193,7 @@ bool AbcSmc::parse_config(string conf_filename) {
           posterior_size = static_cast<int>(floor((par2-par1)/step)+1); // overwrites; TODO assert overwriting with same size
         } else if (ptype == PSEUDO and computedSamples) { // only updating pseudo samples
           int span = (par2-par1 < step) ? 1 : static_cast<int>(round((par2-par1)/step)+1);
-          cout << name << " : " << span <<  "(" << par1 << " , " << par2 << " by " << step << ")" << endl;
+          cerr << name << " : " << span <<  "(" << par1 << " , " << par2 << " by " << step << ")" << endl;
           nsamples *= span;
         }
 
@@ -872,13 +872,15 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     return true;
 }
 
-
-bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds) {
+// alternative approach to verbose flag:
+// pass in a "logstream" object
+// which is cerr (or whatever log) if being verbose, and dev/null if not
+bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds, bool verbose) {
     bool db_success = false;
     try {
-        cerr << "Attempting: " << select_pars_ss.str() << endl;
+if (verbose) cerr << "Attempting: " << select_pars_ss.str() << endl;
         db.Query("BEGIN EXCLUSIVE;").Next();
-        cerr << "Lock obtained" << endl;
+if (verbose) cerr << "Lock obtained" << endl;
         Statement s = db.Query(select_pars_ss.str().c_str());
         while (s.Next()) {
             Row pars(npar());
@@ -892,7 +894,9 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
 
             //job_ss << serial << ";";
             string job_str = update_jobs_ss.str() + to_string((long long) serial) + ";";
-            cerr << "Attempting: " << job_str << endl;
+if (verbose) cerr << "Attempting: " << job_str << endl;
+// relative to slow performance here: does sqdb support prepared queries?
+// feels like this should be a prepared query + the next serial, rather than making a string every time
             db.Query(job_str.c_str()).Next(); // update jobs table
         }
 
