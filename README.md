@@ -1,10 +1,7 @@
 # AbcSmc
 Sequential Monte Carlo Approximate Bayesian Computation with Partial Least Squares
 
-AbcSmc is a parameter estimation library implemented in C++ that has been developed to enable
-fitting complex stochastic models to disparate types of empirical data.  Because of the long
-running times, often requiring years of computation, AbcSmc is particularly well-suited to being
-used in high performance (e.g. cluster or supercomputer) environments
+AbcSmc is a parameter estimation library implemented in C++ that has been developed to enable fitting complex stochastic models to disparate types of empirical data.  We use partial least squares to address problems arising from parameters and/or empirical metrics that co-vary or are unidentifiable (parameters) or uninformative (metrics).  Because of the long running times, often requiring many processor-core years of computation, AbcSmc is particularly well-suited to being used in high performance (e.g. cluster or supercomputer) environments. AbcSmc includes a convenient means of distributing and gathering work in HPC environments: the program pulls jobs from and writes output to a standardized SQL database, and implements a dynamic load balancing scheme to compensate for variable simulation run times and hardware failures. AbcSmc uses SQLite for the database, for portability of data.
 
 ## Peer-reviewed publications that have used AbcSmc:
 
