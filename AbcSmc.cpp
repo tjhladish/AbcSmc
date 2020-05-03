@@ -32,6 +32,32 @@ const string MET_TABLE  = "met";
 const string PAR_TABLE  = "par";
 const string UPAR_TABLE = "upar";
 
+vector<float> as_float_vector(Json::Value val, string key) { // not worth templating, despite appearances
+    vector<float> extracted_vals;
+    if ( val[key].isDouble() ) {
+        extracted_vals.push_back( val[key].asFloat() );
+    } else if ( val[key].isArray() ) {
+        for ( unsigned int i = 0; i < val[key].size(); ++i) extracted_vals.push_back( val[key][i].asFloat() );
+    } else {
+        cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting floats or array of floats." << endl;
+        exit(-216);
+    }
+    return extracted_vals;
+}
+
+vector<int> as_int_vector(Json::Value val, string key) {
+    vector<int> extracted_vals;
+    if ( val[key].isInt() ) {
+        extracted_vals.push_back( val[key].asInt() );
+    } else if ( val[key].isArray() ) {
+        for ( unsigned int i = 0; i < val[key].size(); ++i) extracted_vals.push_back( val[key][i].asInt() );
+    } else {
+        cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting ints or array of ints." << endl;
+        exit(-216);
+    }
+    return extracted_vals;
+}
+
 bool AbcSmc::parse_config(string conf_filename) {
     // TODO - Make sure any existing database actually reflects what is expected in JSON, particularly that par and met tables are legit
     Json::Value par;   // will contain the par value after parsing.
@@ -57,17 +83,7 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
-
-    vector<int> set_sizes;
-    if ( par["num_samples"].isInt() ) {
-        set_sizes.push_back( par["num_samples"].asInt() );
-    } else if ( par["num_samples"].isArray() ) {
-        for ( unsigned int i = 0; i < par["num_samples"].size(); ++i) set_sizes.push_back( par["num_samples"][i].asInt() );
-    } else {
-        cerr << "Unknown number of samples argument in configuration file: expecting int or array of ints." << endl;
-        exit(-216);
-    }
-    set_smc_set_sizes( set_sizes );
+    set_smc_set_sizes( as_int_vector(par, "num_samples") );
 
     // TODO--allow specification of pred prior size (single value or list of values)
     set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
