@@ -181,14 +181,57 @@ class ParticleSet {
 
 class AbcSmc {
     public:
-        AbcSmc() { _mp = NULL; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; use_transformed_pars = false; use_mvn_noise = false; };
+        AbcSmc() {
+            _num_smc_sets = 0;
+            _pls_training_fraction = 0.5;
+            //int _pls_training_set_size = 0;
+            _predictive_prior_fraction = 0.05;
+            //_predictive_prior_size = 0;
+            _next_predictive_prior_size = 0;
+            use_simulator = true;
+            use_executable = false;
+            resume_flag = false;
+            resume_directory = "";
+            use_transformed_pars = false;
+            _retain_posterior_rank = true;
+            use_mvn_noise = false;
+            _mp = NULL;
+        };
         AbcSmc( ABC::MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; use_transformed_pars = false; use_mvn_noise = false; };
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
-        void set_num_samples(int n) { _num_particles = n; }
-        void set_predictive_prior_size(int n) { assert(n > 0); assert(n <= _num_particles); _predictive_prior_size = n; }
-        void set_predictive_prior_fraction(float f)        { assert(f > 0); assert(f <= 1); _predictive_prior_size = _num_particles * f; }
-        void set_pls_validation_training_fraction(float f) { assert(f > 0); assert(f <= 1); _pls_training_set_size = _num_particles * f; }
+        void set_smc_set_sizes(vector<int> n) { _smc_set_sizes = n; }
+        size_t get_num_particles(size_t set_num) {
+            assert(set_num >= 0);
+            int set_size = 0;
+            if (set_num < _smc_set_sizes.size()) {
+                set_size = _smc_set_sizes[set_num];
+            } else {
+                set_size = _smc_set_sizes.back();
+                cerr << "Assuming set size of " << set_size << endl; 
+            }
+            return set_size;
+        }
+
+        void set_predictive_prior_fraction(float f) {
+            assert(f > 0);
+            assert(f <= 1);
+            _predictive_prior_fraction = f;
+        }
+
+        void set_next_predictive_prior_size(int set_idx, int set_size);
+/*        void set_predictive_prior_size(int set_size) {
+            assert(set_size >= 0);
+            assert(set_size < _smc_set_sizes.size());
+            _predictive_prior_size = _smc_set_sizes[set_num] * _predictive_prior_fraction;
+        }*/
+
+        void set_pls_validation_training_fraction(float f) {
+            assert(f > 0);
+            assert(f <= 1);
+            _pls_training_fraction = f;
+        }
+
         void set_executable( std::string name ) { _executable_filename = name; use_executable = true; }
         void set_simulator(vector<ABC::float_type> (*simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*)) { _simulator = simulator; use_simulator = true; }
         void set_database_filename( std::string name ) { _database_filename = name; }
@@ -237,9 +280,13 @@ class AbcSmc {
         std::vector<Parameter*> _model_pars;
         std::vector<Metric*> _model_mets;
         int _num_smc_sets;
-        int _num_particles;
-        int _pls_training_set_size;
-        int _predictive_prior_size; // number of particles that will be used to inform predictive prior
+        vector<int> _smc_set_sizes;
+        //int _num_particles;
+        float _pls_training_fraction;
+        //int _pls_training_set_size;
+        float _predictive_prior_fraction;
+        int _next_predictive_prior_size;
+        //int _predictive_prior_size; // number of particles that will be used to inform predictive prior
         vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
         bool use_simulator;
         std::string _executable_filename;
