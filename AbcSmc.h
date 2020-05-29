@@ -6,9 +6,11 @@
 #include <map>
 #include "AbcUtil.h"
 #include "sqdb.h"
+#include <json/json.h>
 
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
+enum VerboseType {QUIET, VERBOSE};
 
 class Parameter {
     public:
@@ -185,9 +187,9 @@ class AbcSmc {
             _num_smc_sets = 0;
             _pls_training_fraction = 0.5;
             //int _pls_training_set_size = 0;
-            _predictive_prior_fraction = 0.05;
+            //_predictive_prior_fraction = 0.05;
             //_predictive_prior_size = 0;
-            _next_predictive_prior_size = 0;
+            //_next_predictive_prior_size = 0;
             use_simulator = true;
             use_executable = false;
             resume_flag = false;
@@ -200,31 +202,40 @@ class AbcSmc {
         AbcSmc( ABC::MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; use_transformed_pars = false; use_mvn_noise = false; };
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
-        void set_smc_set_sizes(vector<int> n) { _smc_set_sizes = n; }
-        size_t get_num_particles(size_t set_num) {
+        size_t get_smc_iterations() { return _num_smc_sets; }
+        //void set_smc_set_sizes(vector<int> n) { _smc_set_sizes = n; }
+
+        size_t get_num_particles(size_t set_num, VerboseType vt = VERBOSE) {
             assert(set_num >= 0);
             int set_size = 0;
             if (set_num < _smc_set_sizes.size()) {
                 set_size = _smc_set_sizes[set_num];
             } else {
                 set_size = _smc_set_sizes.back();
-                cerr << "Assuming set size of " << set_size << endl; 
+                if (vt == VERBOSE) cerr << "Assuming set size of " << set_size << endl;
             }
             return set_size;
         }
 
-        void set_predictive_prior_fraction(float f) {
+        size_t get_pred_prior_size(size_t set_num, VerboseType vt = VERBOSE) {
+            assert(set_num >= 0);
+            int set_size = 0;
+            if (set_num < _predictive_prior_sizes.size()) {
+                set_size = _predictive_prior_sizes[set_num];
+            } else {
+                set_size = _predictive_prior_sizes.back();
+                if (vt == VERBOSE) cerr << "Assuming a predictive prior size of " << set_size << endl;
+            }
+            return set_size;
+        }
+
+/*        void set_predictive_prior_fraction(float f) {
             assert(f > 0);
             assert(f <= 1);
             _predictive_prior_fraction = f;
-        }
+        }*/
 
         void set_next_predictive_prior_size(int set_idx, int set_size);
-/*        void set_predictive_prior_size(int set_size) {
-            assert(set_size >= 0);
-            assert(set_size < _smc_set_sizes.size());
-            _predictive_prior_size = _smc_set_sizes[set_num] * _predictive_prior_fraction;
-        }*/
 
         void set_pls_validation_training_fraction(float f) {
             assert(f > 0);
@@ -250,6 +261,7 @@ class AbcSmc {
             return p;
         }
 
+        void process_predictive_prior_arguments(Json::Value par);
         bool parse_config(std::string conf_filename);
         void report_convergence_data(int);
 
@@ -284,8 +296,8 @@ class AbcSmc {
         //int _num_particles;
         float _pls_training_fraction;
         //int _pls_training_set_size;
-        float _predictive_prior_fraction;
-        int _next_predictive_prior_size;
+        vector<int> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
+        //int _next_predictive_prior_size;
         //int _predictive_prior_size; // number of particles that will be used to inform predictive prior
         vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
         bool use_simulator;
@@ -314,7 +326,7 @@ class AbcSmc {
         void _particle_scheduler(int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG);
         void _particle_worker();
 
-        void _filter_particles ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
+        void _filter_particles ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
         void _print_particle_table_header();
         long double calculate_nrmse(vector<ABC::Col> posterior_mets);
 

@@ -9,7 +9,7 @@ using namespace std;
 const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 
 // wrapper for simulator
-// must take vector of doubles (ABC paramters) 
+// must take vector of doubles (ABC paramters)
 // and return vector of doubles (ABC metrics)
 vector<double> simulator(vector<double> args, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par* mp) {
     gsl_rng_set(RNG, rng_seed); // seed the rng using sys time and the process id
@@ -17,7 +17,7 @@ vector<double> simulator(vector<double> args, const unsigned long int rng_seed, 
     int par2 = (int) args[1]; // number of sides on dice
 
     vector<double> results(par1,0);
-    
+
     int sum = 0;
 
     for (int i = 0; i<par1; i++) {
@@ -42,6 +42,7 @@ void usage() {
     cerr << "\t       ./abc_sql abc_config_sql.json --simulate\n\n";
     cerr << "\t       ./abc_sql abc_config_sql.json --simulate -n <number of simulations per database write>\n\n";
     cerr << "\t       ./abc_sql abc_config_sql.json --process --simulate -n <number of simulations per database write>\n\n";
+    cerr << "\t       ./abc_sql abc_config_sql.json --all\n\n";
 
 }
 
@@ -53,35 +54,52 @@ int main(int argc, char* argv[]) {
         exit(100);
     }
 
-    bool process_db = false;
+    bool process_db  = false;
     bool simulate_db = false;
-    int buffer_size = -1;
+    bool do_all      = false;
+    int buffer_size  = -1;
 
     for (int i=2; i < argc;  i++ ) {
-        if ( strcmp(argv[i], "--process") == 0  ) { 
+        if ( strcmp(argv[i], "--process") == 0  ) {
             process_db = true;
-        } else if ( strcmp(argv[i], "--simulate") == 0  ) {  
+        } else if ( strcmp(argv[i], "--simulate") == 0  ) {
             simulate_db = true;
             buffer_size = buffer_size == -1 ? 1 : buffer_size;
-        } else if ( strcmp(argv[i], "-n" ) == 0 ) {  
+        } else if ( strcmp(argv[i], "--all") == 0  ) {
+            do_all = true;
+            process_db = true;
+            simulate_db = true;
+        } else if ( strcmp(argv[i], "-n" ) == 0 ) {
             buffer_size = atoi(argv[++i]);
         } else {
-            usage(); 
+            usage();
             exit(101);
         }
     }
 
     AbcSmc* abc = new AbcSmc();
     abc->parse_config(string(argv[1]));
-    if (process_db) {
-        gsl_rng_set(RNG, time(NULL) * getpid()); // seed the rng using sys time and the process id
-        abc->process_database(RNG);
-    } 
+    size_t set_count = do_all ? abc->get_smc_iterations() : 1;
 
-    if (simulate_db) {
-        abc->set_simulator(simulator);
-        abc->simulate_next_particles(buffer_size);
+    for (size_t i = 0; i < set_count; ++i) {
+        if (do_all) {
+            buffer_size = (int) abc->get_num_particles(i, QUIET);
+        }
+        if (process_db) {
+            gsl_rng_set(RNG, time(NULL) * getpid()); // seed the rng using sys time and the process id
+            abc->process_database(RNG);
+        }
+
+        if (simulate_db) {
+            abc->set_simulator(simulator);
+            abc->simulate_next_particles(buffer_size);
+        }
     }
+
+    if (do_all) {
+        abc->process_database(RNG); // one last time, to get the posterior
+    }
+
 
     return 0;
 }

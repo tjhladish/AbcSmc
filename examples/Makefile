@@ -2,7 +2,7 @@ CPP:=g++
 CFLAGS = -O2 -Wall -std=c++11 --pedantic
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)/..
-ABC_INC = -I$(ABCDIR) -I../sqdb
+ABC_INC = -I$(ABCDIR) -I../sqdb -I../jsoncpp/include
 
 #ifdef TACC_GSL_INC
 #GSL_INC = -I$$TACC_GSL_INC

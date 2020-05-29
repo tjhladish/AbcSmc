@@ -5,7 +5,6 @@
 #include <iostream>
 #include <cstdio>
 #include <cstring>
-#include <json/json.h>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -58,6 +57,50 @@ vector<int> as_int_vector(Json::Value val, string key) {
     return extracted_vals;
 }
 
+
+void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
+    int arg_ct = par.isMember("predictive_prior_fraction") + par.isMember("predictive_prior_size");
+    if (arg_ct == 0) {
+        cerr << "Error: either predictive_prior_fraction or predictive_prior_size must be specified in configuration file." << endl;
+        exit(1);
+    } else if (arg_ct == 2) {
+        cerr << "Error: only one of predictive_prior_fraction and predictive_prior_size may be specified in configuration file." << endl;
+        exit(1);
+    } else if (par.isMember("predictive_prior_fraction")) {
+        vector<float> ppfs = as_float_vector(par, "predictive_prior_fraction");
+        if (ppfs.size() > 1 and _smc_set_sizes.size() > 1 and ppfs.size() != _smc_set_sizes.size()) {
+            cerr << "Error: If num_samples and predictive_prior_fraction both have length > 1 in configuration file, they must be equal in length." << endl;
+            exit(1);
+        }
+        vector<int> set_sizes_copy = _smc_set_sizes;
+        const int max_set = max(ppfs.size(), set_sizes_copy.size());
+        ppfs.resize(max_set, ppfs.back());
+        set_sizes_copy.resize(max_set, set_sizes_copy.back());
+        _predictive_prior_sizes.clear();
+        for (unsigned int i = 0; i < ppfs.size(); ++i) {
+            if (ppfs[i] <= 0 or ppfs[i] > 1) {
+                cerr << "Error: predictive_prior_fraction in configuration file must be > 0 and <= 1" << endl;
+                exit(1);
+            }
+            _predictive_prior_sizes.push_back( round(ppfs[i] * set_sizes_copy[i]) );
+        }
+    } else if (par.isMember("predictive_prior_size")) {
+        _predictive_prior_sizes = as_int_vector(par, "predictive_prior_size");
+        if (_predictive_prior_sizes.size() > 1 and _smc_set_sizes.size() > 1 and _predictive_prior_sizes.size() != _smc_set_sizes.size()) {
+            cerr << "Error: If num_samples and predictive_prior_size both have length > 1 in configuration file, they must be equal in length." << endl;
+            exit(1);
+        }
+        const int max_set = max(_predictive_prior_sizes.size(), _smc_set_sizes.size());
+        for (int i = 0; i < max_set; ++i) {
+            if (get_pred_prior_size(i, QUIET) > get_num_particles(i, QUIET)) {
+                cerr << "Error: requested predictive prior size is greater than requested SMC set size for at least one set in configuration file." << endl;
+                exit(1);
+            }
+        }
+    }
+}
+
+
 bool AbcSmc::parse_config(string conf_filename) {
     // TODO - Make sure any existing database actually reflects what is expected in JSON, particularly that par and met tables are legit
     Json::Value par;   // will contain the par value after parsing.
@@ -83,10 +126,10 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
-    set_smc_set_sizes( as_int_vector(par, "num_samples") );
-
+    _smc_set_sizes = as_int_vector(par, "num_samples");
+    process_predictive_prior_arguments(par);
     // TODO--allow specification of pred prior size (single value or list of values)
-    set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
+    //set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
     set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
     set_database_filename( par["database_filename"].asString() );
     // are we going to have particles that use a posterior from an earlier ABC run
@@ -266,7 +309,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
     if (not read_SMC_sets_from_database(db, serials)) return false; // slurp sets & do particle filtering (identify pred prior) if needed
     const int next_set = serials.size();
     const int last_set = next_set - 1; // this set number
-    
+
 //    if ( _pred_prior_size = 0) set_predictive_prior_size(last_set);
 
     report_convergence_data(last_set);
@@ -433,6 +476,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
     serials.clear();
     _particle_parameters.clear();
     _particle_metrics.clear();
+    bool set_size_test_success = true;
     while (s.Next()) {
         int t = s.GetField(0);
         int set_size = s.GetField(1);
@@ -440,6 +484,15 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         if (set_size != completed_set_size) {
             cerr << "ERROR: Failed to read SMC set from database because not all particles are complete in set " << t << "\n";
             return false;
+        }
+        const int json_set_size = get_num_particles(t, QUIET);
+        if (set_size != json_set_size) {
+            cerr << "ERROR:\tSet size for one or more sets does not agree between configuration file and database:" << endl
+                 << "\tSet " << t << " in configuration file has size " << json_set_size << " vs size " << set_size << " in database." << endl;
+//                 << "\tNB: You may want to edit the configuration file to have an array of set sizes that reflect what is already in the database." << endl;
+            set_size_test_success = false;
+            break;
+            //return false;
         }
         _particle_parameters.push_back( Mat2D::Zero( completed_set_size, npar() ) );
         _particle_metrics.push_back( Mat2D::Zero( completed_set_size, nmet() ) );
@@ -481,12 +534,13 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
                 _predictive_prior.back()[rank] = idx;
             }
         } else { // Otherwise, do the filtering now and update the DB
-            set_next_predictive_prior_size(t, _particle_parameters[t].size());
-            _predictive_prior.push_back( vector<int>(_next_predictive_prior_size) );
+            //set_next_predictive_prior_size(t, _particle_parameters[t].size());
+            const int next_pred_prior_size = get_pred_prior_size(t);
+            _predictive_prior.push_back( vector<int>(next_pred_prior_size) );
             cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
-            _filter_particles( t, _particle_metrics[t], _particle_parameters[t] );
-            vector<string> update_strings(_next_predictive_prior_size);
-            for (int i = 0; i < _next_predictive_prior_size; i++) { // best to worst performing particle in posterior?
+            _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+            vector<string> update_strings(next_pred_prior_size);
+            for (int i = 0; i < next_pred_prior_size; i++) { // best to worst performing particle in posterior?
                 const int particle_idx = _predictive_prior[t][i];
                 const int particle_serial = serials[t][particle_idx];
                 stringstream ss;
@@ -499,13 +553,24 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
 
     }
 
+    if (not set_size_test_success) {
+        s = db.Query(("select count(*) from " + JOB_TABLE + " group by smcSet order by smcSet;").c_str());
+        vector<int> db_set_sizes;
+        while (s.Next()) { db_set_sizes.push_back(s.GetField(0)); }
+        cerr << "\tNB: You may want to edit the configuration file to have an array of set sizes that reflect what is already in the database." << endl
+             << "\t    Sizes of sets currently in database: [";
+        cerr_vector(db_set_sizes, ", ");
+        cerr << "]" << endl;
+        exit(1);
+    }
+
     return true;
 }
 
 
-void AbcSmc::set_next_predictive_prior_size(int set_idx, int set_size) {
+/*void AbcSmc::set_next_predictive_prior_size(int set_idx, int set_size) {
     _next_predictive_prior_size = round(set_size * _predictive_prior_fraction);
-}
+}*/
 
 
 void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
@@ -890,7 +955,9 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
         db.Query("BEGIN EXCLUSIVE;").Next();
         cerr << "Lock obtained" << endl;
         Statement s = db.Query(select_pars_ss.str().c_str());
-        while (s.Next()) {
+        vector<string> job_strs;
+
+        while (s.Next()) { // grap par vals and find out which jobs need to be updated (changed to running (R), incremented attempts, updated timestamp)
             Row pars(npar());
             const int serial = (int) s.GetField(0);
             serials.push_back( serial );
@@ -902,6 +969,10 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
 
             //job_ss << serial << ";";
             string job_str = update_jobs_ss.str() + to_string((long long) serial) + ";";
+            job_strs.push_back(job_str);
+        }
+
+        for (string job_str: job_strs) {
             cerr << "Attempting: " << job_str << endl;
             db.Query(job_str.c_str()).Next(); // update jobs table
         }
@@ -968,11 +1039,12 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     vector<Row> met_mat;  //( n, Row(nmet()) );
 
     stringstream select_ss;
+    string limit = n == -1 ? "" : "limit " + to_string(n);
     select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
     select_ss << "from " << model_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial ";
     // Do already running jobs as well, if there are not enough queued jobs
     // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
-    select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts limit " << n << ";";
+    select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts " << limit << ";";
     //  line below is much faster for very large dbs, but not all particles will get run e.g. if some particles are killed by scheduler
     //  select_ss << "and J.status = 'Q' limit " << n << ";";
 
@@ -1040,7 +1112,7 @@ void AbcSmc::_print_particle_table_header() {
     for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
 }
 
-void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
+void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
     // Run PLS
     // Box-Cox transform data -- TODO?
     //void test_bc( Mat2D );
@@ -1083,7 +1155,7 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     vector<int> ranking = ordered(distances);
 
     vector<int>::iterator first = ranking.begin();
-    vector<int>::iterator last  = ranking.begin() + _next_predictive_prior_size;
+    vector<int>::iterator last  = ranking.begin() + next_pred_prior_size;
     vector<int> sample(first, last);
     _predictive_prior[t] = sample;
 
@@ -1092,8 +1164,8 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << "---"; } cerr << " | ";
     for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_obs_val(); } cerr << endl;
 
-    vector<Col> posterior_pars(npar(), Col(_next_predictive_prior_size));
-    vector<Col> posterior_mets(nmet(), Col(_next_predictive_prior_size));
+    vector<Col> posterior_pars(npar(), Col(next_pred_prior_size));
+    vector<Col> posterior_mets(nmet(), Col(next_pred_prior_size));
     for (unsigned int i = 0; i < sample.size(); ++i) {
         const int idx = sample[i];
         for (int j = 0; j < npar(); j++) posterior_pars[j](i) = Y_orig(idx, j);
