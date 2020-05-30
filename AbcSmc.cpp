@@ -8,6 +8,7 @@
 #include <string>
 #include <sstream>
 #include <fstream>
+#include <chrono>
 #include "AbcSmc.h"
 
 // need a positive int that is very unlikely
@@ -22,6 +23,7 @@ using std::setw;
 
 using namespace sqdb;
 using namespace ABC;
+using namespace chrono;
 
 const string double_bar = "=========================================================================================";
 const int PREC = 5;
@@ -887,7 +889,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     stringstream ss;
     if ( !_db_tables_exist(db, {JOB_TABLE}) and !_db_tables_exist(db, {PAR_TABLE}) and !_db_tables_exist(db, {MET_TABLE}) ) {
         db.Query("BEGIN EXCLUSIVE;").Next();
-        ss << "create table " << JOB_TABLE << " ( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration int, status text, posterior int, attempts int );";
+        ss << "create table " << JOB_TABLE << " ( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration real, status text, posterior int, attempts int );";
         _db_execute_stringstream(db, ss);
 
         ss << "create index idx1 on " << JOB_TABLE << " (status, attempts);";
@@ -1048,7 +1050,7 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     //  line below is much faster for very large dbs, but not all particles will get run e.g. if some particles are killed by scheduler
     //  select_ss << "and J.status = 'Q' limit " << n << ";";
 
-    const int overall_start_time = time(0);
+    const size_t overall_start_time = duration_cast<seconds>(high_resolution_clock::now().time_since_epoch()).count();
     // build jobs update statement to indicate job is running
     stringstream update_ss;
     update_ss << "update " << JOB_TABLE << " set startTime = " << overall_start_time << ", status = 'R', attempts = attempts + 1 where serial = "; // we don't know the serial yet
@@ -1061,7 +1063,7 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     stringstream ss;
     if (ok_to_continue) {
         for (unsigned int i = 0; i < par_mat.size(); ++i) {
-            const int start_time = time(0);
+            const high_resolution_clock::time_point start_time = high_resolution_clock::now();
             const int serial = serials[i];
             met_mat.push_back( Row(nmet()) );
             bool success = _run_simulator(par_mat[i], met_mat[i], rng_seeds[i], serial);
@@ -1076,8 +1078,10 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
             update_metrics_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
 
+            const size_t time_since_unix_epoch = duration_cast<seconds>(start_time.time_since_epoch()).count();
+            const duration<double> time_span = duration_cast<duration<double>>(high_resolution_clock::now() - start_time); // duration in seconds
             // build jobs update statement to indicate job is running
-            ss << "update " << JOB_TABLE << " set startTime = " << start_time << ", duration = " << time(0) - start_time
+            ss << "update " << JOB_TABLE << " set startTime = " << time_since_unix_epoch << ", duration = " << time_span.count()
                << ", status = 'D' where serial = " << serial << " and (status = 'R' or status = 'Q' or status = 'P');";
             update_jobs_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
