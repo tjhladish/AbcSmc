@@ -228,6 +228,7 @@ bool AbcSmc::parse_config(string conf_filename) {
             }
             par_rescale = {untransform["min"].asDouble(), untransform["max"].asDouble()};
             _untransform_func = [](const double t) { return ABC::logistic(t); };
+            use_transformed_pars = true;
             //Json::ValueType mod_type = untransform["transformed_addend"].type();
 
             for (auto& mod_type: mod_map) {
@@ -783,8 +784,8 @@ string AbcSmc::_build_sql_select_met_string() {
 
 bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
     bool db_success = false;
-    db.Query("BEGIN EXCLUSIVE;").Next();
     try {
+        db.Query("BEGIN EXCLUSIVE;").Next();
         for (unsigned int i = 0; i < update_buffer.size(); ++i) {
             db.Query(update_buffer[i].c_str()).Next();
         }
@@ -829,15 +830,11 @@ bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
 }
 
 
-//bool AbcSmc::_db_exists(string db_name){ }
-
-
 bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     // Note that retval here is whether tables exist, rather than whether
     // db transaction was successful.  A failed transaction will throw
     // an exception and exit.
     bool tables_exist = true;
-    db.Query("BEGIN EXCLUSIVE;").Next();
     try {
         for(string table_name: table_names) {
             string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
@@ -850,9 +847,7 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
                 tables_exist = false;
             }
         }
-        db.CommitTransaction();
     } catch (const Exception& e) {
-        db.RollbackTransaction();
         cerr << "CAUGHT E: ";
         cerr << e.GetErrorMsg() << endl;
         cerr << "Failed while checking whether the following tables exist:";
@@ -860,7 +855,6 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
         cerr << endl;
         exit(-212);
     } catch (const exception& e) {
-        db.RollbackTransaction();
         cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
         cerr << "Failed while checking whether the following tables exist:";
@@ -999,9 +993,9 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
 
 bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings) {
     bool db_success = false;
-    db.Query("BEGIN EXCLUSIVE;").Next();
 
     try {
+        db.Query("BEGIN EXCLUSIVE;").Next();
         for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
             db.Query(update_metrics_strings[i].c_str()).Next(); // update metrics table
             db.Query(update_jobs_strings[i].c_str()).Next(); // update jobs table
@@ -1136,6 +1130,15 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pr
     const int pls_training_set_size = round(nobs * _pls_training_fraction);
     plsm.plsr(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), KERNEL_TYPE1);
 
+/*
+//P, W, R, Q, T
+cerr << "P:\n" << plsm.P << endl;
+cerr << "W:\n" << plsm.W << endl;
+cerr << "R:\n" << plsm.R << endl;
+cerr << "Q:\n" << plsm.Q << endl;
+cerr << "T:\n" << plsm.T << endl;
+cerr << "coefficients:\n" << plsm.coefficients() << endl;
+*/
     // A is number of components to use
     for (int A = 1; A<=ncomp; A++) {
         // How well did we do with this many components?
@@ -1160,7 +1163,7 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pr
 
     vector<int>::iterator first = ranking.begin();
     vector<int>::iterator last  = ranking.begin() + next_pred_prior_size;
-    vector<int> sample(first, last);
+    vector<int> sample(first, last); // This is the predictive prior / posterior
     _predictive_prior[t] = sample;
 
     cerr << "Observed:\n";
