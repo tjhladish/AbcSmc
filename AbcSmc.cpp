@@ -155,6 +155,7 @@ bool AbcSmc::parse_config(string conf_filename) {
             }
             par_rescale = {untransform["min"].asDouble(), untransform["max"].asDouble()};
             _untransform_func = [](const double t) { return ABC::logistic(t); };
+            use_transformed_pars = true;
             //Json::ValueType mod_type = untransform["transformed_addend"].type();
 
             for (auto& mod_type: mod_map) {
@@ -727,7 +728,6 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     // an exception and exit.
     bool tables_exist = true;
     try {
-        //db.Query("BEGIN EXCLUSIVE;").Next();
         for(string table_name: table_names) {
             string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
             //cerr << "Attempting: " << query_str << endl;
@@ -739,9 +739,7 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
                 tables_exist = false;
             }
         }
-        //db.CommitTransaction();
     } catch (const Exception& e) {
-        db.RollbackTransaction();
         cerr << "CAUGHT E: ";
         cerr << e.GetErrorMsg() << endl;
         cerr << "Failed while checking whether the following tables exist:";
@@ -749,7 +747,6 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
         cerr << endl;
         exit(-212);
     } catch (const exception& e) {
-        db.RollbackTransaction();
         cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
         cerr << "Failed while checking whether the following tables exist:";
@@ -1012,7 +1009,15 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
     PLS_Model plsm;
     plsm.initialize(npred, nresp, ncomp);
     plsm.plsr(X.topRows(_pls_training_set_size), Y.topRows(_pls_training_set_size), KERNEL_TYPE1);
-
+/*
+//P, W, R, Q, T
+cerr << "P:\n" << plsm.P << endl;
+cerr << "W:\n" << plsm.W << endl;
+cerr << "R:\n" << plsm.R << endl;
+cerr << "Q:\n" << plsm.Q << endl;
+cerr << "T:\n" << plsm.T << endl;
+cerr << "coefficients:\n" << plsm.coefficients() << endl;
+*/
     // A is number of components to use
     for (int A = 1; A<=ncomp; A++) {
         // How well did we do with this many components?
@@ -1037,7 +1042,7 @@ void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig) {
 
     vector<int>::iterator first = ranking.begin();
     vector<int>::iterator last  = ranking.begin() + _predictive_prior_size;
-    vector<int> sample(first, last);
+    vector<int> sample(first, last); // This is the predictive prior / posterior
     _predictive_prior[t] = sample;
 
     cerr << "Observed:\n";
