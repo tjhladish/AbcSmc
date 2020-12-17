@@ -1026,8 +1026,13 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
     return db_success;
 }
 
+bool AbcSmc::simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
 
-bool AbcSmc::simulate_next_particles(const int n = 1) {
+bool AbcSmc::simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
+
+bool AbcSmc::simulate_next_particles(const int n, const int serial_req, const int posterior_req) { // defaults are 1, -1, -1
+    assert(n == 1 or (serial_req == -1 and posterior_req == -1));
+    assert(serial_req == -1 or posterior_req == -1);
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
     sqdb::Db db(_database_filename.c_str());
     string model_par_table = _db_tables_exist(db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
@@ -1040,7 +1045,13 @@ bool AbcSmc::simulate_next_particles(const int n = 1) {
     select_ss << "from " << model_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial ";
     // Do already running jobs as well, if there are not enough queued jobs
     // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
-    select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts " << limit << ";";
+    if (serial_req > -1) {
+        select_ss << "and J.serial = " << serial_req << ";";
+    } else if (posterior_req > -1) {
+        select_ss << "and smcSet = (select max(smcSet) from job where posterior > -1) and posterior = " << posterior_req << ";";
+    } else {
+        select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts " << limit << ";";
+    }
     //  line below is much faster for very large dbs, but not all particles will get run e.g. if some particles are killed by scheduler
     //  select_ss << "and J.status = 'Q' limit " << n << ";";
 

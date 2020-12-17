@@ -206,7 +206,6 @@ class AbcSmc {
         //void set_smc_set_sizes(vector<int> n) { _smc_set_sizes = n; }
 
         size_t get_num_particles(size_t set_num, VerboseType vt = VERBOSE) {
-            assert(set_num >= 0);
             int set_size = 0;
             if (set_num < _smc_set_sizes.size()) {
                 set_size = _smc_set_sizes[set_num];
@@ -218,7 +217,6 @@ class AbcSmc {
         }
 
         size_t get_pred_prior_size(size_t set_num, VerboseType vt = VERBOSE) {
-            assert(set_num >= 0);
             int set_size = 0;
             if (set_num < _predictive_prior_sizes.size()) {
                 set_size = _predictive_prior_sizes[set_num];
@@ -274,7 +272,9 @@ class AbcSmc {
         bool fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serial, vector<ABC::Row> &par_mat, vector<unsigned long int> &seeds);
         bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
 
-        bool simulate_next_particles(int n);
+        bool simulate_particle_by_serial(const int serial_req);
+        bool simulate_particle_by_posterior_idx(const int posterior_req);
+        bool simulate_next_particles(const int n = 1, const int serial_req = -1, const int posterior_req = -1); // defaults to running next particle
 
         Parameter* get_parameter_by_name(string name) {
             Parameter* p = nullptr;
