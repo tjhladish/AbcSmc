@@ -38,8 +38,8 @@ namespace ABC {
 
 
   string get_nth_line(const std::string& filename, int N) {
-       ifstream in(filename.c_str());
-
+       ifstream in(filename); // works in c++11
+       if (!in.is_open()) std::cerr << "Did not open " << filename << '\n';
        string s;
        //setting a max expected line length might improve performance
        //s.reserve(some_reasonable_max_line_length);

@@ -39,11 +39,11 @@ sqlite3.o: $(SQLDIR)/sqlite3.c $(SQLDIR)/sqlite3.h
 
 ARCHIVE ?= $(AR) -rv
 
-$(LIBABC): $(LIBSQL) libabcl.a
+$(LIBABC): $(LIBSQL) $(OBJECTS)
 	$(ARCHIVE) $@ $^
 
-libabcl.a: $(ABC_HEADER) $(OBJECTS)
-	$(ARCHIVE) $@ $(OBJECTS)
+libabcl.a: $(OBJECTS)
+	$(ARCHIVE) $@ $^
 
 
 $(LIBJSON): $(JSONOBJECTS)
