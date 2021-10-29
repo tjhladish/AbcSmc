@@ -6,6 +6,7 @@
 #include <map>
 #include "AbcUtil.h"
 #include "sqdb.h"
+#include "AbcSim.h"
 
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
@@ -177,8 +178,6 @@ class ParticleSet {
         std::vector<Particle*> particles;
         AbcStatus status;
 };*/
-
-typedef vector<ABC::float_type> (*SimFunc)(vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
 
 class AbcSmc {
     public:

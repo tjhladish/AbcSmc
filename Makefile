@@ -29,7 +29,7 @@ LIBSQL  = libsqdb.a
 OBJECTS     = $(SOURCES:.cpp=.o)
 JSONOBJECTS = $(JSONSOURCES:.cpp=.o)
 SQLOBJECTS  = $(SQLSOURCES:.cpp=.o)
-ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h
+ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h ./AbcSim.h
 
 default: .all
 .all:  $(LIBJSON) sqlite3.o $(LIBSQL) $(SOURCES) $(LIBABC)
