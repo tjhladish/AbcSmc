@@ -33,6 +33,12 @@ const string MET_TABLE  = "met";
 const string PAR_TABLE  = "par";
 const string UPAR_TABLE = "upar";
 
+bool file_exists(const char *fileName) {
+    std::ifstream infile(fileName);
+    return infile.good();
+}
+
+
 vector<float> as_float_vector(Json::Value val, string key) { // not worth templating, despite appearances
     vector<float> extracted_vals;
     if ( val[key].isDouble() ) {
@@ -45,6 +51,7 @@ vector<float> as_float_vector(Json::Value val, string key) { // not worth templa
     }
     return extracted_vals;
 }
+
 
 vector<int> as_int_vector(Json::Value val, string key) {
     vector<int> extracted_vals;
@@ -104,6 +111,10 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
 
 
 bool AbcSmc::parse_config(string conf_filename) {
+    if (not file_exists(conf_filename.c_str())) {
+        cerr << "File does not exist: " << conf_filename << endl;
+        exit(1);
+    }
     // TODO - Make sure any existing database actually reflects what is expected in JSON, particularly that par and met tables are legit
     Json::Value par;   // will contain the par value after parsing.
     Json::Reader reader;
@@ -112,9 +123,8 @@ bool AbcSmc::parse_config(string conf_filename) {
     bool parsingSuccessful = reader.parse( json_data, par );
     if ( !parsingSuccessful ) {
         // report to the user the failure and their locations in the document.
-        std::cerr  << "Failed to parse configuration\n"
-            << reader.getFormattedErrorMessages();
-        return false;
+        cerr << "Failed to parse configuration\n" << reader.getFormattedErrorMessages();
+        exit(1);
     }
 
     string executable = par.get("executable", "").asString();
@@ -863,12 +873,6 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
         exit(-213);
     }
     return tables_exist;
-}
-
-
-bool file_exists(const char *fileName) {
-    std::ifstream infile(fileName);
-    return infile.good();
 }
 
 
