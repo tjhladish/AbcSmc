@@ -541,7 +541,11 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             const int next_pred_prior_size = get_pred_prior_size(t);
             _predictive_prior.push_back( vector<int>(next_pred_prior_size) );
             cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
-            _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+            if (use_pls_filtering) {
+                _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+            } else {
+                _filter_particles_simple( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+            }
             vector<string> update_strings(next_pred_prior_size);
             for (int i = 0; i < next_pred_prior_size; i++) { // best to worst performing particle in posterior?
                 const int particle_idx = _predictive_prior[t][i];
@@ -1121,6 +1125,65 @@ void AbcSmc::_print_particle_table_header() {
     for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
 }
 
+void AbcSmc::_fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances) {
+    vector<int> ranking = ordered(distances);
+
+    vector<int>::iterator first = ranking.begin();
+    vector<int>::iterator last  = ranking.begin() + next_pred_prior_size;
+    vector<int> sample(first, last); // This is the predictive prior / posterior
+    _predictive_prior[t] = sample;
+
+    cerr << "Observed:\n";
+    _print_particle_table_header();
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << "---"; } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_obs_val(); } cerr << endl;
+
+    vector<Col> posterior_pars(npar(), Col(next_pred_prior_size));
+    vector<Col> posterior_mets(nmet(), Col(next_pred_prior_size));
+    for (unsigned int i = 0; i < sample.size(); ++i) {
+        const int idx = sample[i];
+        for (int j = 0; j < npar(); j++) posterior_pars[j](i) = Y_orig(idx, j);
+        for (int j = 0; j < nmet(); j++) posterior_mets[j](i) = X_orig(idx, j);
+    }
+    cerr << "Normalized RMSE for metric means (lower is better):  " << calculate_nrmse(posterior_mets) << "\n";
+    cerr << "Posterior means:\n";
+    _print_particle_table_header();
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << mean(posterior_pars[i]); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << mean(posterior_mets[i]); } cerr << endl;
+
+    cerr << "Posterior medians:\n";
+    _print_particle_table_header();
+    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << median(posterior_pars[i]); } cerr << " | ";
+    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << median(posterior_mets[i]); } cerr << endl;
+
+    cerr << "Best five:\n";
+    _print_particle_table_header();
+    for (int q=0; q<5; q++) {
+        const int idx = ranking[q];
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
+    }
+
+    cerr << "Worst five:\n";
+    _print_particle_table_header();
+    for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
+        const int idx = ranking[q];
+        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
+        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
+    }
+}
+
+void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
+    // x is metrics, y is parameters
+    Row X_sim_means, X_sim_stdev;
+    Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
+    Mat2D Y = colwise_z_scores( Y_orig );
+    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
+
+    Col   distances  = euclidean(obs_met, X);
+    _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
+}
+
 void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
     // Run PLS
     // Box-Cox transform data -- TODO?
@@ -1170,51 +1233,7 @@ cerr << "coefficients:\n" << plsm.coefficients() << endl;
     Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
     Mat2D sim_scores = plsm.scores(X, num_components_used).real();
     Col   distances  = euclidean(obs_scores, sim_scores);
-    vector<int> ranking = ordered(distances);
-
-    vector<int>::iterator first = ranking.begin();
-    vector<int>::iterator last  = ranking.begin() + next_pred_prior_size;
-    vector<int> sample(first, last); // This is the predictive prior / posterior
-    _predictive_prior[t] = sample;
-
-    cerr << "Observed:\n";
-    _print_particle_table_header();
-    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << "---"; } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_obs_val(); } cerr << endl;
-
-    vector<Col> posterior_pars(npar(), Col(next_pred_prior_size));
-    vector<Col> posterior_mets(nmet(), Col(next_pred_prior_size));
-    for (unsigned int i = 0; i < sample.size(); ++i) {
-        const int idx = sample[i];
-        for (int j = 0; j < npar(); j++) posterior_pars[j](i) = Y_orig(idx, j);
-        for (int j = 0; j < nmet(); j++) posterior_mets[j](i) = X_orig(idx, j);
-    }
-    cerr << "Normalized RMSE for metric means (lower is better):  " << calculate_nrmse(posterior_mets) << "\n";
-    cerr << "Posterior means:\n";
-    _print_particle_table_header();
-    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << mean(posterior_pars[i]); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << mean(posterior_mets[i]); } cerr << endl;
-
-    cerr << "Posterior medians:\n";
-    _print_particle_table_header();
-    for (int i = 0; i<npar(); i++) { cerr << setw(WIDTH) << median(posterior_pars[i]); } cerr << " | ";
-    for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << median(posterior_mets[i]); } cerr << endl;
-
-    cerr << "Best five:\n";
-    _print_particle_table_header();
-    for (int q=0; q<5; q++) {
-        const int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
-    }
-
-    cerr << "Worst five:\n";
-    _print_particle_table_header();
-    for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
-        const int idx = ranking[q];
-        for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
-        for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
-    }
+    _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
 }
 
 Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
@@ -1380,10 +1399,13 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
             double denominator = 0.0;
             for (int j = 0; j < npar(); j++) {
                 Parameter* par = _model_pars[j];
-                // UNIFORM pars don't require evaluating pdf, since it is the same for all particles
+                const double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
                 if (par->get_prior_type() == NORMAL) {
-                    double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
                     numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
+                } else if (par->get_prior_type() == UNIFORM) {
+                    // The RHS here will be 1 under normal circumstances.  If the prior has been revised during a fit,
+                    // this should throw out values outside of the prior's range
+                    numerator *= (int) (par_value >= par->get_prior_min() and par_value <= par->get_prior_max());
                 }
             }
 
