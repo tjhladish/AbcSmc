@@ -881,6 +881,7 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
 if (verbose) cerr << "Attempting: " << select_pars_ss.str() << endl;
         db.Query("BEGIN EXCLUSIVE;").Next();
 if (verbose) cerr << "Lock obtained" << endl;
+        stringstream gotserials;
         Statement s = db.Query(select_pars_ss.str().c_str());
         while (s.Next()) {
             Row pars(npar());
@@ -891,15 +892,16 @@ if (verbose) cerr << "Lock obtained" << endl;
             const int field_offset = 2;
             for (int i = 0; i<npar(); i++) pars[i] = (double) s.GetField(i+field_offset);
             par_mat.push_back(pars);
+            gotserials << to_string((long long) serial) << ",";
 
-            //job_ss << serial << ";";
-            string job_str = update_jobs_ss.str() + to_string((long long) serial) + ";";
-if (verbose) cerr << "Attempting: " << job_str << endl;
 // relative to slow performance here: does sqdb support prepared queries?
-// feels like this should be a prepared query + the next serial, rather than making a string every time
-            db.Query(job_str.c_str()).Next(); // update jobs table
+// feels like this should be a prepared query + the next serial, rather than making a string every time           
         }
-
+        auto tmp = gotserials.str();
+        tmp.pop_back();
+        update_jobs_ss << tmp << ");";
+if (verbose) cerr << "Attempting: " << update_jobs_ss.str() << endl;
+        db.Query(update_jobs_ss.str().c_str()).Next(); // update jobs table
         db.CommitTransaction();
         db_success = true;
     } catch (const Exception& e) {
@@ -918,93 +920,112 @@ if (verbose) cerr << "Attempting: " << job_str << endl;
 }
 
 
-bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings) {
+bool AbcSmc::update_particle_metrics(
+    sqdb::Db &db, string results
+) {
     bool db_success = false;
+    stringstream setup, loader, updatejob, updatemet;
+    setup << "CREATE TEMPORARY TABLE metupdates (serial INT, ";
+    loader << "INSERT INTO metupdates (serial, ";
+    updatemet << "UPDATE met SET ";
+    for (int j = 0; j<nmet(); j++) {
+        setup << _model_mets[j]->get_short_name() << " " << (_model_mets[j]->get_numeric_type() == INT ? "INT" : "FLOAT") << ", ";
+        loader << _model_mets[j]->get_short_name() << ", ";
+        updatemet << _model_mets[j]->get_short_name() << " = tu." << _model_mets[j]->get_short_name() <<
+        (j == (nmet()-1) ? "" : ", ");
+    }
+    setup << "startTime INT, duration INT);";
+    loader << "startTime, duration) VALUES " << results << ";";
+    updatemet << " FROM (SELECT tu.* FROM metupdates tu JOIN job USING(serial) WHERE status != 'D') AS tu WHERE tu.serial == met.serial;";
+
+    updatejob << "UPDATE job SET " <<
+              "startTime = tu.startTime, duration = tu.duration, status = 'D'" <<
+              " FROM metupdates tu WHERE job.serial == tu.serial AND status != 'D';";
+
+// cerr << setup.str() << endl << loader.str() << endl << updatemet.str() << endl << updatejob.str() << endl;
+
     db.Query("BEGIN EXCLUSIVE;").Next();
 
     try {
-        for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
-            db.Query(update_metrics_strings[i].c_str()).Next(); // update metrics table
-            db.Query(update_jobs_strings[i].c_str()).Next(); // update jobs table
-        }
-
-        db_success = true;
+        db.Query(setup.str().c_str()).Next();
+        db.Query(loader.str().c_str()).Next();
+        db.Query(updatemet.str().c_str()).Next();
+        db.Query(updatejob.str().c_str()).Next();
         db.CommitTransaction();
+        db_success = true;
     } catch (const Exception& e) {
         db.RollbackTransaction();
         cerr << "CAUGHT E: ";
         cerr << e.GetErrorMsg() << endl;
         cerr << "Failed while updating metrics:" << endl;
-        for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
-            cerr << update_metrics_strings[i] << endl;
-            cerr << update_jobs_strings[i] << endl;
-        }
+        cerr << results << endl;
+        // for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
+        //     cerr << update_metrics_strings[i] << endl;
+        //     cerr << update_jobs_strings[i] << endl;
+        // }
     } catch (const exception& e) {
         db.RollbackTransaction();
         cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
         cerr << "Failed while updating metrics:" << endl;
-        for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
-            cerr << update_metrics_strings[i] << endl;
-            cerr << update_jobs_strings[i] << endl;
-        }
+        cerr << results << endl;
     }
 
     return db_success;
 }
 
 
-bool AbcSmc::simulate_next_particles(const int n = 1) {
+bool AbcSmc::simulate_next_particles(const int n, const bool verbose) {
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
     sqdb::Db db(_database_filename.c_str());
     string model_par_table = _db_tables_exist(db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
     vector<Row> par_mat;  //( n, Row(npar()) ); -- expected size, if n rows are available
-    vector<Row> met_mat;  //( n, Row(nmet()) );
 
     stringstream select_ss;
-    select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
-    select_ss << "from " << model_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial ";
     // Do already running jobs as well, if there are not enough queued jobs
     // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
-    select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts limit " << n << ";";
+    select_ss << "select P.* FROM " << model_par_table << " P JOIN (SELECT * FROM " <<
+                 JOB_TABLE << " WHERE status IN ('Q','R') ORDER BY status, attempts LIMIT " << n <<
+                 ") USING(serial);"; 
     //  line below is much faster for very large dbs, but not all particles will get run e.g. if some particles are killed by scheduler
     //  select_ss << "and J.status = 'Q' limit " << n << ";";
 
     const int overall_start_time = time(0);
     // build jobs update statement to indicate job is running
     stringstream update_ss;
-    update_ss << "update " << JOB_TABLE << " set startTime = " << overall_start_time << ", status = 'R', attempts = attempts + 1 where serial = "; // we don't know the serial yet
+    update_ss << "update " << JOB_TABLE << " set startTime = " << overall_start_time << ", status = 'R', attempts = attempts + 1 where serial IN ("; // we don't know the serial yet
 
     vector<int> serials;
     vector<unsigned long int> rng_seeds;
-    bool ok_to_continue = fetch_particle_parameters(db, select_ss, update_ss, serials, par_mat, rng_seeds);
-    vector<string> update_metrics_strings;
-    vector<string> update_jobs_strings;
-    stringstream ss;
+    bool ok_to_continue = fetch_particle_parameters(db, select_ss, update_ss, serials, par_mat, rng_seeds, verbose);
+
     if (ok_to_continue) {
+
+        stringstream update_metrics;
+        vector<Row> met_mat(par_mat.size(), Row(nmet()));  //( n, Row(nmet()) );     
+        
+if (verbose) cerr << "Starting simulation for " << par_mat.size() << " simulations." << endl;
+
         for (unsigned int i = 0; i < par_mat.size(); ++i) {
             const int start_time = time(0);
             const int serial = serials[i];
-            met_mat.push_back( Row(nmet()) );
             bool success = _run_simulator(par_mat[i], met_mat[i], rng_seeds[i], serial);
             if (not success) exit(-211);
-
-            stringstream ss;
-            ss << "update " << MET_TABLE << " set ";
-            for (int j = 0; j<nmet()-1; j++) { ss << _model_mets[j]->get_short_name() << "=" << met_mat[i][j] << ", "; }
-            ss << _model_mets.back()->get_short_name() << "=" << met_mat[i].rightCols(1) << " ";
-            // only update metrics if job status is still 'R' or 'Q' or has been paused ('P')
-            ss << "where serial = " << serial << " and (select (status is 'R' or status is 'Q' or status is 'P') from " << JOB_TABLE << " J where J.serial=" << serial << ");";
-            update_metrics_strings.push_back(ss.str());
-            ss.str(string()); ss.clear();
-
-            // build jobs update statement to indicate job is running
-            ss << "update " << JOB_TABLE << " set startTime = " << start_time << ", duration = " << time(0) - start_time
-               << ", status = 'D' where serial = " << serial << " and (status = 'R' or status = 'Q' or status = 'P');";
-            update_jobs_strings.push_back(ss.str());
-            ss.str(string()); ss.clear();
+            update_metrics << "(" << serial << ", ";
+            for (int j = 0; j<nmet(); j++) { update_metrics << met_mat[i][j] << ", "; }
+            update_metrics << start_time << ", " << time(0) - start_time << ")";
+            update_metrics << (i == (par_mat.size() - 1) ? "" : ", ");
         }
-        update_particle_metrics(db, update_metrics_strings, update_jobs_strings);
+if (verbose) {
+    cerr << "Updating with results ... " << endl;
+    // for (auto ss : update_metrics_strings) {
+    //     cerr << ss << endl;
+    // }
+    // for (auto ss : update_jobs_strings) {
+    //     cerr << ss << endl;
+    // }
+}
+        update_particle_metrics(db, update_metrics.str());
     } else {
         cerr << "Parameter selection from database failed.\n";
     }

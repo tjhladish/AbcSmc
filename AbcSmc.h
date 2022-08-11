@@ -217,9 +217,11 @@ class AbcSmc {
 
         bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
         bool fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serial, vector<ABC::Row> &par_mat, vector<unsigned long int> &seeds, bool verbose = false);
-        bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
+        bool update_particle_metrics(
+            sqdb::Db &db, string results
+        );
 
-        bool simulate_next_particles(int n);
+        bool simulate_next_particles(const int n = 1, const bool verbose = false);
 
         Parameter* get_parameter_by_name(string name) {
             Parameter* p = nullptr;
