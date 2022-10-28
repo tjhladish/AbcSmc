@@ -11,11 +11,13 @@ const string UPAR_TABLE = "upar";
 
 const string select_pars_limited =
     "SELECT P.* FROM " + PAR_TABLE +
-    " P JOIN (SELECT * FROM " + JOB_TABLE +
+    " JOIN (SELECT serial FROM " + JOB_TABLE +
     " WHERE status IN ('Q','R') ORDER BY status, attempts LIMIT ?1) USING(serial);";
 
 const string reserve_jobs =
     "UPDATE " + JOB_TABLE + " SET startTime = ?1, status = 'R', attempts = attempts + 1 WHERE serial IN (?2);";
+
+
 
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
@@ -152,15 +154,21 @@ class AbcSmc {
         int _num_particles;
         int _pls_training_set_size;
         int _predictive_prior_size; // number of particles that will be used to inform predictive prior
+
+// TODO refactor
         SimFunc _simulator;
         bool use_simulator;
         std::string _executable_filename;
         bool use_executable;
+// TODO refactor
+
         bool resume_flag;
         bool use_transformed_pars;
         std::string resume_directory;
+// TODO extract / refactor
         std::string _database_filename;
         std::string _posterior_database_filename;
+// TODO extract / refactor
         bool _retain_posterior_rank;
         std::vector< ABC::Mat2D > _particle_metrics;
         std::vector< ABC::Mat2D > _particle_parameters;
@@ -189,17 +197,17 @@ class AbcSmc {
         bool read_particle_set( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig );
         bool read_predictive_prior( int t );
 
+// TODO move all this
         string _build_sql_select_par_string(string tag);
         string _build_sql_select_met_string();
         string _build_sql_create_par_string(string tag);
         string _build_sql_create_met_string(string tag);
-
         bool _db_execute_stringstream(sqdb::Db &db, stringstream &ss);
         bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
         bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
-
         bool _update_sets_table(sqdb::Db &db, int t);
         bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
+// TODO move all this
 
         ABC::Col euclidean( ABC::Row obs_met, ABC::Mat2D sim_met );
 

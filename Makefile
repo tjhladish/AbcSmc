@@ -1,7 +1,7 @@
 -include local.mk
 
 CPP:=g++
-CFLAGS = -O2 -Wall -std=c++11 --pedantic -fPIC
+CFLAGS = -O2 -Wall -std=c++17 --pedantic -fPIC
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)
 SQLDIR  = $(ABCDIR)/sqdb
@@ -32,9 +32,9 @@ SQLOBJECTS  = $(SQLSOURCES:.cpp=.o)
 ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h ./AbcSim.h
 
 default: .all
-.all:  $(LIBJSON) sqlite3.o $(LIBSQL) $(SOURCES) $(LIBABC)
+.all:  $(LIBJSON) $(LIBSQL) $(SOURCES) $(LIBABC)
 
-sqlite3.o: $(SQLDIR)/sqlite3.c $(SQLDIR)/sqlite3.h
+sqlite3.o: $(SQLDIR)/sqlite3/sqlite3.c $(SQLDIR)/sqlite3/sqlite3.h
 	$(CPP) $(CFLAGS) -c $(SQLDIR)/sqlite3.c -I$(SQLDIR)
 
 ARCHIVE ?= $(AR) -rv
