@@ -7,6 +7,7 @@
 #include "AbcUtil.h"
 #include "sqdb.h"
 #include <json/json.h>
+#include "pls.h"
 
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
@@ -266,7 +267,8 @@ class AbcSmc {
 
         bool build_database(const gsl_rng* RNG);
         bool process_database(const gsl_rng* RNG);
-        bool read_SMC_set_from_database (int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
+//        bool read_SMC_set_from_database (int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
+        bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
         bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
         bool fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serial, vector<ABC::Row> &par_mat, vector<unsigned long int> &seeds);
@@ -285,6 +287,11 @@ class AbcSmc {
 
         int npar() { return _model_pars.size(); }
         int nmet() { return _model_mets.size(); }
+
+        PLS_Model run_PLS(ABC::Mat2D&, ABC::Mat2D&, const int pls_training_set_size, const int ncomp);
+        std::string get_database_filename()                 { return _database_filename; }
+        std::vector< ABC::Mat2D > get_particle_parameters() { return _particle_parameters; }
+        std::vector< ABC::Mat2D > get_particle_metrics()    { return _particle_metrics; }
 
     private:
         ABC::Mat2D X_orig;
@@ -326,7 +333,7 @@ class AbcSmc {
         void _particle_scheduler(int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG);
         void _particle_worker();
 
-        void _filter_particles ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
+        PLS_Model _filter_particles ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
         void _print_particle_table_header();
         long double calculate_nrmse(vector<ABC::Col> posterior_mets);
 
@@ -346,7 +353,7 @@ class AbcSmc {
         bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
 
         bool _update_sets_table(sqdb::Db &db, int t);
-        bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
+        //bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
         ABC::Col euclidean( ABC::Row obs_met, ABC::Mat2D sim_met );
 

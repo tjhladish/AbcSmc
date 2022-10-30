@@ -1,5 +1,4 @@
 #include "AbcSmc.h"
-#include "pls.h"
 #include "RunningStat.h"
 
 #include <iostream>
@@ -1125,25 +1124,31 @@ void AbcSmc::_print_particle_table_header() {
     for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
 }
 
-void AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
+PLS_Model AbcSmc::run_PLS(Mat2D &X, Mat2D &Y, const int pls_training_set_size, const int ncomp) {
     // Run PLS
     // Box-Cox transform data -- TODO?
     //void test_bc( Mat2D );
     //test_bc(Y_orig);
 
+    const int npred = X.cols();      // number of predictor variables
+    const int nresp = Y.cols();      // number of response variables
+    PLS_Model plsm;
+    plsm.initialize(npred, nresp, ncomp);
+    assert(pls_training_set_size <= X.rows()); // can't train against more observations than we have
+    plsm.plsr(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), KERNEL_TYPE1);
+    return plsm;
+}
+
+PLS_Model AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
     Row X_sim_means, X_sim_stdev;
     Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
     Mat2D Y = colwise_z_scores( Y_orig );
     Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
 
-    int nobs  = X_orig.rows();      // number of observations
-    int npred = X_orig.cols();      // number of predictor variables
-    int nresp = Y_orig.cols();      // number of response variables
+    const int pls_training_set_size = round(X.rows() * _pls_training_fraction);
+    // TODO -- I think this is a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
     int ncomp = npar();             // It doesn't make sense to consider more components than model parameters
-    PLS_Model plsm;
-    plsm.initialize(npred, nresp, ncomp);
-    const int pls_training_set_size = round(nobs * _pls_training_fraction);
-    plsm.plsr(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), KERNEL_TYPE1);
+    PLS_Model plsm = run_PLS(X, Y, pls_training_set_size, ncomp);
 
 /*
 //P, W, R, Q, T
@@ -1163,7 +1168,7 @@ cerr << "coefficients:\n" << plsm.coefficients() << endl;
         cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl;
     }
 
-    const int test_set_size = nobs - pls_training_set_size;
+    const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
     Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
     int num_components_used = num_components.maxCoeff();
     cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
@@ -1219,6 +1224,8 @@ cerr << "coefficients:\n" << plsm.coefficients() << endl;
         for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
         for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
     }
+
+    return plsm;
 }
 
 Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
