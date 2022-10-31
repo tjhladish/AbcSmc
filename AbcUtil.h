@@ -127,13 +127,13 @@ namespace ABC {
 
   template <typename T>
   inline void cerr_vector(std::vector<T> & my_vector, std::string sep = " ") {
-      for (int i = 0; i < my_vector.size() - 1; i++ ) std::cerr << my_vector[i] << sep;
+      for (size_t i = 0; i < my_vector.size() - 1; i++ ) std::cerr << my_vector[i] << sep;
       std::cerr << my_vector.back();
   }
 
   template <typename T>
   inline void cout_vector(std::vector<T> & my_vector, std::string sep = " ") {
-      for (int i = 0; i < my_vector.size() - 1; i++ ) std::cout << my_vector[i] << sep;
+      for (size_t i = 0; i < my_vector.size() - 1; i++ ) std::cout << my_vector[i] << sep;
       std::cout << my_vector.back();
   }
 
@@ -166,7 +166,7 @@ namespace ABC {
 
   inline Row as_row(const vector<float_type> data) {
       Row row(data.size());
-      for (unsigned int i = 0; i < data.size(); i++) row[i] = data[i];
+      for (size_t i = 0; i < data.size(); i++) row[i] = data[i];
       return row;
   }
 
