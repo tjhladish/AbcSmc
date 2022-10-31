@@ -9,7 +9,6 @@
 #include <sstream>
 #include <fstream>
 #include <chrono>
-#include "AbcSmc.h"
 
 // need a positive int that is very unlikely
 // to be less than the number of particles

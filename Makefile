@@ -36,12 +36,11 @@ default: .all
 
 ARCHIVE ?= $(AR) -rv
 
-$(LIBABC): $(LIBSQL) $(OBJECTS)
+$(LIBABC): $(LIBSQL) $(LIBJSON) $(filter-out CCRC32.o,$(OBJECTS))
 	$(ARCHIVE) $@ $^
 
 libabcl.a: $(OBJECTS)
 	$(ARCHIVE) $@ $^
-
 
 $(LIBJSON): $(JSONOBJECTS)
 	$(ARCHIVE) $@ $(JSONOBJECTS)

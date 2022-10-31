@@ -5,9 +5,9 @@
 
 #include <map>
 #include "AbcUtil.h"
-#include "sqdb.h"
+#include "sqdb/sqdb.h"
+#include "jsoncpp/include/json/json.h"
 #include "AbcSim.h"
-#include <json/json.h>
 
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};

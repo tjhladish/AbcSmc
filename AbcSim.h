@@ -4,12 +4,29 @@
 #include "AbcUtil.h"
 #include <vector>
 #include <functional>
+#include <dlfcn.h>
 
 using std::vector;
 
-using SimFunc = function<vector<ABC::float_type>(vector<ABC::float_type>, const unsigned long int, const unsigned long int, const ABC::MPI_par*)>;
+typedef vector<ABC::float_type>(*SimFunc)(vector<ABC::float_type>, const unsigned long int, const unsigned long int, const ABC::MPI_par*);
 
-struct WrapExec : SimFunc {
+SimFunc loadSO(char * target) {
+    void* handle = dlopen(target, RTLD_LAZY);
+    if (!handle) {
+        std::cerr << "Failed to open simulator object: " << target << " ; " << dlerror() << std::endl;
+        exit(101);
+    }
+    SimFunc simf = (SimFunc)dlsym(handle, "simulator");
+    if(!simf) {
+        std::cerr << "Failed to find 'simulator' function in " <<
+        target << " ; " << dlerror() << std::endl;
+        dlclose(handle);
+        exit(102);
+    }
+    return simf;
+};
+
+struct WrapExec {
     string command;
     vector<ABC::float_type> operator()(
       vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
