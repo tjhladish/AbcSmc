@@ -11,6 +11,8 @@
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
 
+// TODO refactor this as type with defined methods (e.g., at least "sample")
+// then concrete sub types that manage all the if-else nonsense
 class Parameter {
     public:
         Parameter() {};
