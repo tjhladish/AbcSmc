@@ -288,8 +288,6 @@ bool AbcSmc::parse_config(string conf_filename) {
       cerr << "The computed num_samples is " << nsamples << endl;
     }
 
-    set_num_samples( nsamples );
-
     // Parse model metrics
     const Json::Value model_met = par["metrics"];
     for ( unsigned int i = 0; i < model_met.size(); ++i )  {// Iterates over the sequence elements.
@@ -1142,7 +1140,8 @@ if (verbose) cerr << "Starting simulation for " << par_mat.size() << " simulatio
             if (not success) exit(-211);
             update_metrics << "(" << serial << ", ";
             for (int j = 0; j<nmet(); j++) { update_metrics << met_mat[i][j] << ", "; }
-            update_metrics << start_time << ", " << high_resolution_clock::now() - start_time << ")";
+            update_metrics << duration_cast<seconds>(start_time.time_since_epoch()).count() << ", " <<
+                duration_cast<milliseconds>(high_resolution_clock::now() - start_time).count() << ")";
             update_metrics << (i == (par_mat.size() - 1) ? "" : ", ");
         }
 if (verbose) {
