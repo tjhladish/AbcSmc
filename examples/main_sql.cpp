@@ -79,6 +79,7 @@ int main(int argc, char* argv[]) {
 
     AbcSmc* abc = new AbcSmc();
     abc->parse_config(string(argv[1]));
+
     size_t set_count = do_all ? abc->get_smc_iterations() : 1;
 
     for (size_t i = 0; i < set_count; ++i) {

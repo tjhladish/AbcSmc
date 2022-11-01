@@ -18,7 +18,9 @@ GSL_LIB = -lm -lgsl -lgslcblas -lpthread -ldl
 
 default: dice_game abc_sql abc_executable
 
-$(ABCDIR)/libabc.a:
+.FORCE:
+
+$(ABCDIR)/libabc.a: .FORCE
 	$(MAKE) -C $(@D) -f Makefile $(@F)
 
 abc_%: main_%.cpp $(ABCDIR)/libabc.a

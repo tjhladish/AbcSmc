@@ -6,3 +6,4 @@ local.mk
 examples/abc_executable
 examples/abc_sql
 examples/dice_game
+examples/*.sqlite

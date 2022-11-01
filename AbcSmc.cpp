@@ -136,7 +136,10 @@ bool AbcSmc::parse_config(string conf_filename) {
         set_resume( true );
     }
 
-    if (par.isMember("num_samples")) {
+    bool computedSamples = !par.isMember("num_samples");
+    int nsamples = 1;
+
+    if (!computedSamples) {
       set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
       _smc_set_sizes = as_int_vector(par, "num_samples");
       process_predictive_prior_arguments(par);
@@ -147,13 +150,6 @@ bool AbcSmc::parse_config(string conf_filename) {
       set_smc_iterations(1);
       // set_predictive_prior_fraction( 1.0 );
       set_pls_validation_training_fraction( 1.0 ); // fraction of runs to use for training
-    }
-
-    bool computedSamples = !par.isMember("num_samples");
-    int nsamples = 1;
-    if (not computedSamples) {
-      nsamples *= par["num_samples"].asInt();
-    } else {
       cerr << "Computing num_samples from product (all PSEUDO parameters) * POSTERIOR size..." << endl;
     }
 
@@ -285,6 +281,8 @@ bool AbcSmc::parse_config(string conf_filename) {
     if (computedSamples) {
       nsamples *= posterior_size;
       cerr << "The computed num_samples is " << nsamples << endl;
+      _smc_set_sizes = { nsamples };
+      _predictive_prior_sizes = { nsamples };
     }
 
     // Parse model metrics
