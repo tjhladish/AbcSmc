@@ -114,6 +114,8 @@ class Parameter {
         std::map < std::string, std::vector<int> > par_modification_map; // how this par modifies others
 };
 
+ABC::Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng);
+
 class Metric {
     public:
         Metric() {};

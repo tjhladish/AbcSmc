@@ -1,5 +1,5 @@
 CPP:=g++
-CFLAGS = -O2 -Wall -std=c++11 --pedantic
+CFLAGS = -O2 -Wall -std=c++17 --pedantic
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)/..
 ABC_INC = -I$(ABCDIR) -I../sqdb -I../jsoncpp/include
@@ -12,19 +12,19 @@ ABC_INC = -I$(ABCDIR) -I../sqdb -I../jsoncpp/include
 #endif
 GSL_INC = -I$(ABCDIR)/gsl_local/include
 
-ABC_LIB = -L$(ABCDIR) -labc -ljsoncpp -lsqdb ../sqlite3.o
+ABC_LIB = -L$(ABCDIR) -labc -ljsoncpp -lsqdb
 #GSL_LIB = -lm -L$$TACC_GSL_LIB/ -L$$HPC_GSL_LIB/ -lgsl -lgslcblas -lpthread -ldl
 GSL_LIB = -lm -L../gsl_local/lib/ -lgsl -lgslcblas -lpthread -ldl
 
-default: libabc dice abc_sql abc
+default: $(ABCDIR)/libabc.a dice abc_sql abc
 
-libabc:
-	$(MAKE) -C $(ABCDIR) -f Makefile
+$(ABCDIR)/libabc.a:
+	$(MAKE) -C $(@D) -f Makefile $(@F)
 
-abc_sql: libabc main_sql.cpp
+abc_sql: $(ABCDIR)/libabc.a main_sql.cpp
 	$(CPP) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_sql.cpp -o abc_simulator_sql $(ABC_LIB) $(GSL_LIB)
 
-abc: libabc main_exec.cpp
+abc: $(ABCDIR)/libabc.a main_exec.cpp
 	$(CPP) $(CFLAGS) $(ABC_INC) $(GSL_INC) main_exec.cpp -o abc_simulator_executable $(ABC_LIB) $(GSL_LIB)
 
 dice: dice_game.cpp

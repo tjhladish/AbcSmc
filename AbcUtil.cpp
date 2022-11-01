@@ -1,6 +1,5 @@
 #include <limits>
 #include "AbcUtil.h"
-#include "AbcSmc.h"
 #include "gsl/gsl_multimin.h"
 #include "gsl/gsl_sf_gamma.h"
 
@@ -436,24 +435,6 @@ namespace ABC {
       }
       cerr << "ERROR: Weights may not be normalized\n\t Weights summed to: " << running_sum << endl;
       exit(100);
-  }
-
-  Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng) {
-      const int npar = _model_pars.size();
-      Row par_values = Row::Zero(npar);
-      gsl_vector* result = gsl_vector_alloc(npar);
-      bool success = false;
-      while (not success) {
-          success = true;
-          gsl_ran_multivariate_gaussian(rng, mu, L, result);
-          for (int j = 0; j < npar; j++) {
-              par_values[j] = gsl_vector_get(result, j);
-              if (_model_pars[j]->get_numeric_type() == INT) par_values(j) = (double) ((int) (par_values(j) + 0.5));
-              if (par_values[j] < _model_pars[j]->get_prior_min() or par_values[j] > _model_pars[j]->get_prior_max()) success = false;
-          }
-      }
-      gsl_vector_free(result);
-      return par_values;
   }
 
   double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng) {

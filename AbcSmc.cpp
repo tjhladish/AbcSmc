@@ -1535,6 +1535,23 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
     return sigma_hat;
 }
 
+Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng) {
+    const int npar = _model_pars.size();
+    Row par_values = Row::Zero(npar);
+    gsl_vector* result = gsl_vector_alloc(npar);
+    bool success = false;
+    while (not success) {
+        success = true;
+        gsl_ran_multivariate_gaussian(rng, mu, L, result);
+        for (int j = 0; j < npar; j++) {
+            par_values[j] = gsl_vector_get(result, j);
+            if (_model_pars[j]->get_numeric_type() == INT) par_values(j) = (double) ((int) (par_values(j) + 0.5));
+            if (par_values[j] < _model_pars[j]->get_prior_min() or par_values[j] > _model_pars[j]->get_prior_max()) success = false;
+        }
+    }
+    gsl_vector_free(result);
+    return par_values;
+}
 
 Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L ) {
     // container for sampled values

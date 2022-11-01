@@ -10,7 +10,7 @@ using std::vector;
 
 typedef vector<ABC::float_type>(*SimFunc)(vector<ABC::float_type>, const unsigned long int, const unsigned long int, const ABC::MPI_par*);
 
-SimFunc loadSO(char * target) {
+inline SimFunc loadSO(char * target) {
     void* handle = dlopen(target, RTLD_LAZY);
     if (!handle) {
         std::cerr << "Failed to open simulator object: " << target << " ; " << dlerror() << std::endl;
