@@ -3,6 +3,6 @@ local.mk
 
 *.a
 
-examples/abc_simulator_executable
-examples/abc_simulator_sql
+examples/abc_executable
+examples/abc_sql
 examples/dice_game

@@ -16,19 +16,16 @@ ABC_LIB = -L$(ABCDIR) -labc
 #GSL_LIB = -lm -L$$TACC_GSL_LIB/ -L$$HPC_GSL_LIB/ -lgsl -lgslcblas -lpthread -ldl
 GSL_LIB = -lm -lgsl -lgslcblas -lpthread -ldl
 
-default: $(ABCDIR)/libabc.a dice abc_sql abc
+default: dice_game abc_sql abc_executable
 
 $(ABCDIR)/libabc.a:
 	$(MAKE) -C $(@D) -f Makefile $(@F)
 
-abc_sql: $(ABCDIR)/libabc.a main_sql.cpp
-	$(CPP) $(CFLAGS) $(ABC_INC) main_sql.cpp -o abc_simulator_sql $(ABC_LIB) $(GSL_LIB)
+abc_%: main_%.cpp $(ABCDIR)/libabc.a
+	$(CPP) $(CFLAGS) $(ABC_INC) $< -o $@ $(ABC_LIB) $(GSL_LIB)
 
-abc: $(ABCDIR)/libabc.a main_exec.cpp
-	$(CPP) $(CFLAGS) $(ABC_INC) main_exec.cpp -o abc_simulator_executable $(ABC_LIB) $(GSL_LIB)
-
-dice: dice_game.cpp
-	$(CPP) $(CFLAGS) dice_game.cpp -o dice_game $(GSL_LIB)
+dice_game: dice_game.cpp
+	$(CPP) $(CFLAGS) $^ -o $@ $(GSL_LIB)
 
 clean:
-	rm -f abc_simulator_sql abc_simulator_executable dice_game
+	rm -f abc_sql abc_executable dice_game
