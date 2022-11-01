@@ -131,59 +131,6 @@ class Metric {
         double obs_val;
 };
 
-/*
-class Particle {
-//enum ParticleStatus {UNDEFINED_PARAMETERS, UNDEFINED_METRICS, PARTICLE_COMPLETE};
-    public:
-        Particle() {
-            status = UNDEFINED_PARAMETERS; serial = -1; posterior_rank = -1; weight = -1;
-        }
-        Particle(int s):serial(s) {
-            status = UNDEFINED_PARAMETERS; posterior_rank = -1; weight = -1;
-        }
-        Particle(int s, std::vector<long double> p):serial(s), pars(p) {
-            status = UNDEFINED_METRICS; posterior_rank = -1; weight = -1;
-        }
-        Particle(int s, std::vector<long double> p, vector<long double> m):serial(s), pars(p), mets(m) {
-            status = PARTICLE_COMPLETE; posterior_rank = -1; weight = -1;
-        }
-        Particle(int s, std::vector<long double> p, vector<long double> m, int r, double w):serial(s), pars(p), mets(m), posterior_rank(r), weight(w) {
-            status = PARTICLE_COMPLETE;
-        }
-
-        std::vector<long double> get_pars() const { return pars; }
-        std::vector<long double> get_mets() const { return mets; }
-        void set_pars(std::vector<long double> p) { assert(status==UNDEFINED_PARAMETERS); pars = p; status = UNDEFINED_METRICS; }
-        void set_mets(std::vector<long double> m) { assert(status==UNDEFINED_METRICS);    mets = m; status = PARTICLE_COMPLETE; }
-        ParticleStatus get_status() const { return status; }
-        void set_posterior_rank(int r) { posterior_rank = r; }
-        void set_weight(int w) { weight = w; }
-        bool in_posterior() const { return posterior_rank >= 0; }
-        int get_posterior_rank() const { return posterior_rank; }
-
-    private:
-        int serial;
-        std::vector<long double> pars;
-        std::vector<long double> mets;
-        int posterior_rank;
-        double weight;
-        ParticleStatus status;
-};
-
-
-class ParticleSet {
-//enum AbcStatus {INCOMPLETE_SET, TOO_FEW_SETS, ABC_COMPLETE};
-//enum SetStatus {UNSAMPLED_PRIOR, INCOMPLETE_PARTICLES, UNDEFINED_POSTERIOR, SET_COMPLETE};
-    public:
-        ParticleSet() { status = UNSAMPLED_PRIOR; }
-        SetStatus get_status() const { return status; }
-        void set_status(SetStatus s) { status = s; }
-
-    private:
-        std::vector<Particle*> particles;
-        AbcStatus status;
-};*/
-
 class AbcSmc {
     public:
         AbcSmc() {
@@ -292,6 +239,7 @@ class AbcSmc {
 
 
         bool build_database(const gsl_rng* RNG);
+        bool process_database(const unsigned long int rngseed);
         bool process_database(const gsl_rng* RNG);
         bool read_SMC_set_from_database (int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
 

@@ -332,6 +332,12 @@ vector<double> AbcSmc::do_complicated_untransformations(vector<Parameter*>& _mod
     return upars;
 }
 
+bool AbcSmc::process_database(const unsigned long int rngseed) {
+    const gsl_rng* GSL_RNG = gsl_rng_alloc (gsl_rng_taus2);
+    gsl_rng_set(GSL_RNG, rngseed);
+    return process_database(GSL_RNG);
+}
+
 // Build DB if it doesn't exist;
 // If it does exist but more sets are needed, filter particles and sample for next set;
 // If the specified number of sets already exist, exit gracefully
