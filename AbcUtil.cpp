@@ -446,28 +446,13 @@ namespace ABC {
       while (not success) {
           success = true;
           gsl_ran_multivariate_gaussian(rng, mu, L, result);
-          for (int j = 0; j < npar; j++) {
-              par_values[j] = gsl_vector_get(result, j);
-              if (_model_pars[j]->get_numeric_type() == INT) par_values(j) = (double) ((int) (par_values(j) + 0.5));
-              if (par_values[j] < _model_pars[j]->get_prior_min() or par_values[j] > _model_pars[j]->get_prior_max()) success = false;
+          for (int j = 0; (j < npar) & success; j++) {
+              par_values[j] = _model_pars[j]->recast(gsl_vector_get(result, j));
+              success = _model_pars[j]->valid(par_values[j]);
           }
       }
       gsl_vector_free(result);
       return par_values;
-  }
-
-  double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng) {
-      assert(min < max);
-      double sigma = sqrt(sigma_squared);
-      // Don't like this, but it will work
-      // as long as min and max are reasonable
-      // (relative to the pdf)
-      while (1) {
-          double dev = gsl_ran_gaussian(rng, sigma) + mu;
-          if (dev >= min and dev <= max) {
-              return dev;
-          }
-      }
   }
 
   LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y) {

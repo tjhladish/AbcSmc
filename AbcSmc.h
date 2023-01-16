@@ -7,108 +7,173 @@
 #include "AbcUtil.h"
 #include "sqdb.h"
 #include <json/json.h>
+#include <limits>
+#include <algorithm>
+#include <functional>
+#include <type_traits>
+#include <cmath>
 
-enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
-enum NumericType {INT, FLOAT};
-enum VerboseType {QUIET, VERBOSE};
-enum FilteringType {PLS_FILTERING, SIMPLE_FILTERING};
+enum PriorType { UNIFORM, NORMAL, PSEUDO, POSTERIOR };
+enum NumericType { INT, FLOAT };
+enum VerboseType { QUIET, VERBOSE };
+enum FilteringType { PLS_FILTERING, SIMPLE_FILTERING };
 
-class Parameter {
-    public:
-        Parameter() {};
+// the almost entirely abstract base-class for Parameters
+struct Parameter {
 
-        Parameter( std::string s, std::string ss, PriorType p, NumericType n, double val1, double val2, double val_step, double (*u)(const double), std::pair<double, double> r, std::map< std::string, std::vector<int> > mm )
-            : name(s), short_name(ss), ptype(p), ntype(n), step(val_step), untran_func(u), rescale(r), par_modification_map(mm) {
-            if (ptype == UNIFORM) {
-                assert(val1 < val2);
-                fmin = val1;
-                fmax = val2;
-                mean = (val2 + val1) / 2.0;
-                stdev = sqrt(pow(val2-val1,2)/12);
-                state = 0;   // dummy variable for UNIFORM
-            } else if (ptype == NORMAL) {
-                fmin = std::numeric_limits<double>::lowest(); // NOT min()!!!! That's the smallest representable positive value.
-                fmax = std::numeric_limits<double>::max();
-                mean = val1;
-                stdev = val2;
-            } else if (ptype == PSEUDO) {
-                fmin = val1;
-                fmax = val2;
-                mean = 0;    // dummy variable for PSEUDO
-                stdev = 0;   // dummy variable for PSEUDO
-                state = fmin;
-            } else if (ptype == POSTERIOR) {
-                fmin = val1; // min index for posterior database, generally 0
-                fmax = val2; // max index for posterior database
-                mean = 0;    // dummy variable for PSEUDO
-                stdev = 0;   // dummy variable for PSEUDO
-                state = fmin;
-            } else {
-                std::cerr << "Prior type " << ptype << " not supported.  Aborting." << std::endl;
-                exit(-200);
-            }
-        }
+    Parameter(std::string nm, std::string snm = "") :
+        name(nm), short_name(snm.empty() ? nm : snm) { };
 
-        double sample(const gsl_rng* RNG) {
-            if (ptype == UNIFORM) {
-                if (ntype == INT) {
-                     // + 1 makes it out of [fmin, fmax], instead of [fmin, fmax)
-                    return gsl_rng_uniform_int(RNG, fmax-fmin + 1) + fmin;
-                } else {
-                    return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
-                }
-            } else if (ptype == NORMAL) {
-                if (ntype == INT) {
-                    cerr << "Integer type not supported for normal distributions.  Aborting." << endl;
-                    exit(-199);
-                } else {
-                    return gsl_ran_gaussian(RNG, stdev) + mean;
-                }
-            } else {
-                std::cerr << "Prior type " << ptype << " not supported for random sampling.  Aborting." << std::endl;
-                exit(-200);
-            }
-        }
+    std::string get_name() const { return name; };
+    std::string get_short_name() const { return short_name; };
 
-        // doubled variance of particles
-        double get_doubled_variance(int t) const { return doubled_variance[t]; }
-        void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
-        void set_prior_limits(double min, double max) { fmin = min; fmax = max; }
-        double get_prior_min() const { return fmin; }
-        double get_prior_max() const { return fmax; }
-        double get_prior_mean() const { return mean; }
-        double get_prior_stdev() const { return stdev; }
-        double get_state() const { return state; }
-        double get_step() const { return step; }
-        double increment_state() { return state += step; }
-        double reset_state() { state = get_prior_min(); return state; }
-        std::string get_name() const { return name; }
-        std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
-        PriorType get_prior_type() const { return ptype; }
-        NumericType get_numeric_type() const { return ntype; }
-        //double untransform(const double t) const { return (rescale.second - rescale.first) * untran_func(t) + rescale.first; }
-        std::map < std::string, std::vector<int> > get_par_modification_map() const { return par_modification_map; }
-        double untransform(const double t, vector<double> pars) const {
-            double new_t = t + pars[0];
-            new_t *= pars[1];
-            new_t = untran_func(new_t);
-            new_t += pars[2];
-            new_t *= pars[3];
-//std::cerr << "t | mods | new_t | scaled_t : " << t << " | "
-//          << pars[0] << " " << pars[1] << " " << pars[2] << " " << pars[3] << " | "
-//          << new_t << " | " << (rescale.second - rescale.first) * new_t + rescale.first << endl;
-        return (rescale.second - rescale.first) * new_t + rescale.first; }
+    virtual double sample(const gsl_rng* /* RNG */ ) const { return std::numeric_limits<double>::quiet_NaN(); };
+    virtual double noise(const double /* mu */, const double /* sigma_squared */, const gsl_rng* /* RNG */) const = 0;
+    virtual bool isPosterior() const { return false; };
+    virtual bool increment_state() { return false; };
+    virtual double likelihood(const double /* pval */) const { return std::numeric_limits<double>::quiet_NaN(); };
+    virtual double get_mean() const { return std::numeric_limits<double>::quiet_NaN(); };
+    virtual double get_sd() const { return std::numeric_limits<double>::quiet_NaN(); };
+    virtual bool valid(const double pval) const { return likelihood(pval) != 0.0; };
+    virtual double recast(const double pval) const { return pval; };
+    virtual double untransform(const double pval) const { return pval; }
+
+    virtual inline ~Parameter() = 0;
 
     private:
         std::string name;
         std::string short_name;
-        PriorType ptype;
-        NumericType ntype;
-        double fmin, fmax, mean, stdev, state, step;
-        std::vector<double> doubled_variance;
-        double (*untran_func) (const double);
-        std::pair<double, double> rescale;
-        std::map < std::string, std::vector<int> > par_modification_map; // how this par modifies others
+
+};
+Parameter::~Parameter () {}
+
+// the abstract base class for Priors
+class Prior : public Parameter {
+    public:
+        Prior(std::string nm,
+            double mv = std::numeric_limits<double>::quiet_NaN(),
+            double sv = std::numeric_limits<double>::quiet_NaN(),
+            std::string snm = ""
+        ) : Parameter(nm, snm), meanval(mv), sdval(sv) { };
+
+        double get_mean() const override { return meanval; };
+        double get_sd() const override { return sdval; };
+    
+        double noise(const double mu, const double sigma_squared, const gsl_rng* RNG) const override {
+            auto dev = trynoise(mu, sigma_squared, RNG);
+            while(!valid(dev)) dev = trynoise(mu, sigma_squared, RNG);
+            return dev;
+        };
+
+    protected:
+        double meanval;
+        double sdval;
+        double trynoise(const double mu, const double sigma_squared, const gsl_rng* RNG) const {
+            return recast(gsl_ran_gaussian(RNG, sqrt(sigma_squared)) + mu);
+        };
+
+};
+
+#define CONSTRUCT(VAR, WHAT, NT, ARGS, ...) if (NT == "INT") { \
+    VAR = new WHAT<int>(ARGS, __VA_ARGS__); \
+} else if (NT == "FLOAT") { \
+    VAR = new WHAT<double>(ARGS, __VA_ARGS__); \
+} else { \
+    cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl; \
+    exit(-206); \
+}
+
+class GaussianPrior : public Prior {
+
+    public:
+        GaussianPrior(std::string nm, double mn, double sd, std::string snm) :
+            Prior(nm, mn, sd, snm) {}
+
+        double sample(const gsl_rng* RNG ) const override {
+            return gsl_ran_gaussian(RNG, sdval) + meanval;
+        };
+
+        double likelihood(const double pval) const override {
+            return gsl_ran_gaussian_pdf(pval - meanval, sdval);
+        };
+
+};
+
+template<typename NUMTYPE>
+class UniformPrior : public Prior {
+    public:
+        UniformPrior(std::string nm, std::string snm, NUMTYPE mn, NUMTYPE mx) :
+            Prior(nm, (mx + mn) / 2.0, sqrt(pow(mn-mx,2)/12), snm), fmin(mn), fmax(mx) { };
+
+        double sample (const gsl_rng* RNG ) override {
+            return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
+        };
+
+        double likelihood(const double pval) const {
+            return static_cast<double>((static_cast<NUMTYPE>(pval) == pval) & (fmin <= pval) && (pval <= fmax));
+        };
+
+        double recast(const double pval) const override {
+            if constexpr (std::is_integral_v<NUMTYPE>) {
+                return std::round(pval);
+            } else return pval;
+        }
+
+    private:
+        NUMTYPE fmin, fmax;
+};
+
+template<typename NUMTYPE>
+class PseudoParameter : public Parameter {
+    public:
+        PseudoParameter(
+            std::string nm, std::string snm,
+            std::vector<NUMTYPE> vals, bool isPosterior = false
+        ) :
+            Parameter(nm, snm), states(vals), posterior(isPosterior) {}
+        double sample (const gsl_rng* /* RNG */ ) override { return static_cast<double>(states[state]); };
+
+        bool increment_state() override {
+            state++;
+            if (state >= states.size()) {
+                state = 0;
+                return false;
+            } else {
+                return true;
+            }            
+        }
+        bool isPosterior() override const { return posterior; };
+    private:
+        size_t state = 0;
+        std::vector<NUMTYPE> states;
+        bool posterior;
+};
+
+typedef PseudoParameter<int> PseudoParameterInt;
+typedef PseudoParameter<double> PseudoParameterDouble;
+
+using namespace std::placeholders;
+
+class TransformedParameter : public Parameter {
+    public:
+        TransformedParameter(
+            Parameter *p, double (*func) (const double, const vector<double> pars), const vector<double> ps
+        ) : pars(ps), xform(func) { back = p; };
+
+        double sample(const gsl_rng* RNG ) { return back->sample(RNG); };
+        std::string get_name() const { return back->get_name(); };
+        std::string get_short_name() const { return back->get_short_name(); };
+        virtual bool isPosterior() const { return back->isPosterior(); };
+        virtual bool increment_state() { return back->increment_state(); };
+        virtual double likelihood(double pval) const { return back->likelihood(pval); };
+        double get_mean() const { return back->get_mean(); };
+        double get_sd() const { return back->get_sd(); };
+
+    private:
+        Parameter *back;
+        double (*xform) (const double, const vector<double> pars);
+        vector<double> pars;
+
 };
 
 class Metric {
@@ -127,60 +192,6 @@ class Metric {
         NumericType ntype;
         double obs_val;
 };
-
-/*
-class Particle {
-//enum ParticleStatus {UNDEFINED_PARAMETERS, UNDEFINED_METRICS, PARTICLE_COMPLETE};
-    public:
-        Particle() {
-            status = UNDEFINED_PARAMETERS; serial = -1; posterior_rank = -1; weight = -1;
-        }
-        Particle(int s):serial(s) {
-            status = UNDEFINED_PARAMETERS; posterior_rank = -1; weight = -1;
-        }
-        Particle(int s, std::vector<long double> p):serial(s), pars(p) {
-            status = UNDEFINED_METRICS; posterior_rank = -1; weight = -1;
-        }
-        Particle(int s, std::vector<long double> p, vector<long double> m):serial(s), pars(p), mets(m) {
-            status = PARTICLE_COMPLETE; posterior_rank = -1; weight = -1;
-        }
-        Particle(int s, std::vector<long double> p, vector<long double> m, int r, double w):serial(s), pars(p), mets(m), posterior_rank(r), weight(w) {
-            status = PARTICLE_COMPLETE;
-        }
-
-        std::vector<long double> get_pars() const { return pars; }
-        std::vector<long double> get_mets() const { return mets; }
-        void set_pars(std::vector<long double> p) { assert(status==UNDEFINED_PARAMETERS); pars = p; status = UNDEFINED_METRICS; }
-        void set_mets(std::vector<long double> m) { assert(status==UNDEFINED_METRICS);    mets = m; status = PARTICLE_COMPLETE; }
-        ParticleStatus get_status() const { return status; }
-        void set_posterior_rank(int r) { posterior_rank = r; }
-        void set_weight(int w) { weight = w; }
-        bool in_posterior() const { return posterior_rank >= 0; }
-        int get_posterior_rank() const { return posterior_rank; }
-
-    private:
-        int serial;
-        std::vector<long double> pars;
-        std::vector<long double> mets;
-        int posterior_rank;
-        double weight;
-        ParticleStatus status;
-};
-
-
-class ParticleSet {
-//enum AbcStatus {INCOMPLETE_SET, TOO_FEW_SETS, ABC_COMPLETE};
-//enum SetStatus {UNSAMPLED_PRIOR, INCOMPLETE_PARTICLES, UNDEFINED_POSTERIOR, SET_COMPLETE};
-    public:
-        ParticleSet() { status = UNSAMPLED_PRIOR; }
-        SetStatus get_status() const { return status; }
-        void set_status(SetStatus s) { status = s; }
-
-    private:
-        std::vector<Particle*> particles;
-        AbcStatus status;
-};*/
-
 
 class AbcSmc {
     public:
@@ -265,10 +276,9 @@ class AbcSmc {
             _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
             return m;
         }
-        Parameter* add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step,double (*u)(const double), std::pair<double, double> r, std::map<std::string, std::vector<int> > mm) {
-            Parameter* p = new Parameter(name, short_name, ptype, ntype, val1, val2, step, u, r, mm);
+
+        void add_next_parameter(Parameter * p) {
             _model_pars.push_back(p);
-            return p;
         }
 
         void set_filtering_type(FilteringType ft) {
@@ -311,7 +321,11 @@ class AbcSmc {
         int npar() { return _model_pars.size(); }
         int nmet() { return _model_mets.size(); }
 
+        // doubled variance of particles
+        vector<double> get_doubled_variance(int t) const { return doubled_variance[t]; }
+
     private:
+        vector<vector<double>> doubled_variance;
         ABC::Mat2D X_orig;
         ABC::Mat2D Y_orig;
         std::vector<Parameter*> _model_pars;

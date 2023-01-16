@@ -173,10 +173,19 @@ bool AbcSmc::parse_config(string conf_filename) {
         string name = model_par[i]["name"].asString();
         string short_name = model_par[i].get("short_name", "").asString();
 
-        PriorType ptype = UNIFORM;
+        Parameter *par;
         string ptype_str = model_par[i]["dist_type"].asString();
+        string ntype_str = model_par[i]["num_type"].asString();
+
         if (ptype_str == "UNIFORM") {
-            ptype = UNIFORM;
+            if (ntype_str == "INT") {
+                par = new UniformPrior<int>(name, short_name, model_par[i]["par1"].asInt(), model_par[i]["par1"].asInt());
+            } else if (ntype_str == "FLOAT") {
+                par = new UniformPrior<double>(name, short_name, model_par[i]["par1"].asDouble(), model_par[i]["par1"].asDouble());
+            } else {
+                cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl;
+                exit(-206);
+            }
         } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
             ptype = NORMAL;
         } else if (ptype_str == "PSEUDO") {
@@ -250,6 +259,8 @@ bool AbcSmc::parse_config(string conf_filename) {
             cerr << "Unsupported JSON data type associated with 'untransform' parameter key.\n";
             exit(-208);
         }
+
+
 
         double par1 = model_par[i]["par1"].asDouble();
         double par2 = model_par[i]["par2"].asDouble();
@@ -427,14 +438,18 @@ void AbcSmc::report_convergence_data(int t) {
     } else {
         cerr << "Convergence data for predictive priors:\n";
     }
+
+    auto cur_doubled_var = get_doubled_variance(t);
+    auto pri_doubled_var = get_doubled_variance(t-1);
+
     for (unsigned int i = 0; i < _model_pars.size(); i++) {
         const Parameter* par = _model_pars[i];
-        const double current_stdev = sqrt(par->get_doubled_variance(t)/2.0);
-        const double prior_mean = par->get_prior_mean();
+        const double current_stdev = sqrt(cur_doubled_var[i]/2.0);
+        const double prior_mean = par->get_mean();
         const double prior_mean_delta = current_means[i] - prior_mean;
         const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
 
-        const double prior_stdev = par->get_prior_stdev();
+        const double prior_stdev = par->get_sd();
         const double prior_stdev_delta = current_stdev - prior_stdev;
         const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
         if (t == 0) {
@@ -445,7 +460,7 @@ void AbcSmc::report_convergence_data(int t) {
             cerr << "  Standard deviations:\n";
             print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
         } else {
-            double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(t-1)/2.0);
+            double last_stdev = sqrt(pri_doubled_var[i]/2.0);
             double delta, pct_chg;
 
             cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
@@ -464,16 +479,6 @@ void AbcSmc::report_convergence_data(int t) {
         }
     }
 }
-
-/*
-bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
-    stringstream ss;
-    ss << "update sets set status = 'D', ";
-    for (int j = 0; j < npar(); ++j) ss << ", " << _model_pars[j]->get_short_name() << "_dv = " << _model_pars[j]->get_doubled_variance(t);
-    ss << " where smcSet = " << t << ";";
-    return _db_execute_stringstream(db, ss);
-}
-*/
 
 // Read in existing sets and do particle filtering as appropriate
 bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
@@ -1264,7 +1269,7 @@ Mat2D AbcSmc::slurp_posterior() {
     int num_posterior_pars = 0; // num of cols
     string posterior_strings = "";
     for (Parameter* p: _model_pars) {
-        if (p->get_prior_type() == POSTERIOR) {
+        if (p->isPosterior()) {
             ++num_posterior_pars;
             if (posterior_strings != "") {
                 posterior_strings += ", ";
@@ -1295,63 +1300,43 @@ Mat2D AbcSmc::slurp_posterior() {
 
 Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank) {
     Row par_sample = Row::Zero(_model_pars.size());
-    bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
-    bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
+    bool succeeded_at_pseudo_increment = false; // only one PSEUDO parameter gets incremented each time
     vector<int> posterior_indices;
+    int posterior_rank;
+
     // for each parameter
     for (unsigned int i = 0; i < _model_pars.size(); i++) {
         Parameter* p = _model_pars[i];
-        float_type val;
-        // if it's a non-random, PSEUDO parameter
-        if (p->get_prior_type() == PSEUDO) {
-            // get the state now, so that the first time it will have the initialized value
-            val = (float_type) p->get_state();
-            // We need to imitate the way nested loops work, but in a single loop.
-            // PSEUDO parameters only get incremented when any and all previous PSEUDO parameters
-            // have reached their max values and are being reset
-            if (increment_nonrandom_par) {
-                // This parameter has reached it's max value and gets reset to minimum
-                // Because of possible floating point errors, we check whether the state is within step/10,000 from the max
-                const float_type PSEUDO_EPSILON = 0.0001 * p->get_step();
-                if (p->get_state() + PSEUDO_EPSILON >= p->get_prior_max()) {
-                    p->reset_state();
-                // otherwise, increment this one and prevent others from being incremented
-                } else {
-                    p->increment_state();
-                    increment_nonrandom_par = false;
-                    increment_posterior     = false;
-                }
-            }
-        } else if (p->get_prior_type() == POSTERIOR) {
-            val = 0; // will be replaced later in function
-            if (posterior_indices.size() == 0) {
-                posterior_rank = (int) p->get_state();
-            } else {
-                // require that posterior pars be synchronized
-                assert(posterior_rank == (int) p->get_state());
-            }
+        // all parameter values obtained from "sample";
+        // for actual priors, this hits RNG, draws, etc
+        // for posterior parameters and pseudo parameters, it gets the pseudo state variable or the posterior rank
+        par_sample(i) = static_cast<float_type>(p->sample(RNG));
+
+        if (p->isPosterior()) {
+            if (posterior_indices.empty()) {
+                posterior_rank = static_cast<int>(par_sample(i));
+            } else assert(posterior_rank == static_cast<int>(par_sample(i)));
             posterior_indices.push_back(i);
         } else {
-            // Random parameters get sampled independently from each other, and are therefore easy
-            val = p->sample(RNG);
+            // if p is a PSEUDO par, and we're incrementing state, and we succeed at doing so
+            // STOP trying to increment state
+            if (!succeeded_at_pseudo_increment) succeeded_at_pseudo_increment = p->increment_state();
+            // for non-pseudo parameters: always return false
+            // for pseudo parameters: return true iff incremented, without going back to zero
         }
 
-        par_sample(i) = val;
     }
+
+    // if we have traversed all the pseudo parameters (i.e., did not succeed at incrementing any of them)
+    // then its time to increment posterior rank as well
+    bool increment_posterior = !succeeded_at_pseudo_increment;
+
     if (_posterior_database_filename != "") {
 
         for (unsigned int c = 0; c < posterior_indices.size(); ++c) {
             par_sample(posterior_indices[c]) = posterior(posterior_rank, c);
             Parameter* p = _model_pars[posterior_indices[c]];
-
-            if (increment_posterior) {
-                if (p->get_state() >= p->get_prior_max()) {
-                    p->reset_state();
-                } else {
-                    p->increment_state();
-                }
-            }
-
+            if (increment_posterior) p->increment_state();
         }
 
 //cerr << "sample: " << par_sample << endl;
@@ -1369,9 +1354,10 @@ void AbcSmc::calculate_doubled_variances( int t ) {
             stats[j].Push(par_value);
         }
     }
-    for (int j = 0; j < npar(); j++) {
-        _model_pars[j]->append_doubled_variance( 2 * stats[j].Variance() );
-    }
+
+    vector<double> dv(npar());
+    for (int j = 0; j < npar(); j++) { dv[j] = 2 * stats[j].Variance(); }
+    doubled_variance.push_back(dv);
 }
 
 void AbcSmc::normalize_weights( vector<double>& weights ) {
@@ -1398,19 +1384,15 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
         _weights.push_back( vector<double>( _predictive_prior[set_num].size(), 0.0 ) );
         //_weights[set_num].resize( _predictive_prior[set_num].size() );
 
+        auto pri_doubled_var = get_doubled_variance(set_num - 1);
+
         for (unsigned int i = 0; i < _predictive_prior[set_num].size(); i++) {
             double numerator = 1;
             double denominator = 0.0;
             for (int j = 0; j < npar(); j++) {
                 Parameter* par = _model_pars[j];
                 const double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
-                if (par->get_prior_type() == NORMAL) {
-                    numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
-                } else if (par->get_prior_type() == UNIFORM) {
-                    // The RHS here will be 1 under normal circumstances.  If the prior has been revised during a fit,
-                    // this should throw out values outside of the prior's range
-                    numerator *= (int) (par_value >= par->get_prior_min() and par_value <= par->get_prior_max());
-                }
+                numerator *= par->likelihood(par_value);
             }
 
             for (unsigned int k = 0; k < _predictive_prior[set_num - 1].size(); k++) {
@@ -1418,7 +1400,7 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
                 for (int j = 0; j < npar(); j++) {
                     double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
                     double old_par_value = _particle_parameters[set_num-1](_predictive_prior[set_num-1][k], j);
-                    double old_doubled_variance = _model_pars[j]->get_doubled_variance(set_num-1);
+                    double old_doubled_variance = pri_doubled_var[j];
 
                     // This conditional handles the (often improbable) case where a parameter has completely converged.
                     // It allows ABC to continue exploring other parameters, rather than causing the math
@@ -1498,18 +1480,13 @@ Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
     Row par_values = Row::Zero(npar());
     // Select a particle index r to use from the predictive prior
     int r = gsl_rng_nonuniform_int(_weights[set_num-1], RNG);
+    auto pri_doubled_var = get_doubled_variance(set_num-1);
     for (int j = 0; j<npar(); j++) {
         int particle_idx = _predictive_prior[set_num-1][r];
         double par_value = _particle_parameters[set_num-1](particle_idx, j);
+        double doubled_variance = pri_doubled_var[j];
         const Parameter* parameter = _model_pars[j];
-        double doubled_variance = parameter->get_doubled_variance(set_num-1);
-        double par_min = parameter->get_prior_min();
-        double par_max = parameter->get_prior_max();
-        par_values(j) = rand_trunc_normal( par_value, doubled_variance, par_min, par_max, RNG );
-
-        if (parameter->get_numeric_type() == INT) {
-            par_values(j) = (double) ((int) (par_values(j) + 0.5));
-        }
+        par_values(j) = parameter->noise( par_value, doubled_variance, RNG );
     }
     return par_values;
 }
