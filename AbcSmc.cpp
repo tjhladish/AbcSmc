@@ -1,6 +1,7 @@
 #include "AbcSmc.h"
 #include "pls.h"
 #include "RunningStat.h"
+#include "EnumMacros.h"
 
 #include <iostream>
 #include <cstdio>
@@ -9,7 +10,6 @@
 #include <sstream>
 #include <fstream>
 #include <chrono>
-#include "AbcSmc.h"
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -38,34 +38,44 @@ bool file_exists(const char *fileName) {
     return infile.good();
 }
 
-
-vector<float> as_float_vector(Json::Value val, string key) { // not worth templating, despite appearances
-    vector<float> extracted_vals;
-    if ( val[key].isDouble() ) {
-        extracted_vals.push_back( val[key].asFloat() );
-    } else if ( val[key].isArray() ) {
-        for ( unsigned int i = 0; i < val[key].size(); ++i) extracted_vals.push_back( val[key][i].asFloat() );
+template<typename NUMTYPE>
+NUMTYPE extract(Json::Value vv) { 
+    if constexpr (std::is_integral_v<NUMTYPE>) {
+        return v.asInt();
     } else {
-        cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting floats or array of floats." << endl;
+        return v.asFloat();
+    }
+};
+
+template<typename NUMTYPE>
+bool check(Json::Value vv) { 
+    if constexpr (std::is_integral_v<NUMTYPE>) {
+        return v.isIntegral();
+    } else {
+        return v.isDouble();
+    }
+};
+
+template<typename NUMTYPE>
+vector<NUMTYPE> as_vector(Json::Value val, string key) {
+    vector<NUMTYPE> extracted_vals;
+    auto vv = val[key];
+    string typeword;
+    if constexpr (std::is_integral_v<NUMTYPE>) {
+        typeword = "integers";
+    } else {
+        typeword = "floats";
+    }
+    if ( vv.isArray() ) {
+        for ( unsigned int i = 0; i < vv.size(); ++i) extracted_vals.push_back( extract(vv[i]) );
+    } else if ( check(vv) ) {
+        extracted_vals.push_back(extract(vv));
+    } else {
+        cerr << "Could not parse " << key << " as " << typeword << " or array of " << typeword << "." << endl;
         exit(-216);
     }
     return extracted_vals;
-}
-
-
-vector<int> as_int_vector(Json::Value val, string key) {
-    vector<int> extracted_vals;
-    if ( val[key].isInt() ) {
-        extracted_vals.push_back( val[key].asInt() );
-    } else if ( val[key].isArray() ) {
-        for ( unsigned int i = 0; i < val[key].size(); ++i) extracted_vals.push_back( val[key][i].asInt() );
-    } else {
-        cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting ints or array of ints." << endl;
-        exit(-216);
-    }
-    return extracted_vals;
-}
-
+};
 
 void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
     int arg_ct = par.isMember("predictive_prior_fraction") + par.isMember("predictive_prior_size");
@@ -76,7 +86,7 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
         cerr << "Error: only one of predictive_prior_fraction and predictive_prior_size may be specified in configuration file." << endl;
         exit(1);
     } else if (par.isMember("predictive_prior_fraction")) {
-        vector<float> ppfs = as_float_vector(par, "predictive_prior_fraction");
+        auto ppfs = as_vector<float>(par, "predictive_prior_fraction");
         if (ppfs.size() > 1 and _smc_set_sizes.size() > 1 and ppfs.size() != _smc_set_sizes.size()) {
             cerr << "Error: If num_samples and predictive_prior_fraction both have length > 1 in configuration file, they must be equal in length." << endl;
             exit(1);
@@ -94,7 +104,7 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
             _predictive_prior_sizes.push_back( round(ppfs[i] * set_sizes_copy[i]) );
         }
     } else if (par.isMember("predictive_prior_size")) {
-        _predictive_prior_sizes = as_int_vector(par, "predictive_prior_size");
+        _predictive_prior_sizes = as_vector<int>(par, "predictive_prior_size");
         if (_predictive_prior_sizes.size() > 1 and _smc_set_sizes.size() > 1 and _predictive_prior_sizes.size() != _smc_set_sizes.size()) {
             cerr << "Error: If num_samples and predictive_prior_size both have length > 1 in configuration file, they must be equal in length." << endl;
             exit(1);
@@ -109,6 +119,96 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
     }
 }
 
+
+#define NUMTYPE(M,SM) M(NumType,SM(INT) SM(FLOAT))
+CONSTRUCTENUM(NUMTYPE)
+
+#define PARTYPE(M,SM) M(ParType,SM(UNIFORM) SM(GAUSSIAN) SM(NORMAL) SM(PSEUDO) SM(POSTERIOR))
+CONSTRUCTENUM(PARTYPE)
+
+#define XFORM(M,SM) M(TransType,SM(NONE) SM(POW_10) SM(LOGISTIC))
+CONSTRUCTENUM(XFORM)
+
+template<typename NT>
+vector<NT> sequence(const Json::Value pardata) {
+    if (pardata.isMember("vals")) {
+        return as_vector<NT>(pardata["vals"]);
+    } 
+    NT st = extract(pardata["par1"]);
+
+    if (pardata.isMember("step") or pardata.isMember("incs")) {
+        // figure out number of steps & step size
+        // then sequence = start + 0:N * del
+    } else if (pardata.isMember("par1") or pardata.isMember("par2")) {
+        // assume step size of one
+    }
+    std::cerr << "Failed to parse sequence." << std::endl;
+};
+
+Parameter * parse_transform(Parameter * base, const Json::Value transdata) {
+    double (*_untransform_func)(const double, const vector<double>);
+    vector<double> ps;
+    if (transdata.isString()) {
+        TransType tr = from_string(transdata.asString());
+        if (tr == NONE) {
+            _untransform_func = [](const double t, const vector<double> /**/) { return t; };
+        } else if (tr == POW_10) {
+            _untransform_func = [](const double t, const vector<double> ps) { return pow(ps[0], t); };
+            ps.push_back(10.0);
+        } else if (tr == LOGISTIC) {
+            _untransform_func = [](const double t, const vector<double> ps) { return ABC::logistic(t); };
+            ps.push_back(10.0);
+        }
+    } else if (transdata.isObject()) {
+
+// string ttype_str = untransform["type"].asString();
+//             if (ttype_str != "LOGISTIC") {
+//                 cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
+//                 exit(-207);
+//             }
+//             par_rescale = {untransform["min"].asDouble(), untransform["max"].asDouble()};
+//             _untransform_func = [](const double t) { return ABC::logistic(t); };
+//             use_transformed_pars = true;
+            //Json::ValueType mod_type = untransform["transformed_addend"].type();
+
+
+        // TODO
+    } else {
+        std::cerr << "Did not understand transformation object." << std::endl;
+        exit(-1);
+    }
+
+    return new TransformedParameter(base, _untransform_func, ps);
+}
+
+Parameter * parse_parameter(const Json::Value pardata) {
+    string name = pardata["name"].asString();
+    string short_name = pardata.get("short_name", "").asString();
+    // these provide their own parsing errors
+    NumType ntype = from_string(pardata["num_type"].asString());
+    ParType ptype = from_string(pardata["dist_type"].asString());
+    Parameter * res;
+    if (ptype == UNIFORM) {
+        if (ntype == INT) {
+            res = new UniformPrior<int>(name, short_name, pardata["par1"].asInt(), pardata["par2"].asInt());
+        } else if (ntype == FLOAT) {
+            res = new UniformPrior<double>(name, short_name, pardata["par1"].asDouble(), pardata["par2"].asDouble());
+        }
+    } else if ((ptype == NORMAL) or (ptype == GAUSSIAN)) {
+        res = new GaussianPrior(name, short_name, pardata["par1"].asDouble(), pardata["par2"].asDouble());
+    } else if ((ptype == PSEUDO) or (ptype == POSTERIOR)) {
+        if (ntype == INT) {
+            res = new PseudoParameter<int>(name, short_name, sequence<int>(pardata), (ptype == POSTERIOR));
+        } else if (ntype == FLOAT) {
+            res = new PseudoParameter<double>(name, short_name, sequence<double>(pardata), (ptype == POSTERIOR));
+        }            
+    }
+    if (!pardata.isMember("untransform")) {
+        return res;
+    } else {
+        return parse_transform(res, pardata);
+    }
+};
 
 bool AbcSmc::parse_config(string conf_filename) {
     if (not file_exists(conf_filename.c_str())) {
@@ -138,7 +238,7 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
-    _smc_set_sizes = as_int_vector(par, "num_samples");
+    _smc_set_sizes = as_vector<int>(par, "num_samples");
     process_predictive_prior_arguments(par);
     // TODO--allow specification of pred prior size (single value or list of values)
     //set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
@@ -154,11 +254,11 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     string noise = par.get("noise", "INDEPENDENT").asString();
-    use_mvn_noise = (noise == "MULTIVARIATE");
     if (noise != "INDEPENDENT" and noise != "MULTIVARIATE") {
         cerr << "Unknown parameter noise type specified: " << noise << ". Aborting." << endl;
         exit(-210);
     }
+    bool use_mvn_noise = (noise == "MULTIVARIATE");
 
     // Parse model parameters
     const Json::Value model_par = par["parameters"];
@@ -170,103 +270,7 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     for ( unsigned int i = 0; i < model_par.size(); ++i )  {// Iterates over the sequence elements.
-        string name = model_par[i]["name"].asString();
-        string short_name = model_par[i].get("short_name", "").asString();
-
-        Parameter *par;
-        string ptype_str = model_par[i]["dist_type"].asString();
-        string ntype_str = model_par[i]["num_type"].asString();
-
-        if (ptype_str == "UNIFORM") {
-            if (ntype_str == "INT") {
-                par = new UniformPrior<int>(name, short_name, model_par[i]["par1"].asInt(), model_par[i]["par1"].asInt());
-            } else if (ntype_str == "FLOAT") {
-                par = new UniformPrior<double>(name, short_name, model_par[i]["par1"].asDouble(), model_par[i]["par1"].asDouble());
-            } else {
-                cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl;
-                exit(-206);
-            }
-        } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
-            ptype = NORMAL;
-        } else if (ptype_str == "PSEUDO") {
-            ptype = PSEUDO;
-        } else if (ptype_str == "POSTERIOR") {
-            ptype = POSTERIOR;
-            if (_posterior_database_filename == "") {
-                cerr << "Parameter specfied as type POSTERIOR, without previously specifying a posterior_database_filename.  Aborting." << endl;
-                exit(-204);
-            }
-        } else {
-            cerr << "Unknown parameter distribution type: " << ptype_str << ".  Aborting." << endl;
-            exit(-205);
-        }
-
-        NumericType ntype = INT;
-        string ntype_str = model_par[i]["num_type"].asString();
-        if (ntype_str == "INT") {
-            ntype = INT;
-        } else if (ntype_str == "FLOAT") {
-            ntype = FLOAT;
-        } else {
-            cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl;
-            exit(-206);
-        }
-
-        double (*_untransform_func)(const double);
-        // linear rescaling [min, max] not for par as sampled, but as input to sim
-        // NB: if par is not on [0, 1] after untransforming, this is still a linear rescaling, but not onto [min, max]
-        pair<double, double> par_rescale = {0.0, 1.0};
-        map<string, vector<int> > mod_map { {"transformed_addend", {}}, {"transformed_factor", {}}, {"untransformed_addend", {}}, {"untransformed_factor", {}} };
-        //auto _untransform = [](const double t) { return t; };
-        if (not model_par[i].isMember("untransform")) {
-            _untransform_func = [](const double t) { return t; };
-        } else if (model_par[i]["untransform"].type() == Json::ValueType::stringValue) {
-            string ttype_str = model_par[i].get("untransform", "NONE").asString();
-            if (ttype_str == "NONE") { // TODO - it's possible this may not actually ever be called
-                _untransform_func = [](const double t) { return t; };
-                //ttype = UNTRANSFORMED;
-            } else if (ttype_str == "POW_10") {
-                _untransform_func = [](const double t) { return pow(10.0, t); };
-                //ttype = LOG_10;
-                use_transformed_pars = true;
-            } else if (ttype_str == "LOGISTIC") {
-                _untransform_func = [](const double t) { return ABC::logistic(t); };
-                //ttype = LOGIT;
-                use_transformed_pars = true;
-            } else {
-                cerr << "Unknown parameter transformation type: " << ttype_str << ".  Aborting." << endl;
-                exit(-206);
-            }
-
-        } else if (model_par[i]["untransform"].type() == Json::ValueType::objectValue) {
-            Json::Value untransform = model_par[i]["untransform"];
-            string ttype_str = untransform["type"].asString();
-            if (ttype_str != "LOGISTIC") {
-                cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
-                exit(-207);
-            }
-            par_rescale = {untransform["min"].asDouble(), untransform["max"].asDouble()};
-            _untransform_func = [](const double t) { return ABC::logistic(t); };
-            use_transformed_pars = true;
-            //Json::ValueType mod_type = untransform["transformed_addend"].type();
-
-            for (auto& mod_type: mod_map) {
-                if (untransform.isMember(mod_type.first)) {
-                    for (auto json_val: untransform[mod_type.first]) mod_type.second.push_back(par_name_idx[json_val.asString()]);
-                }
-            }
-        } else {
-            cerr << "Unsupported JSON data type associated with 'untransform' parameter key.\n";
-            exit(-208);
-        }
-
-
-
-        double par1 = model_par[i]["par1"].asDouble();
-        double par2 = model_par[i]["par2"].asDouble();
-        double step = model_par[i].get("step", 1.0).asDouble(); // default increment is 1
-
-        add_next_parameter(name, short_name, ptype, ntype, par1, par2, step, _untransform_func, par_rescale, mod_map);
+        add_next_parameter(parse_parameter(model_par[i]));
     }
 
     // Parse model metrics
@@ -275,20 +279,11 @@ bool AbcSmc::parse_config(string conf_filename) {
         string name = model_met[i]["name"].asString();
         string short_name = model_met[i].get("short_name", "").asString();
 
-        NumericType ntype = INT;
-        string ntype_str = model_met[i]["num_type"].asString();
-        if (ntype_str == "INT") {
-            ntype = INT;
-        } else if (ntype_str == "FLOAT") {
-            ntype = FLOAT;
-        } else {
-            cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
-            exit(-209);
-        }
+        NumericType ntype = from_string(model_met[i]["num_type"].asString());
 
         double val = model_met[i]["value"].asDouble();
 
-        add_next_metric(name, short_name, ntype, val);
+        add_next_metric(new Metric(name, short_name, ntype, val));
     }
 
     return true;
@@ -303,13 +298,13 @@ vector<double> AbcSmc::do_complicated_untransformations(vector<Parameter*>& _mod
     for (int i = 0; i < npar(); ++i) {
 //cerr << "Parameter " << i << ": " << _model_pars[i]->get_name() << endl;
         const Parameter* mpar = _model_pars[i];
-        vector<double> modifiers(identities); // TODO -- double check that this is a legit copy constructor
-        map<string, vector<int> > mod_map = mpar->get_par_modification_map();
-        for (unsigned int j = 0; j < mod_map["transformed_addend"].size(); ++j)   modifiers[0] += pars[mod_map["transformed_addend"][j]];
-        for (unsigned int j = 0; j < mod_map["transformed_factor"].size(); ++j)   modifiers[1] *= pars[mod_map["transformed_factor"][j]];
-        for (unsigned int j = 0; j < mod_map["untransformed_addend"].size(); ++j) modifiers[2] += pars[mod_map["untransformed_addend"][j]];
-        for (unsigned int j = 0; j < mod_map["untransformed_factor"].size(); ++j) modifiers[3] *= pars[mod_map["untransformed_factor"][j]];
-        upars[i] = mpar->untransform(pars[i], modifiers);
+        // vector<double> modifiers(identities); // TODO -- double check that this is a legit copy constructor
+        // map<string, vector<int> > mod_map = mpar->get_par_modification_map();
+        // for (unsigned int j = 0; j < mod_map["transformed_addend"].size(); ++j)   modifiers[0] += pars[mod_map["transformed_addend"][j]];
+        // for (unsigned int j = 0; j < mod_map["transformed_factor"].size(); ++j)   modifiers[1] *= pars[mod_map["transformed_factor"][j]];
+        // for (unsigned int j = 0; j < mod_map["untransformed_addend"].size(); ++j) modifiers[2] += pars[mod_map["untransformed_addend"][j]];
+        // for (unsigned int j = 0; j < mod_map["untransformed_factor"].size(); ++j) modifiers[3] *= pars[mod_map["untransformed_factor"][j]];
+        upars[i] = mpar->untransform(pars[i]);
     }
     return upars;
 }
@@ -1486,7 +1481,7 @@ Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
         double par_value = _particle_parameters[set_num-1](particle_idx, j);
         double doubled_variance = pri_doubled_var[j];
         const Parameter* parameter = _model_pars[j];
-        par_values(j) = parameter->noise( par_value, doubled_variance, RNG );
+        par_values(j) = parameter->noise( par_value, sqrt(doubled_variance), RNG );
     }
     return par_values;
 }

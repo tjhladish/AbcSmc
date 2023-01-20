@@ -18,61 +18,87 @@ enum NumericType { INT, FLOAT };
 enum VerboseType { QUIET, VERBOSE };
 enum FilteringType { PLS_FILTERING, SIMPLE_FILTERING };
 
-// the almost entirely abstract base-class for Parameters
+// abstract base class for all Parameters
 struct Parameter {
 
+    // TODO: goal of short name is provide a character limited version
+    // worthwhile to trim full name when short name isn't provided?
     Parameter(std::string nm, std::string snm = "") :
         name(nm), short_name(snm.empty() ? nm : snm) { };
 
+    // all Parameters shall be named
     std::string get_name() const { return name; };
     std::string get_short_name() const { return short_name; };
 
-    virtual double sample(const gsl_rng* /* RNG */ ) const { return std::numeric_limits<double>::quiet_NaN(); };
-    virtual double noise(const double /* mu */, const double /* sigma_squared */, const gsl_rng* /* RNG */) const = 0;
+    // must define `sample` & `likelidhood` for all concrete implementations
+    virtual double sample(const gsl_rng* /* RNG */ ) const = 0;
+    virtual double likelihood(const double /* pval */) const = 0;
+
+
+    // can ignore defining `noise`, `get_mean`, `get_sd`, etc, if that kind of parameter never uses it
+    virtual double noise(
+        const double /* mu */, const double /* sigma_squared */, const gsl_rng* /* RNG */,
+        const size_t MAX_ATTEMPTS = 1000
+    ) const {
+        return std::numeric_limits<double>::signaling_NaN();
+    };
+    virtual double get_mean() const { return std::numeric_limits<double>::signaling_NaN(); };
+    virtual double get_sd() const { return std::numeric_limits<double>::signaling_NaN(); };
+
+    // some methods, there is a typical, real default, but we might wish to override it
     virtual bool isPosterior() const { return false; };
     virtual bool increment_state() { return false; };
-    virtual double likelihood(const double /* pval */) const { return std::numeric_limits<double>::quiet_NaN(); };
-    virtual double get_mean() const { return std::numeric_limits<double>::quiet_NaN(); };
-    virtual double get_sd() const { return std::numeric_limits<double>::quiet_NaN(); };
-    virtual bool valid(const double pval) const { return likelihood(pval) != 0.0; };
-    virtual double recast(const double pval) const { return pval; };
+    // if *not* a transforming parameter, no-op
     virtual double untransform(const double pval) const { return pval; }
-
-    virtual inline ~Parameter() = 0;
+    // if *not* an integer type parameter, no-op
+    virtual double recast(const double pval) const { return pval; };
+    
+    // some computations can be done in terms of the properly defined methods
+    bool valid(const double pval) const { return likelihood(pval) != 0.0; };
 
     private:
         std::string name;
         std::string short_name;
 
 };
-Parameter::~Parameter () {}
 
-// the abstract base class for Priors
+// "abstract" base class for Priors, i.e. classes that have mean, sd, and are `noise`d in a consistent way
 class Prior : public Parameter {
     public:
-        Prior(std::string nm,
-            double mv = std::numeric_limits<double>::quiet_NaN(),
-            double sv = std::numeric_limits<double>::quiet_NaN(),
-            std::string snm = ""
+        Prior(std::string nm, std::string snm = "",
+            double mv = std::numeric_limits<double>::signaling_NaN(),
+            double sv = std::numeric_limits<double>::signaling_NaN()
         ) : Parameter(nm, snm), meanval(mv), sdval(sv) { };
 
         double get_mean() const override { return meanval; };
         double get_sd() const override { return sdval; };
     
-        double noise(const double mu, const double sigma_squared, const gsl_rng* RNG) const override {
-            auto dev = trynoise(mu, sigma_squared, RNG);
-            while(!valid(dev)) dev = trynoise(mu, sigma_squared, RNG);
+        // TODO infinite loop issue - should have blocking limit that throws
+        double noise(
+            const double mu, const double sigma, const gsl_rng* RNG,
+            const size_t MAX_ATTEMPTS = 1000
+        ) const override {
+            size_t attempts = 1;
+            auto dev = trynoise(mu, sigma, RNG);
+            while(!valid(dev) and (attempts++ < MAX_ATTEMPTS)) {
+                dev = trynoise(mu, sigma, RNG);
+            }
+            if (!valid(dev)) { 
+                exit(-300);
+            }
             return dev;
         };
 
     protected:
         double meanval;
         double sdval;
-        double trynoise(const double mu, const double sigma_squared, const gsl_rng* RNG) const {
-            return recast(gsl_ran_gaussian(RNG, sqrt(sigma_squared)) + mu);
+        double trynoise(const double mu, const double sigma, const gsl_rng* RNG) const {
+            return recast(gsl_ran_gaussian(RNG, sigma) + mu);
         };
 
 };
+
+// TODO need to write an example "new" prior type implementation
 
 #define CONSTRUCT(VAR, WHAT, NT, ARGS, ...) if (NT == "INT") { \
     VAR = new WHAT<int>(ARGS, __VA_ARGS__); \
@@ -86,8 +112,8 @@ class Prior : public Parameter {
 class GaussianPrior : public Prior {
 
     public:
-        GaussianPrior(std::string nm, double mn, double sd, std::string snm) :
-            Prior(nm, mn, sd, snm) {}
+        GaussianPrior(std::string nm, std::string snm, double mn, double sd) :
+            Prior(nm, snm, mn, sd) {}
 
         double sample(const gsl_rng* RNG ) const override {
             return gsl_ran_gaussian(RNG, sdval) + meanval;
@@ -103,20 +129,24 @@ template<typename NUMTYPE>
 class UniformPrior : public Prior {
     public:
         UniformPrior(std::string nm, std::string snm, NUMTYPE mn, NUMTYPE mx) :
-            Prior(nm, (mx + mn) / 2.0, sqrt(pow(mn-mx,2)/12), snm), fmin(mn), fmax(mx) { };
+            Prior(nm, snm, (mx + mn) / 2.0, (mx - mn) / sqrt(12.0)), fmin(mn), fmax(mx) { 
+                assert(mx >= mn);
+            };
 
-        double sample (const gsl_rng* RNG ) override {
+        double sample (const gsl_rng* RNG) const override {
             return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
         };
 
-        double likelihood(const double pval) const {
-            return static_cast<double>((static_cast<NUMTYPE>(pval) == pval) & (fmin <= pval) && (pval <= fmax));
+        double likelihood(const double pval) const override {
+            return static_cast<double>((recast(pval) == pval) and (fmin <= pval) and (pval <= fmax));
         };
 
         double recast(const double pval) const override {
             if constexpr (std::is_integral_v<NUMTYPE>) {
                 return std::round(pval);
-            } else return pval;
+            } else {
+                return pval;
+            }
         }
 
     private:
@@ -128,21 +158,36 @@ class PseudoParameter : public Parameter {
     public:
         PseudoParameter(
             std::string nm, std::string snm,
-            std::vector<NUMTYPE> vals, bool isPosterior = false
+            std::vector<NUMTYPE> vals, bool post = false
         ) :
-            Parameter(nm, snm), states(vals), posterior(isPosterior) {}
-        double sample (const gsl_rng* /* RNG */ ) override { return static_cast<double>(states[state]); };
+            Parameter(nm, snm), states(vals), posterior(post) {}
+        
+        double sample (const gsl_rng* /* RNG */ ) const override { return static_cast<double>(states[state]); };
+
+        double likelihood(const double pval) const override {
+            static_cast<double>(std::find(states.begin(), states.end(), static_cast<NUMTYPE>(pval)) != states.end());
+        };
 
         bool increment_state() override {
             state++;
-            if (state >= states.size()) {
+            if (state == states.size()) {
                 state = 0;
                 return false;
             } else {
                 return true;
             }            
         }
-        bool isPosterior() override const { return posterior; };
+
+        bool isPosterior() const override { return posterior; };
+
+        double recast(const double pval) const override {
+            if constexpr (std::is_integral_v<NUMTYPE>) {
+                return std::round(pval);
+            } else {
+                return pval;
+            }
+        }
+
     private:
         size_t state = 0;
         std::vector<NUMTYPE> states;
@@ -154,23 +199,39 @@ typedef PseudoParameter<double> PseudoParameterDouble;
 
 using namespace std::placeholders;
 
+// wraps another Parameter in parameterized transformation
 class TransformedParameter : public Parameter {
     public:
         TransformedParameter(
-            Parameter *p, double (*func) (const double, const vector<double> pars), const vector<double> ps
-        ) : pars(ps), xform(func) { back = p; };
+            Parameter * const p, double (*func) (const double, const vector<double> pars), const vector<double> ps
+        ) : Parameter(p->get_name(), p->get_short_name()), pars(ps), xform(func), back(p) { };
 
-        double sample(const gsl_rng* RNG ) { return back->sample(RNG); };
-        std::string get_name() const { return back->get_name(); };
-        std::string get_short_name() const { return back->get_short_name(); };
-        virtual bool isPosterior() const { return back->isPosterior(); };
-        virtual bool increment_state() { return back->increment_state(); };
-        virtual double likelihood(double pval) const { return back->likelihood(pval); };
-        double get_mean() const { return back->get_mean(); };
-        double get_sd() const { return back->get_sd(); };
+        double sample(const gsl_rng* RNG ) const override { return back->sample(RNG); };
+        double likelihood(double pval) const override { return back->likelihood(pval); };
+
+        double noise(
+            const double mu, const double sigma, const gsl_rng* RNG,
+            const size_t MAX_ATTEMPTS = 1000
+        ) const override {
+            return back->noise(mu, sigma, RNG, MAX_ATTEMPTS);
+        };
+
+        double get_mean() const override { return back->get_mean(); };
+        double get_sd() const override { return back->get_sd(); };
+
+        bool isPosterior() const override { return back->isPosterior(); };
+        bool increment_state() override { return back->increment_state(); };
+
+        double untransform(const double pval) const { return xform(pval, pars); }
+        // if *not* an integer type parameter, no-op
+        double recast(const double pval) const { return back->recast(pval); };
+
 
     private:
-        Parameter *back;
+        Parameter * const back;
+        // TODO: preferred way to specify transformation:
+        // either: just a function of double OR function of double AND the parameters
+        // function of just the double is more natural here; but 
         double (*xform) (const double, const vector<double> pars);
         vector<double> pars;
 
@@ -271,9 +332,8 @@ class AbcSmc {
         void set_retain_posterior_rank( std::string retain_rank ) { _retain_posterior_rank = (retain_rank == "true"); }
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
-        Metric* add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
-            Metric* m = new Metric(name, short_name, ntype, obs_val);
-            _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
+        Metric* add_next_metric(Metric * m) {
+            _model_mets.push_back(m);
             return m;
         }
 
