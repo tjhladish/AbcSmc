@@ -39,7 +39,7 @@ bool file_exists(const char *fileName) {
 }
 
 template<typename NUMTYPE>
-NUMTYPE extract(Json::Value vv) { 
+NUMTYPE extract(const Json::Value vv) { 
     if constexpr (std::is_integral_v<NUMTYPE>) {
         return v.asInt();
     } else {
@@ -48,7 +48,7 @@ NUMTYPE extract(Json::Value vv) {
 };
 
 template<typename NUMTYPE>
-bool check(Json::Value vv) { 
+bool check(const Json::Value vv) { 
     if constexpr (std::is_integral_v<NUMTYPE>) {
         return v.isIntegral();
     } else {
@@ -69,7 +69,7 @@ vector<NUMTYPE> as_vector(Json::Value val, string key) {
     if ( vv.isArray() ) {
         for ( unsigned int i = 0; i < vv.size(); ++i) extracted_vals.push_back( extract(vv[i]) );
     } else if ( check(vv) ) {
-        extracted_vals.push_back(extract(vv));
+        extracted_vals.push_back( extract(vv) );
     } else {
         cerr << "Could not parse " << key << " as " << typeword << " or array of " << typeword << "." << endl;
         exit(-216);
@@ -119,37 +119,33 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
     }
 }
 
-
-#define NUMTYPE(M,SM) M(NumType,SM(INT) SM(FLOAT))
-CONSTRUCTENUM(NUMTYPE)
-
-#define PARTYPE(M,SM) M(ParType,SM(UNIFORM) SM(GAUSSIAN) SM(NORMAL) SM(PSEUDO) SM(POSTERIOR))
-CONSTRUCTENUM(PARTYPE)
-
-#define XFORM(M,SM) M(TransType,SM(NONE) SM(POW_10) SM(LOGISTIC))
-CONSTRUCTENUM(XFORM)
-
 template<typename NT>
 vector<NT> sequence(const Json::Value pardata) {
     if (pardata.isMember("vals")) {
         return as_vector<NT>(pardata["vals"]);
     } 
     NT st = extract(pardata["par1"]);
+    vector<NT> res;
+    NT step;
+    size_t increments;
 
     if (pardata.isMember("step") or pardata.isMember("incs")) {
         // figure out number of steps & step size
         // then sequence = start + 0:N * del
-    } else if (pardata.isMember("par1") or pardata.isMember("par2")) {
+    } else if (pardata.isMember("par1") and pardata.isMember("par2")) {
+        assert(par1 < par2);
+        NT del = par2 - par1;
         // assume step size of one
     }
     std::cerr << "Failed to parse sequence." << std::endl;
+    return res;
 };
 
 Parameter * parse_transform(Parameter * base, const Json::Value transdata) {
     double (*_untransform_func)(const double, const vector<double>);
     vector<double> ps;
     if (transdata.isString()) {
-        TransType tr = from_string(transdata.asString());
+        TransformType tr = from_string(transdata.asString());
         if (tr == NONE) {
             _untransform_func = [](const double t, const vector<double> /**/) { return t; };
         } else if (tr == POW_10) {
@@ -160,19 +156,15 @@ Parameter * parse_transform(Parameter * base, const Json::Value transdata) {
             ps.push_back(10.0);
         }
     } else if (transdata.isObject()) {
+        TransformType tr = from_string(transdata["type"].asString());
+        if (tr != LOGISTIC) {
+            cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
+            exit(-207);
+        }
+        // TODO: modifications to ps support this - feels like this is going to be breaking?
+        // if inner shifts, do those first?
+        _untransform_func = [](const double t, const vector<double> ps) { return ABC::logistic(t); };
 
-// string ttype_str = untransform["type"].asString();
-//             if (ttype_str != "LOGISTIC") {
-//                 cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
-//                 exit(-207);
-//             }
-//             par_rescale = {untransform["min"].asDouble(), untransform["max"].asDouble()};
-//             _untransform_func = [](const double t) { return ABC::logistic(t); };
-//             use_transformed_pars = true;
-            //Json::ValueType mod_type = untransform["transformed_addend"].type();
-
-
-        // TODO
     } else {
         std::cerr << "Did not understand transformation object." << std::endl;
         exit(-1);
@@ -185,8 +177,8 @@ Parameter * parse_parameter(const Json::Value pardata) {
     string name = pardata["name"].asString();
     string short_name = pardata.get("short_name", "").asString();
     // these provide their own parsing errors
-    NumType ntype = from_string(pardata["num_type"].asString());
-    ParType ptype = from_string(pardata["dist_type"].asString());
+    NumericType ntype = from_string(pardata["num_type"].asString());
+    ParameterType ptype = from_string(pardata["dist_type"].asString());
     Parameter * res;
     if (ptype == UNIFORM) {
         if (ntype == INT) {
@@ -291,9 +283,8 @@ bool AbcSmc::parse_config(string conf_filename) {
 
 
 vector<double> AbcSmc::do_complicated_untransformations(vector<Parameter*>& _model_pars, Row& pars) {
-    assert( (signed) _model_pars.size() == npar() );
-    assert( (signed) pars.size() == npar() );
-    const vector<double> identities = {0.0, 1.0, 0.0, 1.0};
+    assert( _model_pars.size() == npar() );
+    assert( pars.size() == npar() );
     vector<double> upars(npar());
     for (int i = 0; i < npar(); ++i) {
 //cerr << "Parameter " << i << ": " << _model_pars[i]->get_name() << endl;
