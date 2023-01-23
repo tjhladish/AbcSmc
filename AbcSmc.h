@@ -40,10 +40,6 @@ class AbcSmc {
         AbcSmc() {
             _num_smc_sets = 0;
             _pls_training_fraction = 0.5;
-            //int _pls_training_set_size = 0;
-            //_predictive_prior_fraction = 0.05;
-            //_predictive_prior_size = 0;
-            //_next_predictive_prior_size = 0;
             use_simulator = true;
             use_executable = false;
             resume_flag = false;
@@ -219,7 +215,9 @@ class AbcSmc {
         bool read_particle_set( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig );
         bool read_predictive_prior( int t );
 
-        string _build_sql_select_par_string(string tag);
+        static string _build_sql(const string tag = "", const string type = "", vector<Parameter*>& elements);
+
+        string _build_sql_select_par_string();
         string _build_sql_select_met_string();
         string _build_sql_create_par_string(string tag);
         string _build_sql_create_met_string(string tag);
@@ -252,5 +250,13 @@ class AbcSmc {
 
         ABC::Row _z_transform_observed_metrics( ABC::Row& means, ABC::Row& stdevs );
 };
+
+string AbcSmc::_build_sql(const string tag, const string type, vector<Parameter*>& elements) {
+    stringstream ss;
+    // `tag` should be something like "P." or "par." - it's an SQL qualifier
+    for (size_t i = 0; i < elements.size() - 1; i++) { ss << tag << elements[i]->get_short_name() << " " << type << ","; }
+    ss << _model_pars.back()->get_short_name() << tag << " real ";
+    return ss.str();
+}
 
 #endif

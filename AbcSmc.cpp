@@ -754,7 +754,9 @@ bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed
 
 
 // TODO - these could likely be refactored to a single, more clever build sql string function
-
+// if Metric isa Parameter, then we can use the same function for both
+// in fact, we could probably use the same function for all of these
+// and this can be made a static const function in AbcSmc
 string AbcSmc::_build_sql_create_par_string( string tag = "" ) {
     stringstream ss;
     for (int i = 0; i<npar()-1; i++) { ss << _model_pars[i]->get_short_name() << tag << " real, "; }
@@ -786,6 +788,7 @@ string AbcSmc::_build_sql_select_met_string() {
     return ss.str();
 }
 
+string AbcSmc::_
 
 bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
     bool db_success = false;
