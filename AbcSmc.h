@@ -37,8 +37,9 @@ struct AbcSmcBuilder {
         size_t num_smc_sets = 0;
         float pls_training_fraction = 0.5;
         
-        use_simulator = true;
-        // *if* an executable provided, then use that
+        // simulator vs executable are mutually exclusive
+        // *if* an executable file is provided, using that
+        // *otherwise* will be using the simulator function
         std::optional<std::string> _executable_filename = std::nullopt;
 
         bool resume_flag = false;
@@ -50,9 +51,48 @@ struct AbcSmcBuilder {
         bool use_pls_filtering = true;
         ABC::MPI_par *mp = NULL;
 
+        std::vector<Parameter*> parameters;
+        std::vector<Metric*> metrics;
+ 
+        std::vector<int> _smc_set_sizes;
+
+        float _pls_training_fraction;
+        vector<int> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
+        //int _next_predictive_prior_size;
+        //int _predictive_prior_size; // number of particles that will be used to inform predictive prior
+        vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
+        bool use_simulator;
+
+        std::optional<std::string> _executable_filename;
+        
+        bool resume_flag;
+        bool use_transformed_pars;
+        std::string resume_directory;
+        std::string _database_filename;
+        std::string _posterior_database_filename;
+        bool _retain_posterior_rank;
+        std::vector< ABC::Mat2D > _particle_metrics;
+        std::vector< ABC::Mat2D > _particle_parameters;
+        std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
+        std::vector< std::vector<double> > _weights;
+        bool use_mvn_noise;
+        bool use_pls_filtering;
+
+        //mpi specific variables
+        ABC::MPI_par *_mp;
+
+
 };
 
 AbcSmcBuilder<void> DefaultBuilder = new AbcSmcBuilder<void>();
+
+vector<ABC::float_type> undefined_simulator(
+    vector<ABC::float_type> /**/, const unsigned long int rng_seed /**/,
+    const unsigned long int serial /**/, const ABC::MPI_par* /**/
+) {
+    std::cerr << "Error: simulator function not defined" << std::endl;
+    exit(-9000);
+};
 
 class AbcSmc {
     public:
@@ -196,9 +236,11 @@ class AbcSmc {
         vector<int> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
         //int _next_predictive_prior_size;
         //int _predictive_prior_size; // number of particles that will be used to inform predictive prior
-        vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
-        bool use_simulator;
+        vector<ABC::float_type> (*_simulator) (
+            vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*
+        ) = undefined_simulator;
 
+        // TODO: this approach can be replaced with some other changes to make executable filenames into a simulator
         std::optional<std::string> _executable_filename;
         
         bool resume_flag;
