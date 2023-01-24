@@ -250,8 +250,10 @@ class AbcSmc {
             _pls_training_fraction = f;
         }
 
-        void set_executable( std::string name ) { _simulator = new AbcExec(name); }
-        void set_simulator(AbcSimF * simulator) { _simulator = new AbcFPtr(simulator); }
+        void set_simulation(AbcSimFun * abcsf) { _simulator = abcsf; }
+        void set_executable(std::string cmd) { set_simulation(new AbcExec(cmd)); }
+        void set_simulator(AbcSimF * simulator) { set_simulation(new AbcFPtr(simulator)); }
+        void set_simulator(std::string soname) { set_simulation(new AbcFPtr(soname.c_str())); }
 
         void set_database_filename( std::string name ) { _database_filename = name; }
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }

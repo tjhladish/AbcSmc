@@ -25,7 +25,7 @@ struct AbcSimUnset : AbcSimFun {
 
 typedef vector<ABC::float_type> AbcSimF(vector<ABC::float_type>, const unsigned long int, const unsigned long int, const ABC::MPI_par*);
 
-inline AbcSimF * loadSO(char * target) {
+inline AbcSimF * loadSO(const char * target) {
     void* handle = dlopen(target, RTLD_LAZY);
     if (!handle) {
         std::cerr << "Failed to open simulator object: " << target << " ; " << dlerror() << std::endl;
@@ -42,8 +42,8 @@ inline AbcSimF * loadSO(char * target) {
 
 struct AbcFPtr : AbcSimFun {
     AbcSimF* fptr;
-    AbcFPtr(AbcSimF* _fptr) : fptr(_fptr) { }
-    AbcFPtr(char* target) : fptr(loadSO(target)) { }
+    AbcFPtr(AbcSimF * _fptr) : fptr(_fptr) { }
+    AbcFPtr(const char * target) : fptr(loadSO(target)) { }
     vector<ABC::float_type> operator()(
       vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
     ) const {
