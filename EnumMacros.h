@@ -4,6 +4,7 @@
 // provide pieces for stringify-ing Event<...>
 #include <string>
 #include <iostream>
+#include <cstdlib>
 
 // defining these macros to reduce language noise
 // TODO: do this the "right" way i.e. port FOR_EACH ala https://www.scs.stanford.edu/~dm/blog/va-opt.html
@@ -62,7 +63,7 @@ inline ET hidden_fs<ET>(const std::string &estr) { \
   ifblock \
   STRTOE(CONCAT(N_,ET)) { \
     std::cerr << "Failed to parse " << #ET << " from: " << estr << " - exiting." << std::endl; \
-    exit(-1); \
+    std::exit(-1); \
   }\
 };
 

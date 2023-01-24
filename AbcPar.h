@@ -15,6 +15,18 @@
 
 #include "EnumMacros.h"
 
+struct AbcVal {
+    AbcVal(std::string nm, std::string snm = "") : name(nm), short_name(snm.empty() ? nm : snm) { };
+
+    std::string get_name() const { return name; };
+    std::string get_short_name() const { return short_name; };
+
+    private:
+        std::string name;
+        std::string short_name;
+
+};
+
 #define NUMTYPE(M,SM) M(NumericType,SM(INT) SM(FLOAT))
 CONSTRUCTENUM(NUMTYPE)
 
@@ -24,13 +36,25 @@ CONSTRUCTENUM(PARTYPE)
 #define XFORM(M,SM) M(TransformType,SM(NONE) SM(POW_10) SM(LOGISTIC))
 CONSTRUCTENUM(XFORM)
 
+struct Metric : public AbcVal {
+
+    Metric(std::string s, std::string ss, NumericType n, double val) : AbcVal(s, ss), ntype(n), obs_val(val) {};
+
+    NumericType get_numeric_type() const { return ntype; }
+    double get_obs_val() const { return obs_val; }
+
+    private:
+        NumericType ntype;
+        double obs_val;
+};
+
+
 // abstract base class for all Parameters
-struct Parameter {
+struct Parameter : public AbcVal {
 
     // TODO: goal of short name is provide a character limited version
     // worthwhile to trim full name when short name isn't provided?
-    Parameter(std::string nm, std::string snm = "") :
-        name(nm), short_name(snm.empty() ? nm : snm) { };
+    Parameter(std::string nm, std::string snm) : AbcVal(nm, snm) { };
 
     // all Parameters shall be named
     std::string get_name() const { return name; };

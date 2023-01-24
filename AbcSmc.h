@@ -18,22 +18,6 @@
 enum VerboseType { QUIET, VERBOSE };
 enum FilteringType { PLS_FILTERING, SIMPLE_FILTERING };
 
-class Metric {
-    public:
-        Metric() {};
-        Metric(std::string s, std::string ss, NumericType n, double val) : name(s), short_name(ss), ntype(n), obs_val(val) {};
-
-        std::string get_name() const { return name; }
-        std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
-        NumericType get_numeric_type() const { return ntype; }
-        double get_obs_val() const { return obs_val; }
-
-    private:
-        std::string name;
-        std::string short_name;
-        NumericType ntype;
-        double obs_val;
-};
 
 class AbcSmc {
     public:
@@ -215,12 +199,10 @@ class AbcSmc {
         bool read_particle_set( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig );
         bool read_predictive_prior( int t );
 
-        static string _build_sql(const string tag = "", const string type = "", vector<Parameter*>& elements);
-
-        string _build_sql_select_par_string();
-        string _build_sql_select_met_string();
-        string _build_sql_create_par_string(string tag);
-        string _build_sql_create_met_string(string tag);
+        string _build_sql_select_par_string() { return _build_sql(_model_pars, "P.", false); };
+        string _build_sql_select_met_string() { return _build_sql(_model_mets, "M.", false); };
+        string _build_sql_create_par_string() { return _build_sql(_model_pars, "", true); };
+        string _build_sql_create_met_string() { return _build_sql(_model_mets, "", true); };
 
         bool _db_execute_stringstream(sqdb::Db &db, stringstream &ss);
         bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
@@ -249,13 +231,19 @@ class AbcSmc {
         ABC::Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
 
         ABC::Row _z_transform_observed_metrics( ABC::Row& means, ABC::Row& stdevs );
+
+        template<typename ABCVAL>
+        static string _build_sql(vector<ABCVAL*>& elements, const string tag, const bool creating);
+
 };
 
-string AbcSmc::_build_sql(const string tag, const string type, vector<Parameter*>& elements) {
+template<typename ABCVAL>
+string AbcSmc::_build_sql(vector<ABCVAL*>& elements, const string tag, const bool creating) {
     stringstream ss;
     // `tag` should be something like "P." or "par." - it's an SQL qualifier
-    for (size_t i = 0; i < elements.size() - 1; i++) { ss << tag << elements[i]->get_short_name() << " " << type << ","; }
-    ss << _model_pars.back()->get_short_name() << tag << " real ";
+    // so: if tag is non-empty, but doesn't end in `.`, add `.` to it
+    for (size_t i = 0; i < elements.size() - 1; i++) { ss << tag << elements[i]->get_short_name() << (creating ? " real" : "") << ", "; }
+    ss << tag << elements.back()->get_short_name() << (creating ? " real" : "");
     return ss.str();
 }
 
