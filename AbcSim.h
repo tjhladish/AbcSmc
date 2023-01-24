@@ -24,6 +24,7 @@ struct AbcSimUnset : AbcSimFun {
 };
 
 typedef vector<ABC::float_type> AbcSimF(vector<ABC::float_type>, const unsigned long int, const unsigned long int, const ABC::MPI_par*);
+
 inline AbcSimF * loadSO(char * target) {
     void* handle = dlopen(target, RTLD_LAZY);
     if (!handle) {
@@ -32,8 +33,7 @@ inline AbcSimF * loadSO(char * target) {
     }
     auto simf = (AbcSimF*)dlsym(handle, "simulator");
     if(!simf) {
-        std::cerr << "Failed to find 'simulator' function in " <<
-        target << " ; " << dlerror() << std::endl;
+        std::cerr << "Failed to find 'simulator' function in " << target << " ; " << dlerror() << std::endl;
         dlclose(handle);
         exit(102);
     }
@@ -63,7 +63,7 @@ struct AbcExec : AbcSimFun {
         for (auto par : pars) { execcom += " " + ABC::toString(par); }
         auto retval = ABC::exec(command);
         if (retval == "ERROR" or retval == "") {
-            cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << endl;
+            std::cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << std::endl;
             particle_success = false;
         }
         stringstream ss;
