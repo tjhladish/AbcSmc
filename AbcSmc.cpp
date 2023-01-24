@@ -121,24 +121,29 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
 
 template<typename NT>
 vector<NT> sequence(const Json::Value pardata) {
-    if (pardata.isMember("vals")) {
-        return as_vector<NT>(pardata["vals"]);
-    } 
-    NT st = extract(pardata["par1"]);
-    vector<NT> res;
-    NT step;
-    size_t increments;
+    // if the parameter provides the options, use them
+    if (pardata.isMember("pars")) {
+        if (pardata.isMember("par1") or pardata.isMember("par2") or pardata.isMember("step") or pardata.isMember("incs")) {
+            std::cerr << "Warning: using `pars` parameter, but other sequence options provided." << std::endl;
+        }
+        return as_vector<NT>(pardata["pars"]);
+    } else {
+        NT st = extract(pardata["par1"]);
+        vector<NT> res;
+        NT step;
+        size_t increments;
 
-    if (pardata.isMember("step") or pardata.isMember("incs")) {
-        // figure out number of steps & step size
-        // then sequence = start + 0:N * del
-    } else if (pardata.isMember("par1") and pardata.isMember("par2")) {
-        assert(par1 < par2);
-        NT del = par2 - par1;
-        // assume step size of one
+        if (pardata.isMember("step") or pardata.isMember("incs")) {
+            // figure out number of steps & step size
+            // then sequence = start + 0:N * del
+        } else if (pardata.isMember("par1") and pardata.isMember("par2")) {
+            assert(par1 < par2);
+            NT del = par2 - par1;
+            // assume step size of one
+        }
+        std::cerr << "Failed to parse sequence." << std::endl;
+        return res;
     }
-    std::cerr << "Failed to parse sequence." << std::endl;
-    return res;
 };
 
 Parameter * parse_transform(Parameter * base, const Json::Value transdata) {
@@ -726,8 +731,8 @@ bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed
             particle_success = false;
         }
         met = as_row(met_vec);
-    } else if (use_executable) {
-        string command = _executable_filename;
+    } else if (_executable_filename.has_value()) {
+        string command = _executable_filename.value();
         for (int j = 0; j<npar(); j++) { command += " " + toString(par[j]); }
 
         string retval = exec(command);
@@ -757,61 +762,62 @@ bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed
 // if Metric isa Parameter, then we can use the same function for both
 // in fact, we could probably use the same function for all of these
 // and this can be made a static const function in AbcSmc
-string AbcSmc::_build_sql_create_par_string( string tag = "" ) {
-    stringstream ss;
-    for (int i = 0; i<npar()-1; i++) { ss << _model_pars[i]->get_short_name() << tag << " real, "; }
-    ss << _model_pars.back()->get_short_name() << tag << " real ";
-    return ss.str();
-}
+// string AbcSmc::_build_sql_create_par_string( string tag = "" ) {
+//     stringstream ss;
+//     for (int i = 0; i<npar()-1; i++) { ss << _model_pars[i]->get_short_name() << tag << " real, "; }
+//     ss << _model_pars.back()->get_short_name() << tag << " real ";
+//     return ss.str();
+// }
 
 
-string AbcSmc::_build_sql_create_met_string( string tag = "" ) {
-    stringstream ss;
-    for (int i = 0; i<nmet()-1; i++) { ss << _model_mets[i]->get_short_name() << tag << " real, "; }
-    ss << _model_mets.back()->get_short_name() << tag << " real ";
-    return ss.str();
-}
+// string AbcSmc::_build_sql_create_met_string( string tag = "" ) {
+//     stringstream ss;
+//     for (int i = 0; i<nmet()-1; i++) { ss << _model_mets[i]->get_short_name() << tag << " real, "; }
+//     ss << _model_mets.back()->get_short_name() << tag << " real ";
+//     return ss.str();
+// }
 
 
-string AbcSmc::_build_sql_select_par_string( string tag = "" ) {
-    stringstream ss;
-    for (int i = 0; i<npar()-1; i++) { ss << "P." << _model_pars[i]->get_short_name() << tag << ", "; }
-    ss << "P." << _model_pars.back()->get_short_name() << tag << " ";
-    return ss.str();
-}
+// string AbcSmc::_build_sql_select_par_string( string tag = "" ) {
+//     stringstream ss;
+//     for (int i = 0; i<npar()-1; i++) { ss << "P." << _model_pars[i]->get_short_name() << tag << ", "; }
+//     ss << "P." << _model_pars.back()->get_short_name() << tag << " ";
+//     return ss.str();
+// }
 
 
-string AbcSmc::_build_sql_select_met_string() {
-    stringstream ss;
-    for (int i = 0; i<nmet()-1; i++) { ss << "M." << _model_mets[i]->get_short_name() << ", "; }
-    ss << "M." << _model_mets.back()->get_short_name() << " ";
-    return ss.str();
-}
+// string AbcSmc::_build_sql_select_met_string() {
+//     stringstream ss;
+//     for (int i = 0; i<nmet()-1; i++) { ss << "M." << _model_mets[i]->get_short_name() << ", "; }
+//     ss << "M." << _model_mets.back()->get_short_name() << " ";
+//     return ss.str();
+// }
 
-string AbcSmc::_
+// string AbcSmc::_
 
 bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
     bool db_success = false;
+    std::string emsg;
     try {
-        db.Query("BEGIN EXCLUSIVE;").Next();
-        for (unsigned int i = 0; i < update_buffer.size(); ++i) {
-            db.Query(update_buffer[i].c_str()).Next();
+        db_success = db.Query("BEGIN EXCLUSIVE;").Next();
+        for (auto update_stmt : update_buffer) { 
+            db_success &&= db.Query(update_stmt.c_str()).Next(); 
         }
-        db_success = true;
+    } catch (const sqdb::Exception& e) { // catch the sqdb-specific exception
+        emsg = e.GetErrorMsg();
+    } catch (const exception& e) { // catch other exceptions
+        emsg = e.what();
+    }
+    if (db_success) { // if success, commit the transaction
         db.CommitTransaction();
-    } catch (const Exception& e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed query:" << endl;
-        for (unsigned int i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
-    } catch (const exception& e) {
+    } else { // if failure, rollback the transaction & issue error message
         db.RollbackTransaction();
         cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
+        cerr << emsg << endl;
         cerr << "Failed query:" << endl;
         for (unsigned int i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
     }
+
     return db_success;
 }
 

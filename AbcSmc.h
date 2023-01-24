@@ -12,12 +12,47 @@
 #include <functional>
 #include <type_traits>
 #include <cmath>
+#include <optional>
 
 #include "AbcPar.h"
 
 enum VerboseType { QUIET, VERBOSE };
 enum FilteringType { PLS_FILTERING, SIMPLE_FILTERING };
 
+// this provides a reference object to build, which can then be used to initialize an AbcSmc object
+// then e.g. AbcJson(configfile).build() => yields an AbcSmc object
+// and then a future AbcYAML(configfile).build() => yields an AbcSmc object
+// and ... (etc other types of config file specifications)
+// also suggests a standard input to a e.g. AbcJson.serialize() method
+template<typename T>
+struct AbcSmcBuilder {
+
+    AbcSmc build() {
+        return new AbcSmc();
+    };
+
+    virtual void parse<T>(T & /*config*/) {};
+
+    protected:
+        size_t num_smc_sets = 0;
+        float pls_training_fraction = 0.5;
+        
+        use_simulator = true;
+        // *if* an executable provided, then use that
+        std::optional<std::string> _executable_filename = std::nullopt;
+
+        bool resume_flag = false;
+        std::optional<std::string> resume_directory = std::nullopt;
+
+        bool use_transformed_pars = false;
+        bool retain_posterior_rank = true;
+        bool use_mvn_noise = false;
+        bool use_pls_filtering = true;
+        ABC::MPI_par *mp = NULL;
+
+};
+
+AbcSmcBuilder<void> DefaultBuilder = new AbcSmcBuilder<void>();
 
 class AbcSmc {
     public:
@@ -25,7 +60,6 @@ class AbcSmc {
             _num_smc_sets = 0;
             _pls_training_fraction = 0.5;
             use_simulator = true;
-            use_executable = false;
             resume_flag = false;
             resume_directory = "";
             use_transformed_pars = false;
@@ -37,7 +71,6 @@ class AbcSmc {
 
         AbcSmc( ABC::MPI_par &mp ) {
             _mp = &mp;
-            use_executable = false;
             use_simulator = false;
             resume_flag = false;
             resume_directory = "";
@@ -45,6 +78,8 @@ class AbcSmc {
             use_mvn_noise = false;
             use_pls_filtering = true;
         };
+
+        friend AbcSmcBuilder::build();
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
         size_t get_smc_iterations() { return _num_smc_sets; }
@@ -86,7 +121,7 @@ class AbcSmc {
             _pls_training_fraction = f;
         }
 
-        void set_executable( std::string name ) { _executable_filename = name; use_executable = true; }
+        void set_executable( std::string name ) { _executable_filename = name; }
         void set_simulator(vector<ABC::float_type> (*simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*)) { _simulator = simulator; use_simulator = true; }
         void set_database_filename( std::string name ) { _database_filename = name; }
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
@@ -146,23 +181,26 @@ class AbcSmc {
         vector<double> get_doubled_variance(int t) const { return doubled_variance[t]; }
 
     private:
+        // stateful variables
         vector<vector<double>> doubled_variance;
         ABC::Mat2D X_orig;
         ABC::Mat2D Y_orig;
+
+        // TODO: desire Parameters *not* be stateful, but they are currently
         std::vector<Parameter*> _model_pars;
         std::vector<Metric*> _model_mets;
+ 
         int _num_smc_sets;
         vector<int> _smc_set_sizes;
-        //int _num_particles;
         float _pls_training_fraction;
-        //int _pls_training_set_size;
         vector<int> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
         //int _next_predictive_prior_size;
         //int _predictive_prior_size; // number of particles that will be used to inform predictive prior
         vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
         bool use_simulator;
-        std::string _executable_filename;
-        bool use_executable;
+
+        std::optional<std::string> _executable_filename;
+        
         bool resume_flag;
         bool use_transformed_pars;
         std::string resume_directory;
@@ -193,7 +231,7 @@ class AbcSmc {
         void _print_particle_table_header();
         long double calculate_nrmse(vector<ABC::Col> posterior_mets);
 
-        void set_resume( bool res ) { resume_flag = res; }
+        void set_resume( bool res ) { assert(resume_directory.has_value()); resume_flag = res; }
         bool resume() { return resume_flag; }
         void set_resume_directory( std::string res_dir ) { resume_directory = res_dir; }
         bool read_particle_set( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig );
