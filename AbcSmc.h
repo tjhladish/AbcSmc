@@ -7,6 +7,7 @@
 #include "AbcUtil.h"
 #include "sqdb.h"
 #include <json/json.h>
+#include "AbcSim.h"
 
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
@@ -191,8 +192,6 @@ class AbcSmc {
             //_predictive_prior_fraction = 0.05;
             //_predictive_prior_size = 0;
             //_next_predictive_prior_size = 0;
-            use_simulator = true;
-            use_executable = false;
             resume_flag = false;
             resume_directory = "";
             use_transformed_pars = false;
@@ -204,8 +203,6 @@ class AbcSmc {
 
         AbcSmc( ABC::MPI_par &mp ) {
             _mp = &mp;
-            use_executable = false;
-            use_simulator = false;
             resume_flag = false;
             resume_directory = "";
             use_transformed_pars = false;
@@ -253,8 +250,9 @@ class AbcSmc {
             _pls_training_fraction = f;
         }
 
-        void set_executable( std::string name ) { _executable_filename = name; use_executable = true; }
-        void set_simulator(vector<ABC::float_type> (*simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*)) { _simulator = simulator; use_simulator = true; }
+        void set_executable( std::string name ) { _simulator = new AbcExec(name); }
+        void set_simulator(AbcSimF * simulator) { _simulator = new AbcFPtr(simulator); }
+
         void set_database_filename( std::string name ) { _database_filename = name; }
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
         void set_retain_posterior_rank( std::string retain_rank ) { _retain_posterior_rank = (retain_rank == "true"); }
@@ -308,8 +306,8 @@ class AbcSmc {
             return p;
         }
 
-        int npar() { return _model_pars.size(); }
-        int nmet() { return _model_mets.size(); }
+        size_t npar() { return _model_pars.size(); }
+        size_t nmet() { return _model_mets.size(); }
 
     private:
         ABC::Mat2D X_orig;
@@ -324,10 +322,8 @@ class AbcSmc {
         vector<int> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
         //int _next_predictive_prior_size;
         //int _predictive_prior_size; // number of particles that will be used to inform predictive prior
-        vector<ABC::float_type> (*_simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*);
-        bool use_simulator;
-        std::string _executable_filename;
-        bool use_executable;
+        AbcSimFun * _simulator = new AbcSimUnset();
+
         bool resume_flag;
         bool use_transformed_pars;
         std::string resume_directory;

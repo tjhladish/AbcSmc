@@ -726,38 +726,12 @@ void AbcSmc::_particle_worker() {
 
 
 bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed, const unsigned long int serial) {
-//cerr << par << endl;
-    bool particle_success = true;
-    if (use_simulator) {
-        vector<float_type> met_vec = _simulator( as_vector(par), rng_seed, serial, _mp );
-        if ((signed) met_vec.size() != nmet()) {
-            cerr << "ERROR: simulator function returned the wrong number of metrics: expected " << nmet() << ", received " << met_vec.size() << endl;
-            particle_success = false;
-        }
-        met = as_row(met_vec);
-    } else if (use_executable) {
-        string command = _executable_filename;
-        for (int j = 0; j<npar(); j++) { command += " " + toString(par[j]); }
-
-        string retval = exec(command);
-        if (retval == "ERROR" or retval == "") {
-            cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << endl;
-            particle_success = false;
-        }
-        stringstream ss;
-        ss.str(retval);
-
-        for (int j = 0; j<nmet(); j++) {
-            if (particle_success) {
-                ss >> met[j];
-            } else {
-                met[j] = numeric_limits<float_type>::min();
-            }
-        }
-    } else {
-        cerr << "ERROR: A pointer to a simulator function (prefered) or an external simulator executable must be defined.\n";
-        particle_success = false;
+    vector<float_type> met_vec = (*_simulator)( as_vector(par), rng_seed, serial, _mp );
+    bool particle_success = (met_vec.size() == nmet());
+    if (!particle_success) {
+        cerr << "ERROR: simulator function returned the wrong number of metrics: expected " << nmet() << ", received " << met_vec.size() << endl;
     }
+    met = as_row(met_vec);
     return particle_success;
 }
 
