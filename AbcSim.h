@@ -43,7 +43,8 @@ inline AbcSimF * loadSO(const char * target) {
 struct AbcFPtr : AbcSimFun {
     AbcSimF* fptr;
     AbcFPtr(AbcSimF * _fptr) : fptr(_fptr) { }
-    AbcFPtr(const char * target) : fptr(loadSO(target)) { }
+    AbcFPtr(const char * target) : AbcFPtr(loadSO(target)) { }
+    AbcFPtr(const std::string target) : AbcFPtr(target.c_str()) { }
     vector<ABC::float_type> operator()(
       vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
     ) const {

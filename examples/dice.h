@@ -11,7 +11,7 @@ using namespace std;
 // wrapper for simulator
 // must take vector of doubles (ABC paramters)
 // and return vector of doubles (ABC metrics)
-std::vector<double> simulator(
+extern "C" std::vector<double> simulator(
     std::vector<double> args,
     const unsigned long int rng_seed,
     const unsigned long int serial,
@@ -19,14 +19,14 @@ std::vector<double> simulator(
 ) {
     const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
     gsl_rng_set(RNG, rng_seed); // seed the rng using sys time and the process id
-    int par1 = (int) args[0]; // number of dice
-    int par2 = (int) args[1]; // number of sides on dice
+    const size_t par1 = static_cast<size_t>(args[0]); // number of dice
+    const size_t par2 = static_cast<size_t>(args[1]); // number of sides on dice
 
     vector<double> results(par1,0);
 
     int sum = 0;
 
-    for (int i = 0; i<par1; i++) {
+    for (size_t i = 0; i < par1; i++) {
         results[i] = gsl_rng_uniform_int(RNG, par2) + 1;
         sum += results[i];
     }
