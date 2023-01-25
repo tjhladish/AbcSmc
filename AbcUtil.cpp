@@ -37,7 +37,7 @@ namespace ABC {
   }
 
 
-  string get_nth_line(const std::string& filename, int N) {
+  string get_nth_line(const std::string& filename, const size_t N) {
        ifstream in(filename.c_str());
 
        string s;
@@ -45,7 +45,7 @@ namespace ABC {
        //s.reserve(some_reasonable_max_line_length);
 
        //skip N lines
-       for(int i = 0; i < N; ++i) std::getline(in, s);
+       for(size_t i = 0; i < N; ++i) std::getline(in, s);
 
        std::getline(in,s);
        return s;
@@ -94,26 +94,13 @@ namespace ABC {
       return stdevs;
   }
 
+  template<typename MATTYPE>
+  size_t find_dominant_ev (const EigenSolver<MATTYPE> es) {
+    auto eig_val = es.eigenvalues();
+    float_type m = 0;
+    size_t idx = 0;
 
-  float_type dominant_eigenvalue( EigenSolver<Mat2Dc> es ){
-      Colc  ev = es.eigenvalues();
-      float_type m = 0;
-
-      for (int i = 0; i<ev.size(); i++) {
-          if (imag(ev[i]) == 0) {
-              if (abs(ev[i]) > m) m = abs(ev[i]);
-          }
-      }
-      return m;
-  }
-
-
-  Colc dominant_eigenvector( EigenSolver<Mat2D> es ){
-      Colc eig_val = es.eigenvalues();
-      float_type m = 0;
-      int idx = 0;
-
-      for (int i = 0; i<eig_val.size(); i++) {
+      for (size_t i = 0; i < static_cast<size_t>(eig_val.size()); i++) {
           if (imag(eig_val[i]) == 0) {
               if (abs(eig_val[i]) > m) {
                   m = abs(eig_val[i]);
@@ -121,7 +108,18 @@ namespace ABC {
               }
           }
       }
-      return es.eigenvectors().col(idx);
+    return idx;
+  }
+
+  float_type dominant_eigenvalue( EigenSolver<Mat2Dc> es ){
+    const size_t idx = find_dominant_ev(es);
+    return abs(es.eigenvalues()[idx].real());
+  }
+
+
+  Colc dominant_eigenvector( EigenSolver<Mat2D> es ){
+    const size_t idx = find_dominant_ev(es);
+    return es.eigenvectors().col(idx);
   }
 
   Mat2D colwise_z_scores( const Mat2D& mat) {
@@ -338,12 +336,8 @@ namespace ABC {
 
   float_type max(const Col data) {
       assert(data.size() > 0);
-      float_type m = data[0];
-      for (int i = 1; i< data.size(); i++) {
-          const float_type v = data[i];
-          if (v > m) m = v;
-      }
-      return m;
+      auto colv = data.reshaped();
+      return *std::max_element(colv.begin(), colv.end());
   }
 
   float_type skewness(const Col data) {
@@ -380,7 +374,7 @@ namespace ABC {
       Position current, next;
       current = (Position) _mc_pos(data[0], m);
       if (current == AT) mc++; // increment if we're starting at the median
-      for (int i = 1; i < data.size(); ++i) {
+      for (size_t i = 1; i < static_cast<size_t>(data.size()); ++i) {
           next = (Position) _mc_pos(data[i], m);
           if (next != current and current != AT) mc++; // just crossed or touched the median
           current = next;
@@ -430,7 +424,7 @@ namespace ABC {
       // Weights must sum to 1!!
       double running_sum = 0;
       double r = gsl_rng_uniform(rng);
-      for (unsigned int i = 0; i<weights.size(); i++) {
+      for (size_t i = 0; i<weights.size(); i++) {
           running_sum += weights[i];
           if (r<=running_sum) return i;
       }
@@ -439,14 +433,14 @@ namespace ABC {
   }
 
   Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng) {
-      const int npar = _model_pars.size();
+      const size_t npar = _model_pars.size();
       Row par_values = Row::Zero(npar);
       gsl_vector* result = gsl_vector_alloc(npar);
       bool success = false;
       while (not success) {
           success = true;
           gsl_ran_multivariate_gaussian(rng, mu, L, result);
-          for (int j = 0; j < npar; j++) {
+          for (size_t j = 0; j < npar; j++) {
               par_values[j] = gsl_vector_get(result, j);
               if (_model_pars[j]->get_numeric_type() == INT) par_values(j) = (double) ((int) (par_values(j) + 0.5));
               if (par_values[j] < _model_pars[j]->get_prior_min() or par_values[j] > _model_pars[j]->get_prior_max()) success = false;
@@ -601,7 +595,7 @@ namespace ABC {
       assert( x.size() == s.size() );
       assert( x.size() == a.size() );
       vector<LogisticDatum*> data;
-      for (unsigned int i = 0; i < x.size(); ++i) {
+      for (size_t i = 0; i < x.size(); ++i) {
           LogisticDatum* datum = new LogisticDatum(x[i], (unsigned) s[i], (unsigned) a[i]);
           data.push_back(datum);
       }
@@ -611,7 +605,7 @@ namespace ABC {
   LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector< pair<int,int> > &y) {
       assert( x.size() == y.size() );
       vector<LogisticDatum*> data;
-      for (unsigned int i = 0; i < x.size(); ++i) {
+      for (size_t i = 0; i < x.size(); ++i) {
           LogisticDatum* datum = new LogisticDatum(x[i], (unsigned) y[i].first, (unsigned) y[i].second);
           data.push_back(datum);
       }

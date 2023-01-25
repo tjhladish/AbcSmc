@@ -160,7 +160,7 @@ namespace ABC {
 
   inline vector<float_type> as_vector(const Row data) {
       vector<float_type> vec(data.size());
-      for (int i = 0; i < data.size(); i++) vec[i] = data[i];
+      for (size_t i = 0; i < static_cast<size_t>(data.size()); i++) vec[i] = data[i];
       return vec;
   }
 

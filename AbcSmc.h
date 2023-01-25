@@ -286,7 +286,7 @@ class AbcSmc {
 
         void process_predictive_prior_arguments(Json::Value par);
         bool parse_config(std::string conf_filename);
-        void report_convergence_data(int);
+        void report_convergence_data(const size_t t);
 
 
         bool build_database(const gsl_rng* RNG);
@@ -316,7 +316,7 @@ class AbcSmc {
         ABC::Mat2D Y_orig;
         std::vector<Parameter*> _model_pars;
         std::vector<Metric*> _model_mets;
-        int _num_smc_sets;
+        size_t _num_smc_sets;
         vector<int> _smc_set_sizes;
         //int _num_particles;
         float _pls_training_fraction;
