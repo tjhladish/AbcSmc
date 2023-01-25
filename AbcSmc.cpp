@@ -1,4 +1,4 @@
-#include "AbcSmc.h"
+
 #include "pls.h"
 #include "RunningStat.h"
 
@@ -127,8 +127,11 @@ bool AbcSmc::parse_config(string conf_filename) {
         exit(1);
     }
 
-    string executable = par.get("executable", "").asString();
+    // TODO these should be mutually exclusive options
+    std::string executable = par.get("executable", "").asString();
     if (executable != "") { set_executable( executable ); }
+    std::string sharedobj = par.get("shared", "").asString();
+    if (sharedobj != "") { set_simulator( sharedobj ); }
 
     string resume_dir = par.get("resume_directory", "").asString();
     if (resume_dir != "") {

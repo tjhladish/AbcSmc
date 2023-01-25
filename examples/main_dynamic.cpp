@@ -10,7 +10,7 @@ int main(int argc, char* argv[]) {
 
     AbcSmc* abc = new AbcSmc();
     abc->parse_config(args.config_file);
-    // simulator should be set from config file
+    // simulator should be set from config file via shared object
 
     size_t set_count = abc->get_smc_iterations();
 
@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
         } 
 
         if (args.simulate_db) {
-            abc->simulate_next_particles(args.buffer_size);
+            abc->simulate_next_particles(buffer_size);
         }
     }
 

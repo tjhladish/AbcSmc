@@ -4,6 +4,8 @@
 
 #include <iostream>
 #include <gsl/gsl_rng.h>
+#include <cstring>
+#include <unistd.h>
 
 const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 
@@ -15,7 +17,7 @@ void usage(const std::string cmd) {
     std::cerr << "\t       ./" << cmd << " config.json --process --simulate -n <number of simulations per database write>" << std::endl << std::endl;
 }
 
-size_t check_args(const std::string cmd, int argc) {
+void check_args(const std::string cmd, int argc) {
     if (not (argc == 3 or argc == 5 or argc == 6) ) {
         usage(cmd);
         exit(100);
@@ -32,7 +34,7 @@ struct CLIArgs {
 
 CLIArgs parse_args(std::string cmd, int argc, char* argv[]) {
     CLIArgs args;
-    args.config_file = string(argv[1]);
+    args.config_file = std::string(argv[1]);
 
     for (int i = 2; i < argc;  i++ ) {
         if ( strcmp(argv[i], "--process") == 0  ) {

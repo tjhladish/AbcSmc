@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
         } 
 
         if (args.simulate_db) {
-            abc->simulate_next_particles(args.buffer_size);
+            abc->simulate_next_particles(buffer_size);
         }
     }
 

@@ -5,6 +5,7 @@
     "pls_training_fraction"     : 0.5,
     "noise"                     : "MULTIVARIATE",
 
+    "shared"                    : "./dice.so",
     "database_filename"             : "dice_dynamic.sqlite",
 
     "parameters" : [

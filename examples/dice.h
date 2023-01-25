@@ -9,8 +9,6 @@
 
 using namespace std;
 
-const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
-
 // wrapper for simulator
 // must take vector of doubles (ABC paramters)
 // and return vector of doubles (ABC metrics)
