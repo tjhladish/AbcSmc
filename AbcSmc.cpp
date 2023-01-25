@@ -524,7 +524,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         int particle_counter = 0;
         vector<pair<int, int> > posterior_pairs;
         while (s2.Next()) {
-            int offset = 3; // first values are J.serial, J.particleIdx, J.rank
+            size_t offset = 3; // first values are J.serial, J.particleIdx, J.rank
             const int serial = s2.GetField(0);
             const int particle_idx = s2.GetField(1);
             const int posterior_rank = s2.GetField(2);
@@ -533,9 +533,9 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             assert(particle_counter == particle_idx);
             serials[t][particle_counter] = serial;
             if (posterior_rank > -1) posterior_pairs.push_back(make_pair( posterior_rank, particle_idx ) );
-            for(int i=offset; i < offset + npar(); i++) _particle_parameters[t](particle_counter,i-offset) = (double) s2.GetField(i);
+            for(size_t i = offset; i < offset + npar(); i++) _particle_parameters[t](particle_counter,i-offset) = (double) s2.GetField(i);
             offset += npar();
-            for(int i=offset; i < offset + nmet(); i++) _particle_metrics[t](particle_counter,i-offset) = (double) s2.GetField(i);
+            for(size_t i = offset; i < offset + nmet(); i++) _particle_metrics[t](particle_counter,i-offset) = (double) s2.GetField(i);
             particle_counter++;
         }
 
@@ -896,8 +896,8 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     db.Query("BEGIN EXCLUSIVE;").Next();
 
     Row pars;
-    const int set_num = 0;
-    const int num_particles = get_num_particles(set_num);
+    const size_t set_num = 0;
+    const size_t num_particles = get_num_particles(set_num);
     for (size_t i = 0; i < num_particles; i++) {
         int posterior_rank = -1;
         pars = sample_priors(RNG, posterior, posterior_rank);
