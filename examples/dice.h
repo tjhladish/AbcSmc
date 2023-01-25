@@ -1,12 +1,15 @@
-#include <iostream>
-#include <gsl/gsl_rng.h>
+
+#ifndef DICE_H
+#define DICE_H
+
 #include <gsl/gsl_statistics_double.h>
-#include <math.h>
-#include <unistd.h>
 #include <vector>
+#include "examples.h"
 #include "AbcUtil.h"
 
 using namespace std;
+
+const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 
 // wrapper for simulator
 // must take vector of doubles (ABC paramters)
@@ -17,7 +20,7 @@ extern "C" std::vector<double> simulator(
     const unsigned long int serial,
     const ABC::MPI_par* /* mp */
 ) {
-    const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
+    
     gsl_rng_set(RNG, rng_seed); // seed the rng using sys time and the process id
     const size_t par1 = static_cast<size_t>(args[0]); // number of dice
     const size_t par2 = static_cast<size_t>(args[1]); // number of sides on dice
@@ -41,3 +44,5 @@ extern "C" std::vector<double> simulator(
 
     return metrics;
 };
+
+#endif // DICE_H

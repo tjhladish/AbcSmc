@@ -1,30 +1,39 @@
 #include <dlfcn.h>
 #include "AbcSmc.h"
-
-void usage() {
-    std::cerr << std::endl << 
-    "\tUsage: ./abc_dynamic config.json simulator.so" <<
-    std::endl << std::endl;
-}
-
+#include "examples.h"
 
 int main(int argc, char* argv[]) {
 
-    if (not (argc == 3 or argc == 5) ) {
-        usage();
-        exit(100);
-    }
+    check_args("abc_dynamic", argc);
 
-    int buffer_size = 1;
-
-    if ( argc == 5 ) {
-        buffer_size = atoi(argv[4]);
-    }
+    CLIArgs args = parse_args("abc_dynamic", argc, argv);
 
     AbcSmc* abc = new AbcSmc();
-    abc->parse_config(string(argv[1]));
-    abc->set_simulation(new AbcFPtr(argv[2]));
-    abc->simulate_next_particles(buffer_size);
+    abc->parse_config(args.config_file);
+    // simulator should be set from config file
+
+    size_t set_count = abc->get_smc_iterations();
+
+    for (size_t i = 0; i < set_count; ++i) {
+        auto buffer_size = args.buffer_size;
+
+        if (args.do_all) {
+            buffer_size = abc->get_num_particles(i, QUIET);
+        }
+
+        if (args.process_db) {
+            gsl_rng_set(RNG, time(NULL) * getpid()); // seed the rng using sys time and the process id
+            abc->process_database(RNG);
+        } 
+
+        if (args.simulate_db) {
+            abc->simulate_next_particles(args.buffer_size);
+        }
+    }
+
+    if (args.do_all) {
+        abc->process_database(RNG); // one last time, to get the posterior
+    }
 
     return 0;
 }

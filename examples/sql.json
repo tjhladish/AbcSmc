@@ -5,7 +5,7 @@
     "pls_training_fraction"     : 0.5,
     "noise"                     : "MULTIVARIATE",
 
-    "database_filename"             : "dice.sqlite",
+    "database_filename"             : "dice_sql.sqlite",
 
     "parameters" : [
         {"name"       : "number of dice",

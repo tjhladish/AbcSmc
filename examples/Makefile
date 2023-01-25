@@ -31,6 +31,10 @@ dice_game: dice_game.cpp dice.h
 
 dice.so: dice.cpp dice.h ../libabc.a
 	$(CPP) $(SHAREDFLAGS) $< -o $@ $(ABC_INC)
+	nm -gD $@
+
+run_%: abc_% | %.json
+	./$< $| --process --simulate -n 5
 
 clean:
 	$(MAKE) -C $(ABCDIR) clean
