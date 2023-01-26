@@ -54,4 +54,29 @@ CLIArgs parse_args(std::string cmd, int argc, char* argv[]) {
     return args;
 };
 
+void abc_loop(AbcSmc * abc, CLIArgs& args, const gsl_rng * RNG) {
+    size_t set_count = abc->get_smc_iterations();
+
+    for (size_t i = 0; i < set_count; ++i) {
+        auto buffer_size = args.buffer_size;
+
+        if (args.do_all) {
+            buffer_size = abc->get_num_particles(i, QUIET);
+        }
+
+        if (args.process_db) {
+            gsl_rng_set(RNG, time(NULL) * getpid()); // seed the rng using sys time and the process id
+            abc->process_database(RNG);
+        } 
+
+        if (args.simulate_db) {
+            abc->simulate_next_particles(buffer_size);
+        }
+    }
+
+    if (args.do_all) {
+        abc->process_database(RNG); // one last time, to get the posterior
+    }
+};
+
 #endif // EXAMPLES_H

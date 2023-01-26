@@ -1,9 +1,19 @@
-CPP:=g++
+# This Makefile demonstrates different options for using the AbcSmc library
+# with different approaches to the simulator.
+# AbcSmc supports three different ways to use the simulator:
+#
+# 1. The simulator is compiled into the executable (main_sql.cpp / abc_sql).
+# 2. The simulator is compiled into a shared library (dice.cpp / dice.so) and loaded dynamically (main_dynamic.cpp / abc_dynamic).
+# 3. The simulator is compiled into a separate executable (dice_game.cpp) and invoked externally (main_exec.cpp / abc_exec).
+#
 
-CFLAGS = -O2 -Wall -std=c++17 --pedantic
+
+CPP := g++
+
+CFLAGS := -O2 -Wall -std=c++17 --pedantic
 SHAREDFLAGS := $(CFLAGS) -fPIC -shared -rdynamic -Wl,--no-as-needed
 
-MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+MKFILE_PATH = $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR := $(MKFILE_PATH)/..
 SQLDIR := $(ABCDIR)/sqdb
 JSNDIR := $(ABCDIR)/jsoncpp/include
@@ -31,7 +41,7 @@ dice_game: dice_game.cpp dice.h
 
 dice.so: dice.cpp dice.h ../libabc.a
 	$(CPP) $(SHAREDFLAGS) $< -o $@ $(ABC_INC)
-	nm -gD $@
+	nm -gD $@ | grep simulator # check that the simulator is exported
 
 run_%: abc_% | %.json
 	./$< $| --process --simulate -n 5

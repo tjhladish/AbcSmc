@@ -1,7 +1,7 @@
 -include local.mk
 
-CPP:=g++
-CFLAGS = -O2 -Wall -std=c++17 --pedantic -fPIC
+CPP := g++
+CFLAGS := -O2 -Wall -std=c++17 --pedantic -fPIC
 MKFILE_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR = $(MKFILE_PATH)
 SQLDIR  = $(ABCDIR)/sqdb
