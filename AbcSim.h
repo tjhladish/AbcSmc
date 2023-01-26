@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <dlfcn.h>
+#include <fstream>
 
 using std::vector;
 
@@ -60,24 +61,35 @@ struct AbcExec : AbcSimFun {
       vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
     ) const {
         auto execcom = command;
-        bool particle_success;
+        vector<ABC::float_type> mets;
         for (auto par : pars) { execcom += " " + ABC::toString(par); }
-        auto retval = ABC::exec(command);
+
+        FILE* pipe = popen(execcom.c_str(), "r");
+        if (!pipe) {
+            std::cerr << "ERROR: Unable to create pipe to " << execcom << std::endl;
+            exit(103);
+        }
+
+        char buffer[512];
+        std::string retval = "";
+        while(!feof(pipe)) {
+            if(fgets(buffer, 512, pipe) != NULL) { retval += buffer; }
+        }
+        pclose(pipe);
+
         if (retval == "ERROR" or retval == "") {
             std::cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << std::endl;
-            particle_success = false;
-        }
-        stringstream ss;
-        ss.str(retval);
-        vector<ABC::float_type> mets;
-// TODO deal with empty mets on !particle_success
-        if (particle_success) {
+        } else {
+            stringstream ss;
+            ss.str(retval);
+            // TODO deal with empty mets on !particle_success
             ABC::float_type met;
             while(ss >> met) mets.push_back(met);
         }
 
         return mets;
     }
+
 };
 
 #endif

@@ -6,6 +6,7 @@
 #include <gsl/gsl_rng.h>
 #include <cstring>
 #include <unistd.h>
+#include "AbcSmc.h"
 
 const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 
@@ -54,7 +55,8 @@ CLIArgs parse_args(std::string cmd, int argc, char* argv[]) {
     return args;
 };
 
-void abc_loop(AbcSmc * abc, CLIArgs& args, const gsl_rng * RNG) {
+template<typename ABC>
+void abc_loop(ABC * abc, CLIArgs& args, const gsl_rng * RNG) {
     size_t set_count = abc->get_smc_iterations();
 
     for (size_t i = 0; i < set_count; ++i) {

@@ -6,7 +6,6 @@
 #include <vector>
 #include <assert.h>
 #include <iomanip>
-#include <fstream>
 #include <Eigen/Eigenvalues>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
@@ -122,8 +121,6 @@ namespace ABC {
   float optimize_box_cox (const Col data, float lambda_min, float lambda_max, float step);
 
   float optimize_box_cox (const Col data);
-
-  std::string exec(std::string cmd);
 
   template <typename T>
   inline void cerr_vector(std::vector<T> & my_vector, std::string sep = " ") {
