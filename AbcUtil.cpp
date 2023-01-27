@@ -404,22 +404,6 @@ namespace ABC {
       return optimize_box_cox(data, -5, 5, 0.1);
   }
 
-  std::string exec(std::string cmd) {
-      FILE* pipe = popen(cmd.c_str(), "r");
-      if (!pipe) {
-          cerr << "ERROR: Unable to create pipe to " << cmd << endl;
-          return "ERROR";
-      }
-      char buffer[512];
-      std::string result = "";
-      while(!feof(pipe)) {
-          if(fgets(buffer, 512, pipe) != NULL)
-              result += buffer;
-      }
-      pclose(pipe);
-      return result;
-  }
-
   int gsl_rng_nonuniform_int(vector<double>& weights, const gsl_rng* rng) {
       // Weights must sum to 1!!
       double running_sum = 0;
