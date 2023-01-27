@@ -1,6 +1,6 @@
 {
-    "smc_iterations" : 5,
-    "num_samples"    : [300, 500, 500, 1000, 2000],
+    "smc_iterations" : 8,
+    "num_samples"    : [300, 400, 500, 750, 500],
     "predictive_prior_size" : 100,
     "pls_training_fraction"     : 0.5,
     "noise"                     : "MULTIVARIATE",
@@ -27,11 +27,11 @@
     "metrics" : [     
         {"name"       : "sum",
          "num_type"   : "INT",
-         "value"      : 38},
+         "value"      : 146},
 
         {"name"       : "sd",
          "num_type"   : "FLOAT",
-         "value"      : 1.75412}
+         "value"      :  2.85044}
     ]
 }
                                        

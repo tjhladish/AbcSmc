@@ -44,7 +44,8 @@ dice.so: dice.cpp dice.h ../libabc.a
 	nm -gD $@ | grep simulator # check that the simulator is exported
 
 run_%: abc_% | %.json
-	./$< $| --process --simulate -n 5
+	./$< $| --process --simulate -n 1000
+	./$< $| --process
 
 clean:
 	$(MAKE) -C $(ABCDIR) clean
