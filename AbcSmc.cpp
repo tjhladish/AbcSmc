@@ -550,7 +550,11 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             const int next_pred_prior_size = get_pred_prior_size(t);
             _predictive_prior.push_back( vector<int>(next_pred_prior_size) );
             cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
-            _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+            if (use_pls_filtering) {
+                _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+            } else {
+                _filter_particles_simple( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+            }
             vector<string> update_strings(next_pred_prior_size);
             for (int i = 0; i < next_pred_prior_size; i++) { // best to worst performing particle in posterior?
                 const int particle_idx = _predictive_prior[t][i];
@@ -1124,61 +1128,7 @@ void AbcSmc::_print_particle_table_header() {
     for (int i = 0; i<nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
 }
 
-PLS_Model AbcSmc::run_PLS(Mat2D &X, Mat2D &Y, const int pls_training_set_size, const int ncomp) {
-    // Run PLS
-    // Box-Cox transform data -- TODO?
-    //void test_bc( Mat2D );
-    //test_bc(Y_orig);
-
-    const int npred = X.cols();      // number of predictor variables
-    const int nresp = Y.cols();      // number of response variables
-    PLS_Model plsm;
-    plsm.initialize(npred, nresp, ncomp);
-    assert(pls_training_set_size <= X.rows()); // can't train against more observations than we have
-    plsm.plsr(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), KERNEL_TYPE1);
-    return plsm;
-}
-
-PLS_Model AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
-    Row X_sim_means, X_sim_stdev;
-    Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
-    Mat2D Y = colwise_z_scores( Y_orig );
-    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
-
-    const int pls_training_set_size = round(X.rows() * _pls_training_fraction);
-    // TODO -- I think this is a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
-    int ncomp = npar();             // It doesn't make sense to consider more components than model parameters
-    PLS_Model plsm = run_PLS(X, Y, pls_training_set_size, ncomp);
-
-/*
-//P, W, R, Q, T
-cerr << "P:\n" << plsm.P << endl;
-cerr << "W:\n" << plsm.W << endl;
-cerr << "R:\n" << plsm.R << endl;
-cerr << "Q:\n" << plsm.Q << endl;
-cerr << "T:\n" << plsm.T << endl;
-cerr << "coefficients:\n" << plsm.coefficients() << endl;
-*/
-    // A is number of components to use
-    for (int A = 1; A<=ncomp; A++) {
-        // How well did we do with this many components?
-        cerr << setw(2) << A << " components ";
-        cerr << "explained variance: " << plsm.explained_variance(X, Y, A);
-        //cerr << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
-        cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl;
-    }
-
-    const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
-    Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
-    int num_components_used = num_components.maxCoeff();
-    cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
-    cerr << "Using " << num_components_used << " components." << endl;
-
-    // Calculate new, orthogonal metrics (==scores) using the pls model
-    // Is casting as real always safe?
-    Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
-    Mat2D sim_scores = plsm.scores(X, num_components_used).real();
-    Col   distances  = euclidean(obs_scores, sim_scores);
+void AbcSmc::_fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances) {
     vector<int> ranking = ordered(distances);
 
     vector<int>::iterator first = ranking.begin();
@@ -1224,7 +1174,76 @@ cerr << "coefficients:\n" << plsm.coefficients() << endl;
         for (int i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
         for (int i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
     }
+}
 
+void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
+    // x is metrics, y is parameters
+    Row X_sim_means, X_sim_stdev;
+    Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
+    Mat2D Y = colwise_z_scores( Y_orig );
+    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
+
+    Col distances  = euclidean(obs_met, X);
+    _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
+}
+
+PLS_Model AbcSmc::run_PLS(Mat2D &X, Mat2D &Y, const int pls_training_set_size, const int ncomp) {
+    // Run PLS
+    // Box-Cox transform data -- TODO?
+    //void test_bc( Mat2D );
+    //test_bc(Y_orig);
+
+    const int npred = X.cols();      // number of predictor variables
+    const int nresp = Y.cols();      // number of response variables
+    PLS_Model plsm;
+    plsm.initialize(npred, nresp, ncomp);
+    assert(pls_training_set_size <= X.rows()); // can't train against more observations than we have
+    plsm.plsr(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), KERNEL_TYPE1);
+    return plsm;
+}
+
+PLS_Model AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
+    Row X_sim_means, X_sim_stdev;
+    Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
+    Mat2D Y = colwise_z_scores( Y_orig );
+    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
+
+    const int pls_training_set_size = round(X.rows() * _pls_training_fraction);
+    // TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
+    int ncomp = npar();             // It doesn't make sense to consider more components than model parameters
+    PLS_Model plsm = run_PLS(X, Y, pls_training_set_size, ncomp);
+
+/*
+//P, W, R, Q, T
+cerr << "P:\n" << plsm.P << endl;
+cerr << "W:\n" << plsm.W << endl;
+cerr << "R:\n" << plsm.R << endl;
+cerr << "Q:\n" << plsm.Q << endl;
+cerr << "T:\n" << plsm.T << endl;
+cerr << "coefficients:\n" << plsm.coefficients() << endl;
+*/
+    // A is number of components to use
+    for (int A = 1; A<=ncomp; A++) {
+        // How well did we do with this many components?
+        cerr << setw(2) << A << " components ";
+        cerr << "explained variance: " << plsm.explained_variance(X, Y, A);
+        //cerr << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
+        cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl;
+    }
+
+    const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
+    Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
+    int num_components_used = num_components.maxCoeff();
+    cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
+    cerr << "Using " << num_components_used << " components." << endl;
+
+    // Calculate new, orthogonal metrics (==scores) using the pls model
+    // Is casting as real always safe?
+    Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
+    Mat2D sim_scores = plsm.scores(X, num_components_used).real();
+    Col   distances  = euclidean(obs_scores, sim_scores);
+
+    _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
     return plsm;
 }
 
@@ -1391,10 +1410,13 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
             double denominator = 0.0;
             for (int j = 0; j < npar(); j++) {
                 Parameter* par = _model_pars[j];
-                // UNIFORM pars don't require evaluating pdf, since it is the same for all particles
+                const double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
                 if (par->get_prior_type() == NORMAL) {
-                    double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
                     numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
+                } else if (par->get_prior_type() == UNIFORM) {
+                    // The RHS here will be 1 under normal circumstances.  If the prior has been revised during a fit,
+                    // this should throw out values outside of the prior's range
+                    numerator *= (int) (par_value >= par->get_prior_min() and par_value <= par->get_prior_max());
                 }
             }
 

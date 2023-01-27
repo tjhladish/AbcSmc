@@ -32,10 +32,7 @@ SQLOBJECTS  = $(SQLSOURCES:.cpp=.o)
 ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h
 
 default: .all
-.all:  $(LIBJSON) sqlite3.o $(LIBSQL) $(SOURCES) $(LIBABC)
-
-sqlite3.o: $(SQLDIR)/sqlite3.c $(SQLDIR)/sqlite3.h
-	gcc -c $(SQLDIR)/sqlite3.c -I$(SQLDIR)
+.all:  $(LIBJSON) $(LIBSQL) $(SOURCES) $(LIBABC)
 
 ARCHIVE ?= $(AR) -rv
 
@@ -48,8 +45,12 @@ $(LIBJSON): $(JSONOBJECTS)
 $(LIBSQL): $(SQLOBJECTS)
 	$(ARCHIVE) $@ $(SQLOBJECTS)
 
+$(SQLDIR)/sqdb.o: $(addprefix $(SQLDIR)/,sqdb.cpp sqdb.h sqlite3.c sqlite3.h)
+	$(MAKE) -C $(@D) $(@F)
+
 %.o: %.cpp $(ABC_HEADER)
 	$(CPP) $(LIBS) $(CFLAGS) -c $(INCLUDE) $< -o $@
 
 clean:
 	rm -f $(OBJECTS) $(JSONOBJECTS) $(SQLOBJECTS) $(LIBABC) $(LIBJSON) $(LIBSQL)
+	$(MAKE) -C $(SQLDIR) clean

@@ -12,6 +12,7 @@
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
 enum VerboseType {QUIET, VERBOSE};
+enum FilteringType {PLS_FILTERING, SIMPLE_FILTERING};
 
 class Parameter {
     public:
@@ -198,9 +199,20 @@ class AbcSmc {
             use_transformed_pars = false;
             _retain_posterior_rank = true;
             use_mvn_noise = false;
+            use_pls_filtering = true;
             _mp = NULL;
         };
-        AbcSmc( ABC::MPI_par &mp ) { _mp = &mp; use_executable = false; use_simulator = false; resume_flag = false; resume_directory = ""; use_transformed_pars = false; use_mvn_noise = false; };
+
+        AbcSmc( ABC::MPI_par &mp ) {
+            _mp = &mp;
+            use_executable = false;
+            use_simulator = false;
+            resume_flag = false;
+            resume_directory = "";
+            use_transformed_pars = false;
+            use_mvn_noise = false;
+            use_pls_filtering = true;
+        };
 
         void set_smc_iterations(int n) { _num_smc_sets = n; }
         size_t get_smc_iterations() { return _num_smc_sets; }
@@ -259,6 +271,19 @@ class AbcSmc {
             _model_pars.push_back(p);
             return p;
         }
+
+        void set_filtering_type(FilteringType ft) {
+            switch(ft) {
+              case PLS_FILTERING:
+                use_pls_filtering = true; break;
+              case SIMPLE_FILTERING:
+                use_pls_filtering = false; break;
+              default:
+                cerr << "ERROR: Unknown FilteringType: " << ft << endl; exit(-1);
+            }
+        }
+
+        FilteringType get_filtering_type() const { return use_pls_filtering ? PLS_FILTERING : SIMPLE_FILTERING; }
 
         void process_predictive_prior_arguments(Json::Value par);
         bool parse_config(std::string conf_filename);
@@ -321,6 +346,7 @@ class AbcSmc {
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
         std::vector< std::vector<double> > _weights;
         bool use_mvn_noise;
+        bool use_pls_filtering;
 
         //mpi specific variables
         ABC::MPI_par *_mp;
@@ -333,6 +359,8 @@ class AbcSmc {
         void _particle_scheduler(int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG);
         void _particle_worker();
 
+        void _fp_helper (const int t, const ABC::Mat2D &X_orig, const ABC::Mat2D &Y_orig, const int next_pred_prior_size, const ABC::Col& distances);
+        void _filter_particles_simple ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
         PLS_Model _filter_particles ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
         void _print_particle_table_header();
         long double calculate_nrmse(vector<ABC::Col> posterior_mets);

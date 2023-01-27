@@ -26,11 +26,11 @@
     "metrics" : [     
         {"name"       : "sum",
          "num_type"   : "INT",
-         "value"      : 38},
+         "value"      : 146},
 
         {"name"       : "sd",
          "num_type"   : "FLOAT",
-         "value"      : 1.75412}
+         "value"      :  2.85044}
     ]
 }
                                        
