@@ -1,14 +1,12 @@
 #include "AbcSmc.h"
-#include <gsl/gsl_rng.h>
-#include <unistd.h>
 #include "examples.h"
-
-using namespace std;
 
 int main(int argc, char* argv[]) {
 
+    // convenience method for checking arguments / alerting usage; from examples.h
     check_args("abc_exec", argc);
 
+    // convenience method for parsing arguments; from examples.h
     CLIArgs args = parse_args("abc_exec", argc, argv);
 
     AbcSmc* abc = new AbcSmc();
@@ -17,7 +15,7 @@ int main(int argc, char* argv[]) {
     // the simulator file is specified with the "executable" key in the exec.json file.
     // note that this version doesn't need to know anything about dice.h/cpp or dice_game.cpp
 
-    // see examples.h for the core abc loop
+    // convenience method for the core abc application loop; from examples.h
     abc_loop(abc, args, RNG);
 
     return 0;

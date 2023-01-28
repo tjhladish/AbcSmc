@@ -1,13 +1,22 @@
+
+default: all
+
 # This Makefile demonstrates different options for using the AbcSmc library
-# with different approaches to the simulator.
-# AbcSmc supports three different ways to use the simulator:
+# with different approaches to the simulator, as well as a toy simulator for use with AbcSmc.
 #
-# 1. The simulator is compiled into the executable (main_sql.cpp / abc_sql).
+# The toy simulator represents rolling a number dice, all of the same face count, then returns their
+# sum and standard deviation. The simulator is defined in dice.h, and follows the function signature
+# required by AbcSmc.
+#
+# AbcSmc supports three different ways to use a simulator:
+#
+# 1. The simulator is compiled into an executable along with the library (main_sql.cpp / abc_sql).
 # 2. The simulator is compiled into a shared library (dice.cpp / dice.so) and loaded dynamically (main_dynamic.cpp / abc_dynamic).
 # 3. The simulator is compiled into a separate executable (dice_game.cpp) and invoked externally (main_exec.cpp / abc_exec).
 #
+# This Makefile demonstrates how to compile and run each of these options.
 
-
+# make variable definitions
 CPP := g++
 
 CFLAGS := -O2 -Wall -std=c++17 --pedantic
@@ -28,21 +37,25 @@ ABC_INC := -I$(ABCDIR) -I$(SQLDIR) -I$(JSNDIR) -L$(ABCDIR) -labc $(GSL_LIB) -ldl
 #GSL_INC = -I$$HPC_GSL_INC
 #endif
 
-default: ../libabc.a dice_game dice.so abc_sql abc_dynamic abc_exec
+all: ../libabc.a dice_game dice.so abc_sql abc_dynamic abc_exec
 
 ../libabc.a:
 	$(MAKE) -C $(ABCDIR) -f Makefile
 
+# this defines how to make the various abc_(sql|exec|dynamic) executables
 abc_%: main_%.cpp ../libabc.a
 	$(CPP) $(CFLAGS) $< -o $@ $(ABC_INC)
 
+# this defines how to make the dice_game executable for use with abc_exec 
 dice_game: dice_game.cpp dice.h
 	$(CPP) $(CFLAGS) $< -o $@ $(ABC_INC) $(GSL_LIB)
 
+# this defines how to make the dice.so shared library for use with abc_dynamic
 dice.so: dice.cpp dice.h ../libabc.a
 	$(CPP) $(SHAREDFLAGS) $< -o $@ $(ABC_INC)
 	nm -gD $@ | grep simulator # check that the simulator is exported
 
+# this provides a convenient way to run all of the abc_(sql|exec|dynamic) executables
 run_%: abc_% | %.json
 	./$< $| --process --simulate -n 1000
 	./$< $| --process

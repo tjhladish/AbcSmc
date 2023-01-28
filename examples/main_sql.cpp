@@ -1,26 +1,23 @@
-#include "AbcSmc.h"
 
-#include <gsl/gsl_rng.h>
-#include <gsl/gsl_statistics_double.h>
-#include <math.h>
-#include <unistd.h>
+#include "AbcSmc.h"
 #include "examples.h"
 #include "dice.h"
 
-using namespace std;
-
 int main(int argc, char* argv[]) {
 
+    // convenience method for checking arguments / alerting usage; from examples.h
     check_args("abc_sql", argc);
 
+    // convenience method for parsing arguments; from examples.h
     CLIArgs args = parse_args("abc_sql", argc, argv);
 
     AbcSmc* abc = new AbcSmc();
     abc->parse_config(args.config_file);
-    // simulator defined in dice.h, which is compiled into this executable
     abc->set_simulator(simulator);
+    // simulator defined in dice.h and compiled into this executable
+    // when using this approach, the simulator must be manually set
 
-    // see examples.h for the core abc loop
+    // convenience method for the core abc application loop; from examples.h
     abc_loop(abc, args, RNG);
 
     return 0;
