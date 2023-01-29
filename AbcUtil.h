@@ -36,20 +36,6 @@ namespace ABC {
       int iterations;
   };
 
-  #ifdef USING_MPI
-  #include <mpi.h>
-  struct MPI_par {
-      MPI_Comm comm;
-      MPI_Info info;
-      int mpi_size, mpi_rank;
-  };
-  #else
-  struct MPI_par {
-      const static int mpi_size = 1;
-      const static int mpi_rank = 0;
-  };
-  #endif
-
   //using namespace std;
   using namespace Eigen;
 
@@ -132,14 +118,6 @@ namespace ABC {
   inline void cout_vector(std::vector<T> & my_vector, std::string sep = " ") {
       for (size_t i = 0; i < my_vector.size() - 1; i++ ) std::cout << my_vector[i] << sep;
       std::cout << my_vector.back();
-  }
-
-
-  template <typename T>
-  inline std::string toString (const T& t) {
-      std::stringstream ss;
-      ss << t;
-      return ss.str();
   }
 
   inline double uniform_pdf(double a, double b) { return 1.0 / fabs(b-a); }
