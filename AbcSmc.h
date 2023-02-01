@@ -7,12 +7,8 @@
 #include "AbcUtil.h"
 #include "sqdb.h"
 #include <json/json.h>
-#include <limits>
-#include <algorithm>
-#include <functional>
-#include <type_traits>
-#include <cmath>
-#include <optional>
+#include "AbcSim.h"
+#include "pls.h"
 
 #include "AbcPar.h"
 
@@ -99,7 +95,10 @@ class AbcSmc {
         AbcSmc() {
             _num_smc_sets = 0;
             _pls_training_fraction = 0.5;
-            use_simulator = true;
+            //int _pls_training_set_size = 0;
+            //_predictive_prior_fraction = 0.05;
+            //_predictive_prior_size = 0;
+            //_next_predictive_prior_size = 0;
             resume_flag = false;
             resume_directory = "";
             use_transformed_pars = false;
@@ -161,8 +160,11 @@ class AbcSmc {
             _pls_training_fraction = f;
         }
 
-        void set_executable( std::string name ) { _executable_filename = name; }
-        void set_simulator(vector<ABC::float_type> (*simulator) (vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*)) { _simulator = simulator; use_simulator = true; }
+        void set_simulation(AbcSimFun * abcsf) { _simulator = abcsf; }
+        void set_executable(std::string cmd) { set_simulation(new AbcExec(cmd)); }
+        void set_simulator(AbcSimF * simulator) { set_simulation(new AbcFPtr(simulator)); }
+        void set_simulator(std::string soname) { set_simulation(new AbcFPtr(soname.c_str())); }
+
         void set_database_filename( std::string name ) { _database_filename = name; }
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
         void set_retain_posterior_rank( std::string retain_rank ) { _retain_posterior_rank = (retain_rank == "true"); }
@@ -192,12 +194,13 @@ class AbcSmc {
 
         void process_predictive_prior_arguments(Json::Value par);
         bool parse_config(std::string conf_filename);
-        void report_convergence_data(int);
+        void report_convergence_data(const size_t t);
 
 
         bool build_database(const gsl_rng* RNG);
         bool process_database(const gsl_rng* RNG);
-        bool read_SMC_set_from_database (int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
+//        bool read_SMC_set_from_database (int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
+        bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
         bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
         bool fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serial, vector<ABC::Row> &par_mat, vector<unsigned long int> &seeds);
@@ -217,8 +220,10 @@ class AbcSmc {
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
 
-        // doubled variance of particles
-        vector<double> get_doubled_variance(int t) const { return doubled_variance[t]; }
+        PLS_Model run_PLS(ABC::Mat2D&, ABC::Mat2D&, const int pls_training_set_size, const int ncomp);
+        std::string get_database_filename()                 { return _database_filename; }
+        std::vector< ABC::Mat2D > get_particle_parameters() { return _particle_parameters; }
+        std::vector< ABC::Mat2D > get_particle_metrics()    { return _particle_metrics; }
 
     private:
         // stateful variables
@@ -229,20 +234,14 @@ class AbcSmc {
         // TODO: desire Parameters *not* be stateful, but they are currently
         std::vector<Parameter*> _model_pars;
         std::vector<Metric*> _model_mets;
- 
-        int _num_smc_sets;
+        size_t _num_smc_sets;
         vector<int> _smc_set_sizes;
         float _pls_training_fraction;
         vector<int> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
         //int _next_predictive_prior_size;
         //int _predictive_prior_size; // number of particles that will be used to inform predictive prior
-        vector<ABC::float_type> (*_simulator) (
-            vector<ABC::float_type>, const unsigned long int rng_seed, const unsigned long int serial, const ABC::MPI_par*
-        ) = undefined_simulator;
+        AbcSimFun * _simulator = new AbcSimUnset();
 
-        // TODO: this approach can be replaced with some other changes to make executable filenames into a simulator
-        std::optional<std::string> _executable_filename;
-        
         bool resume_flag;
         bool use_transformed_pars;
         std::string resume_directory;
@@ -269,7 +268,7 @@ class AbcSmc {
 
         void _fp_helper (const int t, const ABC::Mat2D &X_orig, const ABC::Mat2D &Y_orig, const int next_pred_prior_size, const ABC::Col& distances);
         void _filter_particles_simple ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
-        void _filter_particles ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
+        PLS_Model _filter_particles ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
         void _print_particle_table_header();
         long double calculate_nrmse(vector<ABC::Col> posterior_mets);
 
@@ -289,7 +288,7 @@ class AbcSmc {
         bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
 
         bool _update_sets_table(sqdb::Db &db, int t);
-        bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
+        //bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
         ABC::Col euclidean( ABC::Row obs_met, ABC::Mat2D sim_met );
 

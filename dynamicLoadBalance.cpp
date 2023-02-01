@@ -57,7 +57,7 @@ void master() {
       &mpi_size);       /* #processes in application */
     
     double work[ntasks*npar];
-    for (int i = 0; i<ntasks*npar; ++i) work[i] = i;
+    for (size_t i = 0; i < ntasks*npar; ++i) work[i] = i;
 
     // Seed the slaves.
     for (rank = 1; rank < mpi_size; ++rank) {
@@ -134,7 +134,7 @@ void slave() {
                  &status);
         
         // make sure to reset the buffers as needed
-        for (int i = 0; i<nmet; i++) result[i] = 0.0;
+        for (size_t i = 0; i < nmet; i++) result[i] = 0.0;
         
         // Check the tag of the received message.
         if (status.MPI_TAG == DIETAG) {

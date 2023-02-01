@@ -1,0 +1,4 @@
+*.sqlite
+abc_*
+dice_game
+*.so
