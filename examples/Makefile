@@ -39,7 +39,9 @@ ABC_INC := -I$(ABCDIR) -I$(SQLDIR) -I$(JSNDIR) -L$(ABCDIR) -labc $(GSL_LIB) -ldl
 
 all: ../libabc.a dice_game dice.so abc_sql abc_dynamic abc_exec
 
-../libabc.a:
+.FORCE:
+
+../libabc.a: .FORCE
 	$(MAKE) -C $(ABCDIR) -f Makefile
 
 # this defines how to make the various abc_(sql|exec|dynamic) executables
@@ -58,7 +60,6 @@ dice.so: dice.cpp dice.h ../libabc.a
 # this provides a convenient way to run all of the abc_(sql|exec|dynamic) executables
 run_%: abc_% | %.json
 	./$< $| --process --simulate -n 1000
-	./$< $| --process
 
 clean:
 	$(MAKE) -C $(ABCDIR) clean
