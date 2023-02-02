@@ -43,7 +43,7 @@ all: ../libabc.a dice_game dice.so abc_sql abc_dynamic abc_exec
 	$(MAKE) -C $(ABCDIR) -f Makefile
 
 # this defines how to make the various abc_(sql|exec|dynamic) executables
-abc_%: main_%.cpp ../libabc.a
+abc_%: main_%.cpp examples.h ../libabc.a
 	$(CPP) $(CFLAGS) $< -o $@ $(ABC_INC)
 
 # this defines how to make the dice_game executable for use with abc_exec 
