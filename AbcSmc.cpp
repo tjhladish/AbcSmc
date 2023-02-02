@@ -931,10 +931,16 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 }
 
 
-bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss, vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds) {
+bool AbcSmc::fetch_particle_parameters(
+    sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
+    vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds,
+    const bool verbose
+) {
     bool db_success = false;
     try {
-        cerr << "Attempting: " << select_pars_ss.str() << endl;
+        if (verbose) {
+            std::cerr << "Attempting: " << select_pars_ss.str() << std::endl;
+        }
         db.Query("BEGIN EXCLUSIVE;").Next();
         cerr << "Lock obtained" << endl;
         Statement s = db.Query(select_pars_ss.str().c_str());
@@ -956,7 +962,9 @@ bool AbcSmc::fetch_particle_parameters(sqdb::Db &db, stringstream &select_pars_s
         }
 
         for (string job_str: job_strs) {
-            cerr << "Attempting: " << job_str << endl;
+            if (verbose) {
+                std::cerr << "Attempting: " << job_str << std::endl;
+            }
             db.Query(job_str.c_str()).Next(); // update jobs table
         }
 
@@ -1017,7 +1025,10 @@ bool AbcSmc::simulate_particle_by_serial(const int serial_req) { return simulate
 
 bool AbcSmc::simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
 
-bool AbcSmc::simulate_next_particles(const int n, const int serial_req, const int posterior_req) { // defaults are 1, -1, -1
+bool AbcSmc::simulate_next_particles(
+    const int n, const int serial_req, const int posterior_req
+) { // defaults are 1, -1, -1
+    bool verbose = n == 1;
     assert(n == 1 or (serial_req == -1 and posterior_req == -1));
     assert(serial_req == -1 or posterior_req == -1);
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
@@ -1049,7 +1060,7 @@ bool AbcSmc::simulate_next_particles(const int n, const int serial_req, const in
 
     vector<int> serials;
     vector<unsigned long int> rng_seeds;
-    bool ok_to_continue = fetch_particle_parameters(db, select_ss, update_ss, serials, par_mat, rng_seeds);
+    bool ok_to_continue = fetch_particle_parameters(db, select_ss, update_ss, serials, par_mat, rng_seeds, verbose);
     vector<string> update_metrics_strings;
     vector<string> update_jobs_strings;
     stringstream ss;
