@@ -10,9 +10,9 @@ default: all
 #
 # AbcSmc supports three different ways to use a simulator:
 #
-# 1. The simulator is compiled into an executable along with the library (main_sql.cpp / abc_sql).
-# 2. The simulator is compiled into a shared library (dice.cpp / dice.so) and loaded dynamically (main_dynamic.cpp / abc_dynamic).
-# 3. The simulator is compiled into a separate executable (dice_game.cpp) and invoked externally (main_exec.cpp / abc_exec).
+# 1. The simulator is compiled into an executable along with the library (main_sql.cpp --> abc_sql).
+# 2. The simulator is compiled into a shared library (dice.cpp / dice.so) and loaded dynamically (main_dynamic.cpp --> abc_dynamic).
+# 3. The simulator is compiled into a separate executable (dice_game.cpp) and invoked externally (main_exec.cpp --> abc_exec).
 #
 # This Makefile demonstrates how to compile and run each of these options.
 
