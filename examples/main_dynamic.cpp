@@ -1,6 +1,7 @@
 #include "AbcSmc.h"
 #include "examples.h"
 
+// demonstrates how to use the abc library with a dynamic simulator
 int main(int argc, char* argv[]) {
 
     // convenience method for checking arguments / alerting usage; from examples.h

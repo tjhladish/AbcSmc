@@ -3,6 +3,7 @@
 #include "examples.h"
 #include "dice.h"
 
+// demonstrates how to use the abc library compiled with a static simulator
 int main(int argc, char* argv[]) {
 
     // convenience method for checking arguments / alerting usage; from examples.h

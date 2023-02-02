@@ -15,6 +15,11 @@ default: all
 # 3. The simulator is compiled into a separate executable (dice_game.cpp) and invoked externally (main_exec.cpp / abc_exec).
 #
 # This Makefile demonstrates how to compile and run each of these options.
+#
+# AbcSmc also supports two different modes of analysis: fitting versus projection/scenario analysis.
+# These modes are governed by the keys present in the json configuration file.
+#
+# TODO: TJH, what's the conceptual distinction here?
 
 # make variable definitions
 CPP := g++
@@ -37,12 +42,14 @@ ABC_INC := -I$(ABCDIR) -I$(SQLDIR) -I$(JSNDIR) -L$(ABCDIR) -labc $(GSL_LIB) -ldl
 #GSL_INC = -I$$HPC_GSL_INC
 #endif
 
-all: ../libabc.a dice_game dice.so abc_sql abc_dynamic abc_exec
+DEMOS := sql exec dynamic pseudo
+
+all: ../libabc.a dice_game dice.so $(addprefix abc_,$(DEMOS))
 
 ../libabc.a:
 	$(MAKE) -C $(ABCDIR) -f Makefile
 
-# this defines how to make the various abc_(sql|exec|dynamic) executables
+# this defines how to make the various abc_(sql|exec|dynamic|pseudo) executables
 abc_%: main_%.cpp ../libabc.a
 	$(CPP) $(CFLAGS) $< -o $@ $(ABC_INC)
 
@@ -55,11 +62,13 @@ dice.so: dice.cpp dice.h ../libabc.a
 	$(CPP) $(SHAREDFLAGS) $< -o $@ $(ABC_INC)
 	nm -gD $@ | grep simulator # check that the simulator is exported
 
-# this provides a convenient way to run all of the abc_(sql|exec|dynamic) executables
+# this provides a convenient way to run all of the abc_(sql|exec|dynamic|pseudo) executables
 run_%: abc_% | %.json
 	./$< $| --process --simulate -n 1000
 	./$< $| --process
 
 clean:
+	rm -f $(addprefix abc_,$(DEMOS)) dice_game dice.so
+
+cleanall: clean
 	$(MAKE) -C $(ABCDIR) clean
-	rm -f abc_sql abc_exec abc_dynamic dice_game dice.so

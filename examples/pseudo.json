@@ -1,11 +1,6 @@
 {
     "smc_iterations" : 1,
     "num_samples"    : 50,
-    "predictive_prior_fraction" : 0.1,
-    "pls_training_fraction"     : 0.5,
-
-    "particle_basefilename"         : "dice_particles",
-    "predictive_prior_basefilename" : "dice_predictive_prior",
 
     "parameters" : [
         {"name"       : "number of dice",
@@ -13,23 +8,25 @@
          "dist_type"  : "PSEUDO",
          "num_type"   : "INT",
          "par1"       : 1,
-         "par2"       : 30},
+         "par2"       : 31,
+         "step"       : 5
+        },
 
         {"name"       : "number of sides",
          "short_name" : "sides",
          "dist_type"  : "PSEUDO",
          "num_type"   : "INT",
-         "par1"       : 2,
-         "par2"       : 6}
+         "pars"       : [2, 4, 6, 10]
+        }
     ],                
 
     "metrics" : [     
         {"name"       : "sum",
-         "num_type"   : "INT",
-         "value"      : 10},
+         "num_type"   : "INT"
+        },
 
         {"name"       : "sd",
-         "num_type"   : "FLOAT",
-         "value"      : 5}
+         "num_type"   : "FLOAT"
+        }
     ]
 }

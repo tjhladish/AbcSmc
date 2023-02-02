@@ -1,20 +1,21 @@
 #include "AbcSmc.h"
 #include "examples.h"
 
-// demonstrates how to use the abc library with an executable simulator
+// demonstrates how to use the abc library with more various pseudo-parameter specifications
 int main(int argc, char* argv[]) {
 
     // convenience method for checking arguments / alerting usage; from examples.h
-    check_args("abc_exec", argc);
+    check_args("abc_pseudo", argc);
 
     // convenience method for parsing arguments; from examples.h
-    CLIArgs args = parse_args("abc_exec", argc, argv);
+    CLIArgs args = parse_args("abc_pseudo", argc, argv);
 
     AbcSmc* abc = new AbcSmc();
     abc->parse_config(args.config_file);
     // simulator should be set from config file - no need to invoke abc->set_simulator()
-    // the simulator file is specified with the "executable" key in the exec.json file.
-    // note that this version doesn't need to know anything about dice.h/cpp or dice_game.cpp
+    // the simulator file is specified with the "shared" key in the dynamic.json file.
+    // note that for this approach, this executable doesn't need to know anything
+    // about dice.h/cpp or dice_game.cpp
 
     // convenience method for the core abc application loop; from examples.h
     abc_loop(abc, args, RNG);
