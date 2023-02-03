@@ -3,6 +3,7 @@
 #include <gsl/gsl_statistics_double.h>
 #include <math.h>
 #include <unistd.h>
+#include "dice.h"
 
 using namespace std;
 
@@ -15,18 +16,12 @@ int main(int argc, char** argv) {
 
     const gsl_rng* RNG = gsl_rng_alloc (gsl_rng_taus2);
     gsl_rng_set(RNG, time (NULL) * getpid());
-    int par1 = atoi(argv[1]); // number of dice
-    int par2 = atoi(argv[2]); // number of sides on dice
+    double par1 = atof(argv[1]); // number of dice
+    double par2 = atof(argv[2]); // number of sides on dice
 
-    double *results = new double[par1];
-    int sum = 0;
-
-    for (int i = 0; i<par1; i++) {
-        results[i] = gsl_rng_uniform_int(RNG, par2) + 1;
-        sum += results[i];
-    }
+    std::vector<double> results = simulator({ par1, par2 }, time (NULL) * getpid(), 0, nullptr);
     
-    cout << sum << " " << gsl_stats_sd(results, 1, par1) << endl;
+    cout << results[0] << " " << results[1] << endl;
 
     return 0;
 }

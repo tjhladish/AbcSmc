@@ -1,11 +1,9 @@
 {
-    "smc_iterations" : 8,
-    "num_samples"    : [300,500,500,1000,2000],
-    "predictive_prior_size" : 100,
+    "smc_iterations" : 30,
+    "num_samples"    : [300, 500, 500, 750, 1000],
+    "predictive_prior_fraction" : 0.5,
     "pls_training_fraction"     : 0.5,
     "noise"                     : "MULTIVARIATE",
-
-    "database_filename"             : "dice.sqlite",
 
     "parameters" : [
         {"name"       : "number of dice",
@@ -13,24 +11,29 @@
          "dist_type"  : "UNIFORM",
          "num_type"   : "INT",
          "par1"       : 1,
-         "par2"       : 1000},
+         "par2"       : 1000
+        },
 
         {"name"       : "number of sides",
          "short_name" : "sides",
          "dist_type"  : "UNIFORM",
          "num_type"   : "INT",
          "par1"       : 1,
-         "par2"       : 1000}
-    ],                
+         "par2"       : 1000
+        }
+    ],             
 
-    "metrics" : [     
+    "metrics" : [   
         {"name"       : "sum",
          "num_type"   : "INT",
-         "value"      : 146},
+         "value"      : 44,
+         "comment"   : "From rolling 13 dice, 8 sides each."
+        },
 
         {"name"       : "sd",
          "num_type"   : "FLOAT",
-         "value"      :  2.85044}
+         "value"      :  2.39925,
+         "comment"   : "From rolling 13 dice, 8 sides each."
+        }
     ]
 }
-                                       

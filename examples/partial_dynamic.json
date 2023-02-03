@@ -1,0 +1,4 @@
+{
+    "shared"            : "./dice.so",
+    "database_filename" : "abc_dynamic.sqlite"
+}

@@ -6,7 +6,6 @@
 #include <vector>
 #include <assert.h>
 #include <iomanip>
-#include <fstream>
 #include <Eigen/Eigenvalues>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
@@ -36,20 +35,6 @@ namespace ABC {
       int status;
       int iterations;
   };
-
-  #ifdef USING_MPI
-  #include <mpi.h>
-  struct MPI_par {
-      MPI_Comm comm;
-      MPI_Info info;
-      int mpi_size, mpi_rank;
-  };
-  #else
-  struct MPI_par {
-      const static int mpi_size = 1;
-      const static int mpi_rank = 0;
-  };
-  #endif
 
   //using namespace std;
   using namespace Eigen;
@@ -123,8 +108,6 @@ namespace ABC {
 
   float optimize_box_cox (const Col data);
 
-  std::string exec(std::string cmd);
-
   template <typename T>
   inline void cerr_vector(std::vector<T> & my_vector, std::string sep = " ") {
       for (size_t i = 0; i < my_vector.size() - 1; i++ ) std::cerr << my_vector[i] << sep;
@@ -135,14 +118,6 @@ namespace ABC {
   inline void cout_vector(std::vector<T> & my_vector, std::string sep = " ") {
       for (size_t i = 0; i < my_vector.size() - 1; i++ ) std::cout << my_vector[i] << sep;
       std::cout << my_vector.back();
-  }
-
-
-  template <typename T>
-  inline std::string toString (const T& t) {
-      std::stringstream ss;
-      ss << t;
-      return ss.str();
   }
 
   inline double uniform_pdf(double a, double b) { return 1.0 / fabs(b-a); }
@@ -160,7 +135,7 @@ namespace ABC {
 
   inline vector<float_type> as_vector(const Row data) {
       vector<float_type> vec(data.size());
-      for (int i = 0; i < data.size(); i++) vec[i] = data[i];
+      for (size_t i = 0; i < static_cast<size_t>(data.size()); i++) vec[i] = data[i];
       return vec;
   }
 
