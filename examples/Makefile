@@ -41,6 +41,9 @@ DEMOS := sql dynamic exec
 
 all: ../libabc.a dice_game dice.so $(addprefix abc_,$(DEMOS))
 
+abc_%.json: reference.json %_partial.json
+	gojq -s add $^ > $@
+
 .FORCE:
 
 ../libabc.a: .FORCE
@@ -66,12 +69,16 @@ run_dynamic: | dice.so
 run_exec: | dice_game
 
 # this provides a convenient way to run all of the abc_(sql|exec|dynamic) executables
-run_%: abc_% | %.json
-	./$< $| --process --simulate -n 1000
+run_%: abc_% abc_%.json
+	./$^ --process --simulate -n 1000
+
+run_all: $(addprefix run_,$(DEMOS))
+
+.PRECIOUS: abc_%.json abc_%.sqlite abc_%
 
 clean:
 	rm -f $(addprefix abc_,$(DEMOS)) dice_game dice.so
-	rm -f --interactive=once $(addsuffix .sqlite,$(DEMOS))
+	rm -f --interactive=once $(patsubst abc_%.sqlite,$(DEMOS))
 
 cleanall: clean
 	$(MAKE) -C $(ABCDIR) clean

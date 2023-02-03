@@ -1154,16 +1154,16 @@ void AbcSmc::_fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, 
     _print_particle_table_header();
     for (size_t q = 0; q < 5; q++) {
         const int idx = ranking[q];
-        for (size_t i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
-        for (size_t i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
+        for (size_t i = 0; i < static_cast<size_t>(Y_orig.cols()); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
+        for (size_t i = 0; i < static_cast<size_t>(X_orig.cols()); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
     }
 
     cerr << "Worst five:\n";
     _print_particle_table_header();
     for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
         const int idx = ranking[q];
-        for (size_t i = 0; i < Y_orig.cols(); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
-        for (size_t i = 0; i < X_orig.cols(); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
+        for (size_t i = 0; i < static_cast<size_t>(Y_orig.cols()); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
+        for (size_t i = 0; i < static_cast<size_t>(X_orig.cols()); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
     }
 }
 
