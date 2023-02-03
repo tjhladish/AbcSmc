@@ -1,7 +1,4 @@
 
-#include "pls.h"
-#include "RunningStat.h"
-
 #include <iostream>
 #include <cstdio>
 #include <cstring>
@@ -9,6 +6,9 @@
 #include <sstream>
 #include <fstream>
 #include <chrono>
+
+#include "pls.h"
+#include "RunningStat.h"
 #include "AbcSmc.h"
 
 // need a positive int that is very unlikely

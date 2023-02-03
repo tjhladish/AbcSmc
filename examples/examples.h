@@ -56,7 +56,7 @@ CLIArgs parse_args(std::string cmd, int argc, char* argv[]) {
 };
 
 template<typename ABC>
-void abc_inner(ABC * abc, CLIArgs& args, const gsl_rng * RNG, size_t buffer_size) {
+inline void abc_inner(ABC * abc, CLIArgs& args, const gsl_rng * RNG, size_t buffer_size) {
 
     if (args.process_db) {
         gsl_rng_set(RNG, time(NULL) * getpid()); // seed the rng using sys time and the process id

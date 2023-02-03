@@ -37,7 +37,9 @@ ABC_INC := -I$(ABCDIR) -I$(SQLDIR) -I$(JSNDIR) -L$(ABCDIR) -labc $(GSL_LIB) -ldl
 #GSL_INC = -I$$HPC_GSL_INC
 #endif
 
-all: ../libabc.a dice_game dice.so abc_sql abc_dynamic abc_exec
+DEMOS := sql dynamic exec
+
+all: ../libabc.a dice_game dice.so $(addprefix abc_,$(DEMOS))
 
 .FORCE:
 
@@ -57,10 +59,19 @@ dice.so: dice.cpp dice.h ../libabc.a
 	$(CPP) $(SHAREDFLAGS) $< -o $@ $(ABC_INC)
 	nm -gD $@ | grep simulator # check that the simulator is exported
 
+# for the dynamic version, need to make the library
+run_dynamic: | dice.so
+
+# for the executable version, need to make the executable
+run_exec: | dice_game
+
 # this provides a convenient way to run all of the abc_(sql|exec|dynamic) executables
 run_%: abc_% | %.json
 	./$< $| --process --simulate -n 1000
 
 clean:
+	rm -f $(addprefix abc_,$(DEMOS)) dice_game dice.so
+	rm -f --interactive=once $(addsuffix .sqlite,$(DEMOS))
+
+cleanall: clean
 	$(MAKE) -C $(ABCDIR) clean
-	rm -f abc_sql abc_exec abc_dynamic dice_game dice.so
