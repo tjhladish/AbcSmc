@@ -10,6 +10,7 @@
 #include "pls.h"
 #include "RunningStat.h"
 #include "AbcSmc.h"
+#include "AbcJSON.h"
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -38,35 +39,6 @@ bool file_exists(const char *fileName) {
     return infile.good();
 }
 
-
-vector<float> as_float_vector(Json::Value val, string key) { // not worth templating, despite appearances
-    vector<float> extracted_vals;
-    if ( val[key].isDouble() ) {
-        extracted_vals.push_back( val[key].asFloat() );
-    } else if ( val[key].isArray() ) {
-        for (Json::Value jv : val[key]) extracted_vals.push_back( jv.asFloat() );
-    } else {
-        cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting floats or array of floats." << endl;
-        exit(-216);
-    }
-    return extracted_vals;
-}
-
-
-vector<int> as_int_vector(Json::Value val, string key) {
-    vector<int> extracted_vals;
-    if ( val[key].isInt() ) {
-        extracted_vals.push_back( val[key].asInt() );
-    } else if ( val[key].isArray() ) {
-        for (Json::Value jv : val[key]) extracted_vals.push_back( jv.asInt() );
-    } else {
-        cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting ints or array of ints." << endl;
-        exit(-216);
-    }
-    return extracted_vals;
-}
-
-
 void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
     int arg_ct = par.isMember("predictive_prior_fraction") + par.isMember("predictive_prior_size");
     if (arg_ct == 0) {
@@ -76,13 +48,13 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
         cerr << "Error: only one of predictive_prior_fraction and predictive_prior_size may be specified in configuration file." << endl;
         exit(1);
     } else if (par.isMember("predictive_prior_fraction")) {
-        vector<float> ppfs = as_float_vector(par, "predictive_prior_fraction");
+        auto ppfs = as_vector<float>(par, "predictive_prior_fraction");
         if (ppfs.size() > 1 and _smc_set_sizes.size() > 1 and ppfs.size() != _smc_set_sizes.size()) {
             cerr << "Error: If num_samples and predictive_prior_fraction both have length > 1 in configuration file, they must be equal in length." << endl;
             exit(1);
         }
-        vector<int> set_sizes_copy = _smc_set_sizes;
-        const int max_set = max(ppfs.size(), set_sizes_copy.size());
+        vector<size_t> set_sizes_copy = _smc_set_sizes;
+        const size_t max_set = max(ppfs.size(), set_sizes_copy.size());
         ppfs.resize(max_set, ppfs.back());
         set_sizes_copy.resize(max_set, set_sizes_copy.back());
         _predictive_prior_sizes.clear();
@@ -94,7 +66,7 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
             _predictive_prior_sizes.push_back( round(ppfs[i] * set_sizes_copy[i]) );
         }
     } else if (par.isMember("predictive_prior_size")) {
-        _predictive_prior_sizes = as_int_vector(par, "predictive_prior_size");
+        _predictive_prior_sizes = as_vector<size_t>(par, "predictive_prior_size");
         if (_predictive_prior_sizes.size() > 1 and _smc_set_sizes.size() > 1 and _predictive_prior_sizes.size() != _smc_set_sizes.size()) {
             cerr << "Error: If num_samples and predictive_prior_size both have length > 1 in configuration file, they must be equal in length." << endl;
             exit(1);
@@ -141,7 +113,7 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
-    _smc_set_sizes = as_int_vector(par, "num_samples");
+    _smc_set_sizes = as_vector<size_t>(par, "num_samples");
     process_predictive_prior_arguments(par);
     // TODO--allow specification of pred prior size (single value or list of values)
     //set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );

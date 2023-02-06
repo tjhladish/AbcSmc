@@ -328,11 +328,11 @@ class AbcSmc {
         std::vector<Parameter*> _model_pars;
         std::vector<Metric*> _model_mets;
         size_t _num_smc_sets;
-        vector<int> _smc_set_sizes;
+        vector<size_t> _smc_set_sizes;
         //int _num_particles;
         float _pls_training_fraction;
         //int _pls_training_set_size;
-        vector<int> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
+        vector<size_t> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
         //int _next_predictive_prior_size;
         //int _predictive_prior_size; // number of particles that will be used to inform predictive prior
         AbcSimFun * _simulator = new AbcSimUnset();
