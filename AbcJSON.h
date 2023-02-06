@@ -5,6 +5,28 @@
 #include <vector>
 #include <type_traits>
 #include <iostream>
+#include <json/json.h>
+#include <fstream>
+
+Json::Value read_config(const std::string & conf_filename) {
+
+    std::ifstream ifs(conf_filename.c_str());
+    if (not ifs.good()) {
+        std::cerr << "Config file is not good: " << conf_filename << std::endl;
+        exit(1);
+    }
+
+    Json::Value root;
+    Json::Reader reader;
+
+    if (not reader.parse(ifs, root)) {
+        std::cerr << "Failed to parse JSON file: " << conf_filename << std::endl;
+        std::cerr << reader.getFormattedErrorMessages() << std::endl;
+        exit(-214);
+    }
+
+    return root;
+};
 
 template<typename NUMTYPE>
 NUMTYPE extract(const Json::Value & vv) { 
@@ -99,5 +121,59 @@ std::vector<NUMTYPE> parse_pseudo_values(const Json::Value & par) {
         return res;
     };
 };
+
+// parse the predictive prior sizes by wave
+// in projection mode, may be empty; 
+std::vector<size_t> parse_predictive_prior(
+    const Json::Value & root, const std::vector<size_t> & _smc_set_sizes,
+    const bool verbose = false
+) {
+
+    std::vector<size_t> _predictive_prior_sizes;
+
+    if (root.isMember("predictive_prior_fraction") and root.isMember("predictive_prior_size")) {
+        std::cerr << "Error: Only one of predictive_prior_fraction or predictive_prior_size may be specified in configuration file." << std::endl;
+        exit(1);
+    } else if (root.isMember("predictive_prior_fraction")) {
+        if (_smc_set_sizes.size() == 0) {
+            std::cerr << "When no _smc_set_sizes, in projection mode, and predictive_prior_fraction cannot be specified." << std::endl;
+            exit(1);
+        }
+        auto ppfs = as_vector<float>(root, "predictive_prior_fraction");
+
+        vector<size_t> set_sizes_copy = _smc_set_sizes;
+        const size_t max_set = max(ppfs.size(), set_sizes_copy.size());
+        
+        ppfs.resize(max_set, ppfs.back());
+        set_sizes_copy.resize(max_set, set_sizes_copy.back());
+
+        _predictive_prior_sizes.clear();
+        for (size_t i = 0; i < ppfs.size(); ++i) {
+            if (ppfs[i] <= 0 or ppfs[i] > 1) {
+                cerr << "Error: predictive_prior_fraction in configuration file must be > 0 and <= 1" << endl;
+                exit(1);
+            }
+            _predictive_prior_sizes.push_back( round(ppfs[i] * set_sizes_copy[i]) );
+        }
+    } else if (root.isMember("predictive_prior_size")) {
+        _predictive_prior_sizes = as_vector<size_t>(root, "predictive_prior_size");
+        if (_predictive_prior_sizes.size() > 1 and _smc_set_sizes.size() > 1 and _predictive_prior_sizes.size() != _smc_set_sizes.size()) {
+            cerr << "Error: If num_samples and predictive_prior_size both have length > 1 in configuration file, they must be equal in length." << endl;
+            exit(1);
+        }
+        const size_t max_set = max(_predictive_prior_sizes.size(), _smc_set_sizes.size());
+        for (size_t i = 0; i < max_set; ++i) {
+            if (get_pred_prior_size(i, QUIET) > get_num_particles(i, QUIET)) {
+                cerr << "Error: requested predictive prior size is greater than requested SMC set size for at least one set in configuration file." << endl;
+                exit(1);
+            }
+        }
+    } else {
+        if (verbose) {
+            std::cerr << "Neither `predictive_prior_fraction` or `predictive_prior_size` specified; assuming projection mode." << std::endl;
+        }
+    }
+    return _predictive_prior_sizes;
+}
 
 #endif // ABCJSON_H

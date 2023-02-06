@@ -261,11 +261,12 @@ class AbcSmc {
         void set_retain_posterior_rank( std::string retain_rank ) { _retain_posterior_rank = (retain_rank == "true"); }
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
+
         Metric* add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
-            Metric* m = new Metric(name, short_name, ntype, obs_val);
             _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
-            return m;
+            return _model_mets.back();
         }
+
         Parameter* add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step,double (*u)(const double), std::pair<double, double> r, std::map<std::string, std::vector<int> > mm) {
             Parameter* p = new Parameter(name, short_name, ptype, ntype, val1, val2, step, u, r, mm);
             _model_pars.push_back(p);
@@ -285,8 +286,7 @@ class AbcSmc {
 
         FilteringType get_filtering_type() const { return use_pls_filtering ? PLS_FILTERING : SIMPLE_FILTERING; }
 
-        void process_predictive_prior_arguments(Json::Value par);
-        bool parse_config(std::string conf_filename);
+        bool parse_config(const std::string & conf_filename, const bool verbose = false);
         void report_convergence_data(const size_t t);
 
 

@@ -39,96 +39,47 @@ bool file_exists(const char *fileName) {
     return infile.good();
 }
 
-void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
-    int arg_ct = par.isMember("predictive_prior_fraction") + par.isMember("predictive_prior_size");
-    if (arg_ct == 0) {
-        cerr << "Error: either predictive_prior_fraction or predictive_prior_size must be specified in configuration file." << endl;
-        exit(1);
-    } else if (arg_ct == 2) {
-        cerr << "Error: only one of predictive_prior_fraction and predictive_prior_size may be specified in configuration file." << endl;
-        exit(1);
-    } else if (par.isMember("predictive_prior_fraction")) {
-        auto ppfs = as_vector<float>(par, "predictive_prior_fraction");
-        if (ppfs.size() > 1 and _smc_set_sizes.size() > 1 and ppfs.size() != _smc_set_sizes.size()) {
-            cerr << "Error: If num_samples and predictive_prior_fraction both have length > 1 in configuration file, they must be equal in length." << endl;
-            exit(1);
-        }
-        vector<size_t> set_sizes_copy = _smc_set_sizes;
-        const size_t max_set = max(ppfs.size(), set_sizes_copy.size());
-        ppfs.resize(max_set, ppfs.back());
-        set_sizes_copy.resize(max_set, set_sizes_copy.back());
-        _predictive_prior_sizes.clear();
-        for (size_t i = 0; i < ppfs.size(); ++i) {
-            if (ppfs[i] <= 0 or ppfs[i] > 1) {
-                cerr << "Error: predictive_prior_fraction in configuration file must be > 0 and <= 1" << endl;
-                exit(1);
-            }
-            _predictive_prior_sizes.push_back( round(ppfs[i] * set_sizes_copy[i]) );
-        }
-    } else if (par.isMember("predictive_prior_size")) {
-        _predictive_prior_sizes = as_vector<size_t>(par, "predictive_prior_size");
-        if (_predictive_prior_sizes.size() > 1 and _smc_set_sizes.size() > 1 and _predictive_prior_sizes.size() != _smc_set_sizes.size()) {
-            cerr << "Error: If num_samples and predictive_prior_size both have length > 1 in configuration file, they must be equal in length." << endl;
-            exit(1);
-        }
-        const size_t max_set = max(_predictive_prior_sizes.size(), _smc_set_sizes.size());
-        for (size_t i = 0; i < max_set; ++i) {
-            if (get_pred_prior_size(i, QUIET) > get_num_particles(i, QUIET)) {
-                cerr << "Error: requested predictive prior size is greater than requested SMC set size for at least one set in configuration file." << endl;
-                exit(1);
-            }
-        }
-    }
-}
+bool AbcSmc::parse_config(
+    const std::string & conf_filename,
+    const bool verbose
+) {
 
-
-bool AbcSmc::parse_config(string conf_filename) {
-    if (not file_exists(conf_filename.c_str())) {
-        cerr << "File does not exist: " << conf_filename << endl;
-        exit(1);
-    }
-    // TODO - Make sure any existing database actually reflects what is expected in JSON, particularly that par and met tables are legit
-    Json::Value par;   // will contain the par value after parsing.
-    Json::Reader reader;
-    string json_data = slurp(conf_filename);
-
-    bool parsingSuccessful = reader.parse( json_data, par );
-    if ( !parsingSuccessful ) {
-        // report to the user the failure and their locations in the document.
-        cerr << "Failed to parse configuration\n" << reader.getFormattedErrorMessages();
-        exit(1);
-    }
+    Json::Value root = read_config(conf_filename);
 
     // TODO these should be mutually exclusive options
-    std::string executable = par.get("executable", "").asString();
+    std::string executable = root.get("executable", "").asString();
     if (executable != "") { set_executable( executable ); }
-    std::string sharedobj = par.get("shared", "").asString();
+    std::string sharedobj = root.get("shared", "").asString();
     if (sharedobj != "") { set_simulator( sharedobj ); }
 
-    string resume_dir = par.get("resume_directory", "").asString();
+    string resume_dir = root.get("resume_directory", "").asString();
     if (resume_dir != "") {
         if (_mp->mpi_rank == mpi_root) cerr << "Resuming in directory: " << resume_dir << endl;
         set_resume_directory( resume_dir );
         set_resume( true );
     }
 
-    set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
-    _smc_set_sizes = as_vector<size_t>(par, "num_samples");
-    process_predictive_prior_arguments(par);
+    set_smc_iterations( root["smc_iterations"].asInt() ); // TODO: or have it test for convergence
+ 
+    _smc_set_sizes = as_vector<size_t>(root, "num_samples");
+
+    _smc_set_sizes.resize(_smc_iterations, _smc_set_sizes.back());
+
+    _predictive_prior_sizes = parse_predictive_prior(root, _smc_set_sizes);
     // TODO--allow specification of pred prior size (single value or list of values)
-    //set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
-    set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
-    set_database_filename( par["database_filename"].asString() );
+    //set_predictive_prior_fraction( root["predictive_prior_fraction"].asFloat() );
+    set_pls_validation_training_fraction( root["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
+    set_database_filename( root["database_filename"].asString() );
     // are we going to have particles that use a posterior from an earlier ABC run
     // to determine some of the parameter values?
-    set_posterior_database_filename( par.get("posterior_database_filename", "").asString() );
-    set_retain_posterior_rank( par.get("retain_posterior_rank", "false").asString() );
+    set_posterior_database_filename( root.get("posterior_database_filename", "").asString() );
+    set_retain_posterior_rank( root.get("retain_posterior_rank", "false").asString() );
     if (_posterior_database_filename != "" and _num_smc_sets > 1) {
         cerr << "Using a posterior database as input is not currently supported with smc_iterations > 1. Aborting." << endl;
         exit(-203);
     }
 
-    string noise = par.get("noise", "INDEPENDENT").asString();
+    string noise = root.get("noise", "INDEPENDENT").asString();
     use_mvn_noise = (noise == "MULTIVARIATE");
     if (noise != "INDEPENDENT" and noise != "MULTIVARIATE") {
         cerr << "Unknown parameter noise type specified: " << noise << ". Aborting." << endl;
@@ -136,7 +87,7 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     // Parse model parameters
-    const Json::Value model_par = par["parameters"];
+    const Json::Value model_par = root["parameters"];
     map<string, int> par_name_idx;
     // TODO find a way to size_t this
     for ( unsigned int i = 0; i < model_par.size(); ++i )  {// Build name lookup
@@ -235,7 +186,7 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     // Parse model metrics
-    const Json::Value model_met = par["metrics"];
+    const Json::Value model_met = root["metrics"];
     for ( Json::Value mmet : model_met )  {// Iterates over the sequence elements.
         string name = mmet["name"].asString();
         string short_name = mmet.get("short_name", "").asString();
