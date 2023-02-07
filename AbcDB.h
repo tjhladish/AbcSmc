@@ -110,7 +110,7 @@ class AbcSmc {
             bool verbose = false
         );
         bool update_particle_metrics(
-            sqdb::Db &db, string results
+            sqdb::Db &db, string results, const bool transactional = true, const bool verbose = false
         );
 
 

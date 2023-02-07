@@ -1030,59 +1030,84 @@ if (verbose) cerr << "Attempting: " << update_jobs_ss.str() << endl;
     return db_success;
 }
 
-
-bool AbcSmc::update_particle_metrics(
-    sqdb::Db &db, string results
+inline bool update_stage(
+    sqdb::Db & db, string stage
 ) {
-    bool db_success = false;
-    stringstream setup, loader, updatejob, updatemet;
-    setup << "CREATE TEMPORARY TABLE metupdates (serial INT, ";
-    loader << "INSERT INTO metupdates (serial, ";
+    try {
+        db.Query(stage.c_str()).Next();
+    } catch (const Exception& e) {
+        cerr << "CAUGHT E: ";
+        cerr << e.GetErrorMsg() << endl;
+        cerr << "Failed on:" << endl;
+        cerr << stage << endl;
+        return false;
+    } catch (const exception& e) {
+        cerr << "CAUGHT e: ";
+        cerr << e.what() << endl;
+        cerr << "Failed on:" << endl;
+        cerr << stage << endl;
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Update the metrics for a set of particles
+ * @param db database handle; will be side-effected
+ * @param results stringified results of simulation(s); should be `(serial, metric1, metric2, ...), (serial, metric1, metric2, ...), ...` 
+ * @param transactional use transactions? Warning: only use during troubleshooting.
+ * @param verbose print out what's going on?
+ * @return if the update was successful
+ */
+bool AbcSmc::update_particle_metrics(
+    sqdb::Db &db, string results,
+    const bool transactional, const bool verbose
+) {
+
+    stringstream setup,
+    //loader,
+    updatejob, updatemet;
+    setup << "CREATE TABLE metupdates (serial INT, ";
+ //   loader << "INSERT INTO metupdates (serial, ";
     updatemet << "UPDATE met SET ";
     for (int j = 0; j<nmet(); j++) {
         setup << _model_mets[j]->get_short_name() << " " << (_model_mets[j]->get_numeric_type() == INT ? "INT" : "FLOAT") << ", ";
         loader << _model_mets[j]->get_short_name() << ", ";
-        updatemet << _model_mets[j]->get_short_name() << " = tu." << _model_mets[j]->get_short_name() <<
+        updatemet << _model_mets[j]->get_short_name() << " = mu." << _model_mets[j]->get_short_name() <<
         (j == (nmet()-1) ? "" : ", ");
     }
     setup << "startTime INT, duration INT);";
     loader << "startTime, duration) VALUES " << results << ";";
-    updatemet << " FROM (SELECT tu.* FROM metupdates tu JOIN job USING(serial) WHERE status != 'D') AS tu WHERE tu.serial == met.serial;";
+    updatemet << " FROM metupdates mu JOIN job USING(serial) WHERE status != 'D' AND mu.serial == met.serial;";
 
     updatejob << "UPDATE job SET " <<
               "startTime = tu.startTime, duration = tu.duration, status = 'D'" <<
               " FROM metupdates tu WHERE job.serial == tu.serial AND status != 'D';";
+if (verbose) {
+    std::cerr << setup.str() << endl << loader.str() << endl << updatemet.str() << endl << updatejob.str() << endl;
+}
 
-// cerr << setup.str() << endl << loader.str() << endl << updatemet.str() << endl << updatejob.str() << endl;
-
+if (transactional) {
     db.Query("BEGIN EXCLUSIVE;").Next();
+}
 
-    try {
-        db.Query(setup.str().c_str()).Next();
-        db.Query(loader.str().c_str()).Next();
-        db.Query(updatemet.str().c_str()).Next();
-        db.Query(updatejob.str().c_str()).Next();
+    bool success = true;
+    success = success && update_stage(db, setup.str());
+    success = success && update_stage(db, loader.str());
+    success = success && update_stage(db, updatemet.str());
+    success = success && update_stage(db, updatejob.str());
+    success = success && update_stage(db, "DROP TABLE metupdates;");
+
+if (transactional) {
+    if (success) {
         db.CommitTransaction();
-        db_success = true;
-    } catch (const Exception& e) {
+    } else {
         db.RollbackTransaction();
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed while updating metrics:" << endl;
-        cerr << results << endl;
-        // for (unsigned int i = 0; i < update_metrics_strings.size(); ++i) {
-        //     cerr << update_metrics_strings[i] << endl;
-        //     cerr << update_jobs_strings[i] << endl;
-        // }
-    } catch (const exception& e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed while updating metrics:" << endl;
-        cerr << results << endl;
     }
+}
 
-    return db_success;
+    return success;
+
 }
 
 bool AbcSmc::simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
