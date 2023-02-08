@@ -167,15 +167,17 @@ struct AbcSQLite : public AbcStorage {
             bool db_success = false;
             std::optional<const char*> errmsg;
             try {
-cerr << "Got here..." << ss.str() << endl;
+                // TODO - this doesn't actually mean db_success. "Next" == true means there are rows.
                 db_success = db.Query(ss.str().c_str()).Next();
-cerr << "Not here..." << db_success << endl;
             } catch (const sqdb::Exception& e) {
                 errmsg.emplace(e.GetErrorMsg());
             } catch (const exception& e) {
                 errmsg.emplace(e.what());
             }
             if (not db_success) {
+                if (!errmsg.has_value()) {
+                    errmsg.emplace("Unknown, non-throwing error.");
+                }
                 storage_warning(errmsg.value(), std::string("Failed query:\n") + ss.str());
             }
             // clear contents & state of the stringstream
