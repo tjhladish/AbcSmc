@@ -179,7 +179,7 @@ struct AbcSQLite : public AbcStorage {
             }
             return false;
         } else if (parvalues.size() != 0) {
-            const size_t stride = (cycleLength == 0) ? parvalues.size() : cycleLength;
+            const size_t stride = (posterior_rank.size() == 0) ? parvalues.size() : posterior_rank.size();
             if ((parvalues.size() % stride) != 0) {
                 storage_warning(
                     "Incommensurable `parvalues` size and cycle length: ", std::to_string(parvalues.size()) + " vs " + std::to_string(stride), verbose
