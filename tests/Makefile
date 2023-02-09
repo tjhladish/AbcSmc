@@ -36,6 +36,8 @@ try_%: test_%.cpp ../libabc.a
 
 run_storage_sqlite: try_storage_sqlite
 	./$^ test_storage.sqlite
+	sqlite3 test_storage.sqlite ".schema --indent"
+	sqlite3 test_storage.sqlite "select * from par;"
 #	rm test_storage.sqlite
 
 clean:

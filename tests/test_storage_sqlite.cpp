@@ -28,7 +28,9 @@ int main(int argc, char* argv[]) {
 
     didSetup = db.setup({}, {}, false, false, true);
 
-    cout << "Second setup attempt should fail: " << didSetup << endl;   
+    cout << "Second setup attempt indicates nothing done: " << didSetup << endl;   
+
+    auto didPopulate = db.populate();
 
     return 0;
 }

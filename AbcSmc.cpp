@@ -907,7 +907,9 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         if (not _retain_posterior_rank) posterior_rank = -1;
         QueryStr qstr;
 
-        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, %d, %d, %d, NULL, 'Q', %d, 0 );"), JOB_TABLE.c_str(), i, set_num, i, time(NULL), posterior_rank)).Next();
+        db.Query(qstr.Format(
+            SQDB_MAKE_TEXT("insert into %s values ( %d, %d, %d, %d, NULL, 'Q', %d, 0 );"), JOB_TABLE.c_str(), i, set_num, i, time(NULL), posterior_rank)
+        ).Next();
 
         Statement s = db.Query(("select last_insert_rowid() from " + JOB_TABLE + ";").c_str());
         s.Next();

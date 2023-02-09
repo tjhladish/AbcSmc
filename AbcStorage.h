@@ -11,11 +11,25 @@
 #include "AbcUtil.h"
 
 template<typename T>
-inline std::string join(vector<T> v, const std::string & delim = ", ") {
+inline std::string join(const std::vector<T> & v, const std::string & delim = ", ") {
     std::stringstream ss;
     for (auto it = v.begin(); it != v.end(); ++it) {
         if (it != v.begin()) ss << delim;
         ss << *it;
+    }
+    return ss.str();
+}
+
+template<typename T>
+inline std::string joineach(
+    const vector<vector<T>> v,
+    const std::string & outerdelim = "), (",
+    const std::string & innerdelim = ", "
+) {
+    std::stringstream ss;
+    for (auto it = v.begin(); it != v.end(); ++it) {
+        if (it != v.begin()) ss << outerdelim;
+        ss << join(*it, innerdelim);
     }
     return ss.str();
 }
@@ -32,23 +46,44 @@ struct AbcStorage {
         const bool verbose
     ) = 0;
 
+    virtual bool populate(
+        const std::vector<std::vector<double>> & parvalues,
+        const size_t smcSet,
+        const size_t cycleLength,
+        const bool verbose
+    ) = 0;
+
+    // TODO: support polymorphic calls to setup; probably for AbcSmc objects (but have to beat cyclic dependency), probably for
+    // AbcConfig objects
+    // template <typename ABCSMC>
+    // bool setup(ABCSMC & abc, const bool overwrite = false, const bool verbose = false) {
+    //     return setup(
+    //         abc.parameters,
+    //         abc.metrics,
+    //         abc.transformedParameters,
+    //         overwrite,
+    //         verbose
+    //     );
+    // }
+
     virtual Mat2D read_parameters(const std::vector<std::string> elements, const bool posteriorOnly) = 0;
-    virtual bool write_data() = 0;
+    
     virtual bool exists() = 0;
 
-    const void storage_warning(
+    virtual void storage_warning (
         const char *emsg, const std::string & other,
+        const bool verbose = true,
         const std::string & prompt = "WARNING: ", 
         ostream &os = std::cerr
-    ) {
-        os << prompt << emsg << std::endl << other << std::endl;
+    ) const {
+        if (verbose) os << prompt << emsg << std::endl << other << std::endl;
     };
 
-    const void storage_error(
+    virtual void storage_error (
         const char *emsg, const std::string & other,
         const int code, ostream &os = std::cerr
-    ) {
-        storage_warning(emsg, other, "CAUGHT exception: ", os);
+    ) const {
+        storage_warning(emsg, other, true, "CAUGHT exception: ", os);
         exit(code);
     };
 };
@@ -59,50 +94,143 @@ struct AbcSQLite : public AbcStorage {
 
     static const std::string JOB_TABLE, MET_TABLE, PAR_TABLE, UPAR_TABLE;
 
+    // `setup` establishes an AbcSmc database, creating the tables and indices; population is *not* performed.
     bool setup(
         const std::vector<std::string> & parameters,
         const std::vector<std::string> & metrics,
         const bool transformedParameters = false,
-        const bool overwrite = false,
+        const bool overwrite = false, // TODO: implement overwrite
         const bool verbose = false
     ) override {
         if (exists()) {
             return false;
         } {
-            sqdb::Db db = *connection();
+            _parameters = parameters; _metrics = metrics; _transformedParameters = transformedParameters;
+
+            sqdb::Db db = connection();
             stringstream ss;
 
             db.BeginTransaction();
+            sqdb::QueryStr qstr;
 
-            ss << "CREATE TABLE " << JOB_TABLE << " ( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration real, status text, posterior int, attempts int );";
-            _execute_stringstream(db, ss);
+            _execute(db, qstr.Format(
+              R"SQL(CREATE TABLE %s (
+               serial INTEGER PRIMARY KEY ASC, smcSet INTEGER, particleIdx INTEGER,
+               startTime INTEGER DEFAULT NULL, duration INTEGER DEFAULT NULL,
+               status TEXT DEFAULT 'Q', posterior INTEGER,
+               attempts INTEGER DEFAULT 0
+              );)SQL",
+              JOB_TABLE.c_str()
+            ));
 
-            ss << "CREATE idx1 ON " << JOB_TABLE << " (status, attempts);";
-            _execute_stringstream(db, ss);
+            _execute(db, qstr.Format(
+              "CREATE INDEX idx1 ON %s (status, attempts);",
+              JOB_TABLE.c_str()
+            ));
 
-            ss << "CREATE TABLE " << PAR_TABLE << " ( serial int primary key, seed blob, " << join(parameters, " real,") << " real);";
-            _execute_stringstream(db, ss);
+            _execute(db, qstr.Format(
+              R"SQL(CREATE TABLE %s (
+                serial INTEGER PRIMARY KEY ASC, seed blob,
+                %s real
+              );)SQL",
+              PAR_TABLE.c_str(),
+              join(parameters, " real, ").c_str()
+            ));
 
             if (transformedParameters) {
-                ss << "CREATE TABLE " << UPAR_TABLE << " ( serial int primary key, seed blob, " << join(parameters, " real,") << ");";
-                _execute_stringstream(db, ss);
+            _execute(db, qstr.Format(
+              R"SQL(CREATE TABLE %s (
+                serial INTEGER PRIMARY KEY ASC, seed blob,
+                %s real
+              );)SQL",
+              UPAR_TABLE.c_str(),
+              join(parameters, " real, ").c_str()
+            ));
             }
 
-            ss << "CREATE TABLE " << MET_TABLE << " ( serial int primary key, " << join(metrics, " real,") << ");";
-            _execute_stringstream(db, ss);
+            _execute(db, qstr.Format(
+              R"SQL(CREATE TABLE %s (
+                serial INTEGER PRIMARY KEY ASC,
+                %s real
+              );)SQL",
+              MET_TABLE.c_str(),
+              join(metrics, " real, ").c_str()
+            ));
 
             db.CommitTransaction();
+
             return true;
         }
     }
 
-    bool write_data() override {
-        return false;
+    // `populate` populates (via INSERT) the database given parameters, and sets the status of each job to 'Q' (queued).
+    bool populate(
+        const std::vector<std::vector<double>> & parvalues = {{5,5}, {4, 4}},
+        const size_t smcSet = 0,
+        const vector<size_t> posterior_rank = {},
+        // 0 => particleIdx = 0, 1, 2, ..., parvalues.size()
+        // otherwise, assumes parvalues.size() == cycleLength*n,
+        // and particleIdx = 0, 1, 2, ..., cycleLength-1 (repeat n times)
+        const bool verbose = false
+    ) override {
+        if (not exists()) {
+            if (verbose) {
+                storage_warning("Database is not setup: ", _dbname);
+            }
+            return false;
+        } else if (parvalues.size() != 0) {
+            const size_t stride = (cycleLength == 0) ? parvalues.size() : cycleLength;
+            if ((parvalues.size() % stride) != 0) {
+                storage_warning(
+                    "Incommensurable `parvalues` size and cycle length: ", std::to_string(parvalues.size()) + " vs " + std::to_string(stride), verbose
+                );
+                return false;
+            }
+
+            sqdb::Db db = connection();
+            sqdb::QueryStr qstr;
+            db.BeginTransaction();
+
+            // ASSERT: not required that the tables are empty.
+            // if they aren't empty, however: their autoincrement is at the same place
+
+            // insert parameter values in PAR_TABLE
+            _execute(db, qstr.Format(
+                SQDB_MAKE_TEXT("INSERT INTO %s (%s) VALUES (%s);"),
+                PAR_TABLE.c_str(), join(_parameters).c_str(), joineach(parvalues).c_str()
+            ));
+
+            // insert parameter values in JOB_TABLE
+            _execute(db, qstr.Format(
+                SQDB_MAKE_TEXT("INSERT INTO %s (%s) VALUES (%s);"),
+                JOB_TABLE.c_str(), join({ "smcSet", "particleIdx"}).c_str(), joineach(parvalues).c_str()
+            ));
+
+            // // capture created serials
+            // auto findSerial = db.Query(qstr.Format(
+            //     SQDB_MAKE_TEXT("SELECT last_insert_rowid() FROM %s;"),
+            //     PAR_TABLE.c_str()
+            // ));
+            // findSerial.Next();
+            // const int maxserial = findSerial.GetField(0);
+            // const int minserial = maxserial - parvalues.size() + 1;
+
+
+            // if there are transformed parameters, transform and insert into UPAR_TABLE
+            // insert unfilled rows into MET_TABLE
+            // insert Q'd jobs into JOB_TABLE
+
+            db.CommitTransaction();
+            return true;
+        } else {
+            storage_warning("Empty `parvalues` provided to populate: ", _dbname, verbose);
+            return false;
+        }
     }
 
 // throws SQDB exceptions
     Mat2D read_parameters(const vector<std::string> elements, const bool posteriorOnly) override {
-        sqdb::Db db = *connection();
+        sqdb::Db db = connection();
         std::string countquery = "SELECT COUNT(*) FROM " + JOB_TABLE + (posteriorOnly ? " WHERE posterior > -1;" : ";");
         auto stmt = db.Query(countquery.c_str());
         if (stmt.Next()) {
@@ -130,9 +258,10 @@ struct AbcSQLite : public AbcStorage {
 
     private:
         const char* _dbname;
+        std::vector<std::string> _parameters, _metrics;
+        bool _transformedParameters;
 
-        // TODO: should this return a pointer?
-        sqdb::Db* connection() { return new sqdb::Db(_dbname); }
+        inline sqdb::Db connection() { return sqdb::Db(_dbname); }
 
         bool _check_tables(sqdb::Db & db, const std::vector<std::string> table_names) {
             std::optional<const char*> errmsg;
@@ -162,30 +291,30 @@ struct AbcSQLite : public AbcStorage {
         };
 
         // no transaction handling here - assumed done around this in calling scope
-        // this does resource management for the stringstream / error handling
-        bool _execute_stringstream(sqdb::Db & db, stringstream &ss) {   
-            bool db_success = false;
+        // these do error handling (and resource management stringstream)
+        
+        inline bool _execute(sqdb::Db & db, const char * query, const bool verbose = true) {
             std::optional<const char*> errmsg;
             try {
-                // TODO - this doesn't actually mean db_success. "Next" == true means there are rows.
-                db_success = db.Query(ss.str().c_str()).Next();
+                db.Query(query).Next();
             } catch (const sqdb::Exception& e) {
                 errmsg.emplace(e.GetErrorMsg());
             } catch (const exception& e) {
                 errmsg.emplace(e.what());
             }
-            if (not db_success) {
-                if (!errmsg.has_value()) {
-                    errmsg.emplace("Unknown, non-throwing error.");
-                }
-                storage_warning(errmsg.value(), std::string("Failed query:\n") + ss.str());
+            if (errmsg.has_value()) {
+                storage_warning(errmsg.value(), std::string("Failed query:\n") + std::string(query), verbose);
             }
-            // clear contents & state of the stringstream
-            ss.str(std::string());
-            ss.clear();
-            return db_success;
+            return not errmsg.has_value();
         }
 
+        inline bool _execute(sqdb::Db & db, const std::string & query) { return _execute(db, query.c_str()); }
+        inline bool _execute(sqdb::Db & db, stringstream & query) { 
+            auto res = _execute(db, query.str());
+            query.str(std::string());
+            query.clear();
+            return res;
+        }
 };
 
 const std::string AbcSQLite::JOB_TABLE = "job";

@@ -326,6 +326,8 @@ class AbcSmc {
         ABC::Mat2D X_orig;
         ABC::Mat2D Y_orig;
         std::vector<Parameter*> _model_pars;
+        PosteriorParameters _posterior_pars;
+
         std::vector<Metric*> _model_mets;
         size_t _num_smc_sets;
         vector<int> _smc_set_sizes;
