@@ -8,11 +8,21 @@
 #include <sstream>
 
 #include "sqdb.h"
-#include "AbcUtil.h"
+#include "pls.h"
 
-template<typename T>
-inline std::string join(const std::vector<T> & v, const std::string & delim = ", ") {
-    std::stringstream ss;
+using std::string;
+using std::vector;
+using std::stringstream;
+using std::cerr;
+using std::endl;
+using std::ostream;
+using std::to_string;
+using std::optional;
+using std::ifstream;
+
+template<typename ITERABLE>
+inline string join(const ITERABLE & v, const string & delim = ", ") {
+    stringstream ss;
     for (auto it = v.begin(); it != v.end(); ++it) {
         if (it != v.begin()) ss << delim;
         ss << *it;
@@ -21,12 +31,12 @@ inline std::string join(const std::vector<T> & v, const std::string & delim = ",
 }
 
 template<typename T>
-inline std::string joineach(
-    const vector<vector<T>> v,
-    const std::string & outerdelim = "), (",
-    const std::string & innerdelim = ", "
+inline string joineach(
+    const vector<vector<T>> & v,
+    const string & outerdelim = "), (",
+    const string & innerdelim = ", "
 ) {
-    std::stringstream ss;
+    stringstream ss;
     for (auto it = v.begin(); it != v.end(); ++it) {
         if (it != v.begin()) ss << outerdelim;
         ss << join(*it, innerdelim);
@@ -34,20 +44,41 @@ inline std::string joineach(
     return ss.str();
 }
 
-using namespace ABC;
-
+// AbcStorage: abstract base class for AbcSmc storage options
+// AbcStorage encapsulates different storage solutions (e.g. SQLite, ...) for AbcSmc activities
+//
+// In general, the steps for using AbcSmc interacts with storage as follows:
+// 0. setup: create basic arrangement for analyses
+//    Currently, this takes an existing AbcSmc object (having parameters, metrics, etc.). Could be doable directly from a config file?
+// 1. populate: add new runs to the database
+//    Writes parameters, jobs, placeholders for metrics. In general, the storage solution shouldn't care about "why" - from its perspective,
+//    can ignore if this is creating a new SMC run, expanding an existing run, creating a scenario analysis plan, etc.
+//    However: may make some sense to have it be somewhat aware of these distinctions, to offer convenient signatures with defaults?
+//    Relative to current configuration, this might be the difficult bit to slice up - seems to happen to closely entangled with AbcSmc internals / config file?
+// 2. update: add the outcome of runs to database (writes metrics + updates job status)
+//    This is probably the easiest bit (at least for random-access storage solutions like SQLite)
+//    Particularly, if we disentangle some of the `jobs` columns via the view approach.
+// 3. read: read parameters / metrics from database
+//    This might be complicated, might not - in the random access sense, it's easy (fetch these serials).
+//    But, seems likely there are other standard asks (get all of a wave, get the next X open jobs)
+//    And, we need to distinguish between just looking vs reading-because-we're-going-to-run-these
+// 4. [introspect: determine configuration from database]
+//    currently, creating an AbcSmc object has to be done from JSON config file, but for many tasks the info in the storage file should be sufficient
+//    Basically, when AbcSmc isn't sampling, can just grab next-X-jobs, run them, then store the results.
 struct AbcStorage {
 
+    // given the necessary schema constraints, setup this storage solution
+    // returns true if the storage solution was created. (false if fails or already exists unless overwrite is true)
     virtual bool setup(
-        const std::vector<std::string> & parameters,
-        const std::vector<std::string> & metrics,
+        const vector<string> & parameters,
+        const vector<string> & metrics,
         const bool transformedParameters,
         const bool overwrite,
         const bool verbose
     ) = 0;
 
     virtual bool populate(
-        const std::vector<std::vector<double>> & parvalues,
+        const vector<vector<double>> & parvalues,
         const size_t smcSet,
         const size_t cycleLength,
         const bool verbose
@@ -66,22 +97,24 @@ struct AbcStorage {
     //     );
     // }
 
-    virtual Mat2D read_parameters(const std::vector<std::string> elements, const bool posteriorOnly) = 0;
+    virtual Mat2D read_pars(
+      const vector<size_t> serials
+    ) = 0;
     
     virtual bool exists() = 0;
 
     virtual void storage_warning (
-        const char *emsg, const std::string & other,
+        const char *emsg, const string & other,
         const bool verbose = true,
-        const std::string & prompt = "WARNING: ", 
-        ostream &os = std::cerr
+        const string & prompt = "WARNING: ", 
+        ostream &os = cerr
     ) const {
-        if (verbose) os << prompt << emsg << std::endl << other << std::endl;
+        if (verbose) os << prompt << emsg << endl << other << endl;
     };
 
     virtual void storage_error (
-        const char *emsg, const std::string & other,
-        const int code, ostream &os = std::cerr
+        const char *emsg, const string & other,
+        const int code, ostream &os = cerr
     ) const {
         storage_warning(emsg, other, true, "CAUGHT exception: ", os);
         exit(code);
@@ -90,14 +123,14 @@ struct AbcStorage {
 
 struct AbcSQLite : public AbcStorage {
     AbcSQLite(const char * dbname) : _dbname(dbname) {}
-    AbcSQLite(const std::string & dbname) : AbcSQLite(dbname.c_str()) {}
+    AbcSQLite(const string & dbname) : AbcSQLite(dbname.c_str()) {}
 
-    static const std::string JOB_TABLE, MET_TABLE, PAR_TABLE, UPAR_TABLE;
+    static const string JOB_TABLE, MET_TABLE, PAR_TABLE, UPAR_TABLE;
 
     // `setup` establishes an AbcSmc database, creating the tables and indices; population is *not* performed.
     bool setup(
-        const std::vector<std::string> & parameters,
-        const std::vector<std::string> & metrics,
+        const vector<string> & parameters,
+        const vector<string> & metrics,
         const bool transformedParameters = false,
         const bool overwrite = false, // TODO: implement overwrite
         const bool verbose = false
@@ -165,7 +198,7 @@ struct AbcSQLite : public AbcStorage {
 
     // `populate` populates (via INSERT) the database given parameters, and sets the status of each job to 'Q' (queued).
     bool populate(
-        const std::vector<std::vector<double>> & parvalues = {{5,5}, {4, 4}},
+        const vector<vector<double>> & parvalues = {{5,5}, {4, 4}},
         const size_t smcSet = 0,
         const vector<size_t> posterior_rank = {},
         // 0 => particleIdx = 0, 1, 2, ..., parvalues.size()
@@ -182,7 +215,7 @@ struct AbcSQLite : public AbcStorage {
             const size_t stride = (posterior_rank.size() == 0) ? parvalues.size() : posterior_rank.size();
             if ((parvalues.size() % stride) != 0) {
                 storage_warning(
-                    "Incommensurable `parvalues` size and cycle length: ", std::to_string(parvalues.size()) + " vs " + std::to_string(stride), verbose
+                    "Incommensurable `parvalues` size and cycle length: ", to_string(parvalues.size()) + " vs " + to_string(stride), verbose
                 );
                 return false;
             }
@@ -229,48 +262,50 @@ struct AbcSQLite : public AbcStorage {
     }
 
 // throws SQDB exceptions
-    Mat2D read_parameters(const vector<std::string> elements, const bool posteriorOnly) override {
+    Mat2D read_parameters(
+        const vector<size_t> & serials
+    ) override {
         sqdb::Db db = connection();
-        std::string countquery = "SELECT COUNT(*) FROM " + JOB_TABLE + (posteriorOnly ? " WHERE posterior > -1;" : ";");
+        string countquery = "SELECT COUNT(*) FROM " + JOB_TABLE + (posteriorOnly ? " WHERE posterior > -1;" : ";");
         auto stmt = db.Query(countquery.c_str());
         if (stmt.Next()) {
             int count = stmt.GetField(0);
             if (count) {
                 Mat2D data(count, elements.size());
                 auto FROM_TABLE = _check_tables(db, { UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
-                std::string colquery = "SELECT " + join(elements) + " FROM " + FROM_TABLE + " JOIN ";
+                string colquery = "SELECT " + join(elements) + " FROM " + FROM_TABLE + " JOIN ";
                 return data;        
             } else {
-                std::cerr << "WARNING: no qualifying parameters found for `" << countquery << "` - returning empty Mat2D."<< std::endl;
+                cerr << "WARNING: no qualifying parameters found for `" << countquery << "` - returning empty Mat2D."<< endl;
                 return Mat2D(0, elements.size());
             }
         } else {
-            std::cerr << "Failed to query database" << std::endl;
+            cerr << "Failed to query database" << endl;
             exit(1);
         }
     }
 
     // TODO, also test if it's a valid sqlite file
     bool exists() override {
-        std::ifstream infile(_dbname);
+        ifstream infile(_dbname);
         return infile.good();
     }
 
     private:
         const char* _dbname;
-        std::vector<std::string> _parameters, _metrics;
+        vector<string> _parameters, _metrics;
         bool _transformedParameters;
 
         inline sqdb::Db connection() { return sqdb::Db(_dbname); }
 
-        bool _check_tables(sqdb::Db & db, const std::vector<std::string> table_names) {
-            std::optional<const char*> errmsg;
-            std::optional<const int> errcode;
+        bool _check_tables(sqdb::Db & db, const vector<string> table_names) {
+            optional<const char*> errmsg;
+            optional<const int> errcode;
             try {
                 bool all_exist = true;
                 for(auto table_name: table_names) {
                     if (not db.TableExists(table_name.c_str())) {
-                        std::cerr << "Table " << table_name << " does not exist in database." << std::endl;
+                        cerr << "Table " << table_name << " does not exist in database." << endl;
                         all_exist = false;
                     }
                 }
@@ -294,7 +329,7 @@ struct AbcSQLite : public AbcStorage {
         // these do error handling (and resource management stringstream)
         
         inline bool _execute(sqdb::Db & db, const char * query, const bool verbose = true) {
-            std::optional<const char*> errmsg;
+            optional<const char*> errmsg;
             try {
                 db.Query(query).Next();
             } catch (const sqdb::Exception& e) {
@@ -303,31 +338,31 @@ struct AbcSQLite : public AbcStorage {
                 errmsg.emplace(e.what());
             }
             if (errmsg.has_value()) {
-                storage_warning(errmsg.value(), std::string("Failed query:\n") + std::string(query), verbose);
+                storage_warning(errmsg.value(), string("Failed query:\n") + string(query), verbose);
             }
             return not errmsg.has_value();
         }
 
-        inline bool _execute(sqdb::Db & db, const std::string & query) { return _execute(db, query.c_str()); }
+        inline bool _execute(sqdb::Db & db, const string & query) { return _execute(db, query.c_str()); }
         inline bool _execute(sqdb::Db & db, stringstream & query) { 
             auto res = _execute(db, query.str());
-            query.str(std::string());
+            query.str(string());
             query.clear();
             return res;
         }
 };
 
-const std::string AbcSQLite::JOB_TABLE = "job";
-const std::string AbcSQLite::MET_TABLE = "met";
-const std::string AbcSQLite::PAR_TABLE = "par";
-const std::string AbcSQLite::UPAR_TABLE = "upar";
+const string AbcSQLite::JOB_TABLE = "job";
+const string AbcSQLite::MET_TABLE = "met";
+const string AbcSQLite::PAR_TABLE = "par";
+const string AbcSQLite::UPAR_TABLE = "upar";
 
-//        void set_database_filename( std::string name ) { _database_filename = name; }
-//        void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
+//        void set_database_filename( string name ) { _database_filename = name; }
+//        void set_posterior_database_filename( string name ) { _posterior_database_filename = name; }
         // bool build_database(const gsl_rng* RNG);
         // bool process_database(const gsl_rng* RNG);
 //        bool read_SMC_set_from_database (int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
-        // bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
+        // bool read_SMC_sets_from_database(sqdb::Db &db, vector<vector<int> > &serials);
 
         // bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
         // bool fetch_particle_parameters(

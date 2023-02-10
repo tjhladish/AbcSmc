@@ -350,6 +350,8 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
         for (size_t i = 0; i < num_particles; i++) {
             const int serial = last_serial + 1 + i;
 
+            const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
+
             if (use_mvn_noise) {
                 pars = sample_mvn_predictive_priors(next_set, RNG, L);
             } else {
@@ -365,7 +367,6 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
-            const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
             ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);

@@ -19,7 +19,7 @@ ABC_INC := -I$(ABCDIR) -I$(SQLDIR) -I$(JSNDIR) -L$(ABCDIR) -labc $(GSL_LIB) -ldl
 
 TESTS := storage_sqlite
 
-all: ../libabc.a $(addprefix run_,$(TESTS))
+all: $(addprefix run_,$(TESTS))
 
 .FORCE:
 
@@ -29,7 +29,7 @@ all: ../libabc.a $(addprefix run_,$(TESTS))
 try_storage_sqlite: ../AbcStorage.h
 
 # this defines how to make the various abc_(sql|exec|dynamic) executables
-try_%: test_%.cpp ../libabc.a
+try_%: test_%.cpp
 	$(CPP) $(CFLAGS) $< -o $@ $(ABC_INC)
 
 .PRECIOUS: test_%
