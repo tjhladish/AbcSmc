@@ -13,6 +13,23 @@
     typedef double float_type;
 #endif
 
+#include <algorithm> // sort
+#include <numeric> // iota
+
+// tag/index sort, from https://stackoverflow.com/a/37732329/167973
+template<typename T>
+std::vector<size_t> ordered(const T& v) {
+    std::vector<size_t> result(v.size());
+    std::iota(std::begin(result), std::end(result), 0);
+    std::sort(
+        std::begin(result), std::end(result),
+        [&v](const auto & lhs, const auto & rhs) {
+            return *(v.begin() + lhs) < *(v.begin()+ rhs);
+        }
+    );
+    return result;
+}
+
 
 //using namespace std;
 using namespace Eigen;
@@ -23,6 +40,7 @@ typedef Matrix<float_type, Dynamic, Dynamic> Mat2D;
 typedef Matrix<float_type, Dynamic, 1>  Col;
 typedef Matrix<float_type, 1, Dynamic>  Row;
 typedef Matrix<int, 1, Dynamic>  Rowi;
+typedef Matrix<size_t, 1, Dynamic>  Rowsz;
 typedef Matrix<complex<float_type>, Dynamic, Dynamic> Mat2Dc;
 typedef Matrix<complex<float_type>, Dynamic, 1>  Colc;
 
@@ -54,7 +72,7 @@ typedef enum { LOO, NEW_DATA } VALIDATION_METHOD;
 
 // helper methods
 template<typename MATTYPE>
-size_t find_dominant_ev (const EigenSolver<MATTYPE> es) {
+size_t find_dominant_ev(const EigenSolver<MATTYPE> es) {
     auto eig_val = es.eigenvalues();
     float_type m = 0;
     size_t idx = 0;
@@ -71,34 +89,17 @@ size_t find_dominant_ev (const EigenSolver<MATTYPE> es) {
 
 };
 
-float_type dominant_eigenvalue( EigenSolver<Mat2Dc> es ){
+float_type dominant_eigenvalue(const EigenSolver<Mat2Dc> es) {
     const size_t idx = find_dominant_ev(es);
     return abs(es.eigenvalues()[idx].real());
 };
 
 
-Colc dominant_eigenvector( EigenSolver<Mat2D> es ){
+Colc dominant_eigenvector(const EigenSolver<Mat2D> es) {
     const size_t idx = find_dominant_ev(es);
     return es.eigenvectors().col(idx);
 }
 
-#include <algorithm> // sort
-#include <numeric> // iota
-
-// tag/index sort, from https://stackoverflow.com/a/37732329/167973
-template<typename T>
-std::vector<std::size_t> ordered(const T& v)
-{
-    std::vector<std::size_t> result(v.size());
-    std::iota(std::begin(result), std::end(result), 0);
-    std::sort(std::begin(result), std::end(result),
-            [&v](const auto & lhs, const auto & rhs)
-            {
-                return *(v.begin() + lhs) < *(v.begin()+ rhs);
-            }
-    );
-    return result;
-}
 
 //
 // Numerical Approximation to Normal Cumulative Distribution Function
@@ -111,7 +112,7 @@ std::vector<std::size_t> ordered(const T& v)
 // OUTPUT: probn=cumulative probability from -infinity to z
 //
 //
-float_type normalcdf(float_type z){
+float_type normalcdf(float_type z) {
     const double c1 = 0.196854;
     const double c2 = 0.115194;
     const double c3 = 0.000344;
@@ -119,9 +120,9 @@ float_type normalcdf(float_type z){
     float_type p;
     if (z < 0) {
         z = -z;
-        p = 1 - 0.5 / pow(1 + c1*z + c2*z*z + c3*z*z*z + c4*z*z*z*z,4);
+        p = 1 - 0.5 / pow(1 + c1*z + c2*z*z + c3*z*z*z + c4*z*z*z*z, 4);
     } else {
-        p = 0.5 / pow(1 + c1*z + c2*z*z + c3*z*z*z + c4*z*z*z*z,4);
+        p = 0.5 / pow(1 + c1*z + c2*z*z + c3*z*z*z + c4*z*z*z*z, 4);
     }
     float_type probn = 1.0 - p;
     return probn;
@@ -157,33 +158,43 @@ float_type normalcdf(float_type z){
 // model selection and comparison. J. Chemometrics 2003; 17: 653–659
 //
 float_type wilcoxon(const Col err_1, const Col err_2) {
-    size_t n = err_1.rows();
+    assert(err_1.rows() == err_2.rows());
+
+    const size_t n = err_1.rows();
     Col del = err_1.cwiseAbs() - err_2.cwiseAbs();
+    assert(static_cast<size_t>(del.size()) == n);
+
+    // TODO: setZero necessary?
     Rowi sdel;
-    sdel.setZero(del.size());
+    sdel.setZero(n);
     //Matrix<int, Dynamic, 1> sdel = del.unaryExpr(std::ptr_fun(_sgn)); // can't get this to work
-    for (size_t i = 0; i < static_cast<size_t>(del.size()); i++)  sdel(i) = (0 < del(i)) - (del(i) < 0); // get the sign of each element
+    for (size_t i = 0; i < n; i++) {
+        sdel(i) = (0 < del(i)) - (del(i) < 0); // get the sign of each element
+    }
     Col adel = del.cwiseAbs();
     // 's' gives the original positions (indices) of the sorted values
     auto s = ordered(adel);
-    float d = 0;
-    for (size_t i = 0; i < n; i++) d += (i+1)*sdel(s[i]);
-    float t  = n*(n+1)/2.0;
-    float v  = (t-d)/2.0;
-    float ev = t/2.0;
-    double sv = sqrt((double) n*(n+1)*(2*n+1)/24.0);
-    float_type z = (v-ev)/sv;
+    float_type d = 0;
+    for (size_t i = 0; i < n; i++) { d += (i + 1) * sdel(s[i]); }
+    float_type t  = n * (n + 1) / 2.0;
+    float_type v  = (t - d) / 2.0;
+    float_type ev = t/2.0;
+    float_type sv = sqrt(static_cast<float_type>(n * (n+1) * (2*n+1)) / 24.0);
+    float_type z = (v - ev) / sv;
     float_type probw = 1.0 - normalcdf(z);
 
     return probw;
 }
 
+// TODO: several of the loop constructs seem ripe for row/col-wise operations / broadcasting:
+// https://eigen.tuxfamily.org/dox/group__TutorialReductionsVisitorsBroadcasting.html
+
 struct PLS_Model {
 
     Mat2Dc P, W, R, Q, T;
-    int A;
+    size_t A;
     METHOD method;
-    void initialize(int num_predictors, int num_responses, int num_components) {
+    void initialize(size_t num_predictors, size_t num_responses, size_t num_components) {
         A = num_components;
         P.setZero(num_predictors, num_components);
         W.setZero(num_predictors, num_components);
@@ -205,10 +216,10 @@ struct PLS_Model {
         Mat2D XX;
         if (algorithm == KERNEL_TYPE2) XX = X.transpose() * X;
 
-        for (int i=0; i<A; i++) {
+        for (size_t i = 0; i < A; i++) {
             Colc w, p, q, r, t;
             complex<float_type> tt;
-            if (M==1) {
+            if (M == 1) {
                 w = XY.cast<complex<float_type> >();
             } else {
                 EigenSolver<Mat2D> es( (XY.transpose() * XY) );
@@ -217,8 +228,8 @@ struct PLS_Model {
             }
 
             w /= sqrt((w.transpose()*w)(0,0)); // use normalize function from eigen?
-            r=w;
-            for (int j=0; j<=i-1; j++) {
+            r = w;
+            for (size_t j=0; j <= i-1; j++) {
                 r -= (P.col(j).transpose()*w)(0,0)*R.col(j);
             }
             if (algorithm == KERNEL_TYPE1) {
@@ -232,10 +243,10 @@ struct PLS_Model {
             p /= tt;
             q.noalias() = (r.transpose()*XY).transpose(); q /= tt;
             XY -= ((p*q.transpose())*tt).real(); // is casting this to 'real' always safe?
-            W.col(i)=w;
-            P.col(i)=p;
-            Q.col(i)=q;
-            R.col(i)=r;
+            W.col(i) = w;
+            P.col(i) = p;
+            Q.col(i) = q;
+            R.col(i) = r;
             if (algorithm == KERNEL_TYPE1) T.col(i) = t;
         }
         return;
@@ -243,57 +254,57 @@ struct PLS_Model {
 
 
     // latent X values, i.e. the orthogonal metrics you wish you could measure
-    const Mat2Dc scores(Mat2D X_new) { return scores(X_new, A); }
-    const Mat2Dc scores(Mat2D X_new, int comp) {
+    const Mat2Dc scores(const Mat2D& X_new) const { return scores(X_new, A); }
+    const Mat2Dc scores(const Mat2D& X_new, const size_t comp) const {
         assert (A >= comp);
         return X_new * R.leftCols(comp);
     }
 
     // compute the regression coefficients (aka 'beta')
-    const Mat2Dc coefficients() { return coefficients(A); }
-    const Mat2Dc coefficients(int comp) {
+    const Mat2Dc coefficients() const { return coefficients(A); }
+    const Mat2Dc coefficients(const size_t comp) const {
         assert (A >= comp);
         return R.leftCols(comp)*Q.leftCols(comp).transpose();
     }
 
     // predicted Y values, given X values and pls model
-    const Mat2D fitted_values(const Mat2D& X) { return fitted_values(X, A); }
-    const Mat2D fitted_values(const Mat2D& X, int comp) {
+    const Mat2D fitted_values(const Mat2D& X) const { return fitted_values(X, A); }
+    const Mat2D fitted_values(const Mat2D& X, const size_t comp) const {
         assert (A >= comp);
         return X*coefficients(comp).real();
     }
 
     // unexplained portion of Y values
-    const Mat2D residuals(const Mat2D& X, const Mat2D& Y) { return residuals(X, Y, A); }
-    const Mat2D residuals(const Mat2D& X, const Mat2D& Y, int comp) {
+    const Mat2D residuals(const Mat2D& X, const Mat2D& Y) const { return residuals(X, Y, A); }
+    const Mat2D residuals(const Mat2D& X, const Mat2D& Y, const size_t comp) const {
         assert (A >= comp);
         return Y - fitted_values(X, comp);
     }
 
     // Sum of squared errors
-    Row SSE(const Mat2D& X, const Mat2D& Y) { return this->SSE(X, Y, A); }
-    Row SSE(const Mat2D& X, const Mat2D& Y, int comp) {
+    const Row SSE(const Mat2D& X, const Mat2D& Y) const { return SSE(X, Y, A); }
+    const Row SSE(const Mat2D& X, const Mat2D& Y, const size_t comp) const {
         return residuals(X, Y, comp).colwise().squaredNorm();
     }
 
     // Total sum of squares
-    Row SST(const Mat2D& Y) {
+    Row SST(const Mat2D& Y) const {
         Row sst(Y.cols());
-        for (int c = 0; c < Y.cols(); c++) {
+        for (size_t c = 0; c < static_cast<size_t>(Y.cols()); c++) {
             sst(c) = (Y.col(c).array() - (Y.col(c).sum()/Y.rows())).square().sum();
         }
         return sst;
     }
 
     // fraction of explainable variance
-    Row explained_variance(const Mat2D& X, const Mat2D& Y) { return explained_variance(X, Y, A); }
-    Row explained_variance(const Mat2D& X, const Mat2D& Y, int comp) {
+    Row explained_variance(const Mat2D& X, const Mat2D& Y) const { return explained_variance(X, Y, A); }
+    Row explained_variance(const Mat2D& X, const Mat2D& Y, const size_t comp) const {
         assert (A >= comp);
-        return (1.0 - this->SSE(X, Y, comp).cwiseQuotient( SST(Y) ).array()).matrix();
+        return (1.0 - SSE(X, Y, comp).cwiseQuotient( SST(Y) ).array()).matrix();
     }
 
     // leave-one-out validation of model (i.e., are we overfitting?)
-    Mat2D loo_validation(const Mat2D& X, const Mat2D& Y, VALIDATION_OUTPUT out_type) {
+    Mat2D loo_validation(const Mat2D& X, const Mat2D& Y, const VALIDATION_OUTPUT out_type) const {
         Mat2D Xv = X.bottomRows(X.rows()-1);
         Mat2D Yv = Y.bottomRows(Y.rows()-1);
 
@@ -301,14 +312,14 @@ struct PLS_Model {
 
         PLS_Model plsm_v;
         plsm_v.initialize(Xv.cols(), Yv.cols(), this->A);
-        for (int i = 0; i < X.rows()-1; i++) {
+        for (size_t i = 0; i < static_cast<size_t>(X.rows())-1; i++) {
             // run pls for the data, less one observation
             plsm_v.plsr(Xv, Yv, this->method);
-            for (int j = 1; j <= this->A; j++) {
+            for (size_t j = 1; j <= this->A; j++) {
                 // now see how well the data predict the missing observation
                 Row res = plsm_v.residuals(X.row(i), Y.row(i), j).row(0);
                 // tally the squared errors
-                SSEv.col(j-1) += res.cwiseProduct(res).transpose();
+                SSEv.col(j - 1) += res.cwiseProduct(res).transpose();
             }
             Xv.row(i) = X.row(i);
             Yv.row(i) = Y.row(i);
@@ -322,7 +333,7 @@ struct PLS_Model {
     }
 
 
-    std::vector<Mat2D> _loo_cv_error_matrix(const Mat2D& X, const Mat2D& Y) {
+    std::vector<Mat2D> _loo_cv_error_matrix(const Mat2D& X, const Mat2D& Y) const {
         Mat2D Xv = X.bottomRows(X.rows()-1);
         Mat2D Yv = Y.bottomRows(Y.rows()-1);
 
@@ -332,13 +343,13 @@ struct PLS_Model {
 
         PLS_Model plsm_v;
         plsm_v.initialize(Xv.cols(), Yv.cols(), this->A);
-        for (int i = 0; i < X.rows(); i++) {
+        for (size_t i = 0; i < static_cast<size_t>(X.rows()); i++) {
             plsm_v.plsr(Xv, Yv, this->method);
-            for (int j = 1; j <= this->A; j++) {
+            for (size_t j = 1; j <= this->A; j++) {
                 Row res = plsm_v.residuals(X.row(i), Y.row(i), j).row(0);
                 for (int k = 0; k < res.size(); k++) Ev[k](i,j-1) = res(k);
             }
-            if (i < Xv.rows()) {
+            if (i < static_cast<size_t>(Xv.rows())) {
                 Xv.row(i) = X.row(i);
                 Yv.row(i) = Y.row(i);
             }
@@ -347,15 +358,15 @@ struct PLS_Model {
     }
 
 
-    std::vector<Mat2D> _new_data_cv_error_matrix(const Mat2D& X_new, const Mat2D& Y_new) {
+    std::vector<Mat2D> _new_data_cv_error_matrix(const Mat2D& X_new, const Mat2D& Y_new) const {
         // vector of error matrices(rows=Y.rows(), cols=Y.cols())
         // col = component #, row = obs #, tier = Y category
         std::vector<Mat2D> Ev(Y_new.cols(), Mat2D::Zero(X_new.rows(), this->A));
 
-        for (int j = 1; j <= this->A; j++) { // j is component #
+        for (size_t j = 1; j <= this->A; j++) { // j is component #
             Mat2D res = residuals(X_new, Y_new, j);
-            for (int k = 0; k < res.cols(); k++) { // k is Y category
-                Ev[k].col(j-1) = res.col(k);
+            for (size_t k = 0; k < static_cast<size_t>(res.cols()); k++) { // k is Y category
+                Ev[k].col(j - 1) = res.col(k);
             }
         }
         return Ev;
@@ -363,7 +374,7 @@ struct PLS_Model {
 
     // if val_method is LOO, X and Y should be original data
     // if val_method is NEW_DATA, X and Y should be observations not included in the original model
-    Rowi optimal_num_components(const Mat2D& X, const Mat2D& Y, VALIDATION_METHOD val_method) {
+    Rowsz optimal_num_components(const Mat2D& X, const Mat2D& Y, const VALIDATION_METHOD val_method) const {
         // col = component #, row = obs #, tier = Y category
 
         std::vector<Mat2D> errors;
@@ -374,14 +385,14 @@ struct PLS_Model {
         }
 
         Mat2D press = Mat2D::Zero(Y.cols(), A);
-        Rowi min_press_idx = Rowi::Zero(Y.cols());
+        Rowsz min_press_idx = Rowsz::Zero(Y.cols());
         Row  min_press_val(Y.cols());
-        Rowi best_comp(Y.cols());
+        Rowsz best_comp(Y.cols());
 
         // Determine PRESS values
-        for (unsigned int i=0; i<errors.size(); i++) {    // for each Y category
-            for (int j=0; j<errors[i].rows(); j++) {      // for each observation
-                for (int k=0; k<errors[i].cols(); k++) {  // for each component
+        for (size_t i = 0; i < static_cast<size_t>(errors.size()); i++) {    // for each Y category
+            for (size_t j = 0; j < static_cast<size_t>(errors[i].rows()); j++) {      // for each observation
+                for (size_t k = 0; k < static_cast<size_t>(errors[i].cols()); k++) {  // for each component
                     press(i,k) += pow(errors[i](j,k), 2);
                 }
             }
@@ -389,8 +400,8 @@ struct PLS_Model {
 
         min_press_val = press.col(0);
         // Find the component number that minimizes PRESS for each Y category
-        for (int i=0; i<press.rows(); i++) {              // for each Y category
-            for (int j=0; j<press.cols(); j++) {          // for each component
+        for (size_t i = 0; i < static_cast<size_t>(press.rows()); i++) {              // for each Y category
+            for (size_t j = 0; j < static_cast<size_t>(press.cols()); j++) {          // for each component
                 if (press(i,j) < min_press_val(i)) {
                     min_press_val(i) = press(i,j);
                     min_press_idx(i) = j;
@@ -401,14 +412,14 @@ struct PLS_Model {
         best_comp = min_press_idx.array() + 1; // +1 to convert from index to component number
         // Find the min number of components that is not significantly
         // different from the min PRESS at alpha = 0.1 for each Y category
-        const float ALPHA = 0.1;
-        for (int i=0; i<press.rows(); i++) {              // for each Y category
-            for (int j=0; j<min_press_idx(i); j++) {      // for each smaller number of components
+        const float_type ALPHA = 0.1;
+        for (size_t i = 0; i < static_cast<size_t>(press.rows()); i++) {              // for each Y category
+            for (size_t j = 0; j < min_press_idx(i); j++) {      // for each smaller number of components
                 Col err1 = errors[i].col(min_press_idx(i));
                 Col err2 = errors[i].col(j);
-                float p = wilcoxon(err1, err2);
+                auto p = wilcoxon(err1, err2);
                 if (p > ALPHA) {
-                    best_comp(i) = j+1; // +1 to convert from index to component number
+                    best_comp(i) = j + 1; // +1 to convert from index to component number
                     break;
                 }
             }

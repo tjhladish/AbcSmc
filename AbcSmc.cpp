@@ -1221,8 +1221,8 @@ cerr << "coefficients:\n" << plsm.coefficients() << endl;
     }
 
     const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
-    Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
-    int num_components_used = num_components.maxCoeff();
+    Rowsz num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
+    size_t num_components_used = num_components.maxCoeff();
     cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
     cerr << "Using " << num_components_used << " components." << endl;
 

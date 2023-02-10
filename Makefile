@@ -37,7 +37,7 @@ libabc.a: $(filter-out CCRC32.o,$(ABCOBJECTS)) $(SQLOBJECTS) $(JSONOBJECTS)
 $(SQLDIR)/%.o:
 	$(MAKE) -C $(@D) $(@F)
 
-%.o: $(JSONDIR)/%.cpp
+$(JSONDIR)/%.o: $(JSONDIR)/%.cpp
 	$(CPP) $(CFLAGS) -c $< -o $@
 
 %.o: %.cpp $(ABC_HEADER)
