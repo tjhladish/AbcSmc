@@ -18,7 +18,7 @@ endif
 #LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas
 LIBS = -lm -lgsl -lgslcblas
 
-ABCSOURCES =  AbcSmc.cpp AbcUtil.cpp CCRC32.cpp
+ABCSOURCES =  pls.cpp AbcUtil.cpp AbcSmc.cpp CCRC32.cpp
 JSONSOURCES = $(patsubst %,$(JSONDIR)/src/%.cpp,json_reader json_value json_writer)
 SQLSOURCES  = $(addprefix $(SQLDIR)/,sqdb.cpp sqlite3.c)
 
