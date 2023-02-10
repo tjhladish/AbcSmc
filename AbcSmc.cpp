@@ -1122,11 +1122,9 @@ void AbcSmc::_print_particle_table_header() {
 }
 
 void AbcSmc::_fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances) {
-    vector<int> ranking = ordered(distances);
+    vector<size_t> ranking = ordered(distances);
 
-    vector<int>::iterator first = ranking.begin();
-    vector<int>::iterator last  = ranking.begin() + next_pred_prior_size;
-    vector<int> sample(first, last); // This is the predictive prior / posterior
+    vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
     _predictive_prior[t] = sample;
 
     cerr << "Observed:\n";

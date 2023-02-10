@@ -6,7 +6,6 @@
 #include <vector>
 #include <assert.h>
 #include <iomanip>
-#include <Eigen/Eigenvalues>
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_vector.h>
@@ -15,6 +14,8 @@
 #include <gsl/gsl_linalg.h>
 #include "ranker.h"
 #include <math.h>
+
+#include "pls.h"
 
 using namespace std;
 
@@ -39,22 +40,6 @@ namespace ABC {
   //using namespace std;
   using namespace Eigen;
 
-  #ifdef MPREAL_SUPPORT
-  #include "mpreal.h"
-  #include <unsupported/Eigen/MPRealSupport>
-      using namespace mpfr;
-      typedef mpreal float_type;
-  #else
-      typedef double float_type;
-  #endif
-
-  typedef Matrix<float_type,Dynamic,Dynamic> Mat2D;
-  typedef Matrix<float_type, Dynamic, 1>  Col;
-  typedef Matrix<float_type, 1, Dynamic>  Row;
-  typedef Matrix<int, 1, Dynamic>  Rowi;
-  typedef Matrix<std::complex<float_type>,Dynamic,Dynamic> Mat2Dc;
-  typedef Matrix<std::complex<float_type>, Dynamic, 1>  Colc;
-
   vector<string> split(const std::string& s, char c);
 
   inline int string2int(const std::string& s){ std::istringstream i(s); int x = 0; i >> x; return x; }
@@ -75,18 +60,8 @@ namespace ABC {
 
   Row col_stdev( Mat2D mat, Row means );
 
-  float_type dominant_eigenvalue( EigenSolver<Mat2Dc> es );
-
-  Colc dominant_eigenvector( EigenSolver<Mat2D> es );
-
   Mat2D colwise_z_scores( const Mat2D& mat );
   Mat2D colwise_z_scores( const Mat2D& mat, Row& means, Row& stdev );
-
-  std::vector<int> ordered(Col const& values);
-
-  float_type wilcoxon(const Col err_1, const Col err_2);
-
-  float_type normalcdf(float_type z);
 
   float_type mean(const Col data);
 

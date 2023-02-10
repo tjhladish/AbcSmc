@@ -40,16 +40,16 @@ namespace ABC {
 // In general, the goal is that those implementations should *not* be "stateful". That is, they should not have any internal state which
 // is changed when they are used.
 struct AbcSimFun {
-    virtual vector<ABC::float_type> operator()(
-      vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
+    virtual vector<float_type> operator()(
+      vector<float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
     ) const = 0;
 };
 
 // an AbcSimFun which throws an error if used. This is intended to be used as a default, so that if *not* replaced, the error
 // will be thrown when the simulator is used.
 struct AbcSimUnset : AbcSimFun {
-    vector<ABC::float_type> operator()(
-      vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
+    vector<float_type> operator()(
+      vector<float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
     ) const {
         std::cerr << "ERROR: A pointer to a simulator function (prefered) or an external simulator executable must be defined." << std::endl;
         exit(100);
@@ -59,7 +59,7 @@ struct AbcSimUnset : AbcSimFun {
 // This defines a function type, for cleaner typing when using a function pointer as a simulator
 // Using a function pointer is the typical approach for both compiling the abc library + simulator together AND
 // using a dynamic simulator object.
-typedef vector<ABC::float_type> AbcSimF(vector<ABC::float_type>, const unsigned long int, const unsigned long int, const ABC::MPI_par*);
+typedef vector<float_type> AbcSimF(vector<float_type>, const unsigned long int, const unsigned long int, const ABC::MPI_par*);
 
 // This function handles loading a shared object file -> extracting the function pointer to an AbcSimF
 inline AbcSimF * loadSO(const char * target) {
@@ -84,8 +84,8 @@ struct AbcFPtr : AbcSimFun {
     AbcFPtr(AbcSimF * _fptr) : fptr(_fptr) { } // constructor for a function pointer directly
     AbcFPtr(const char * target) : AbcFPtr(loadSO(target)) { } // construct from a char*-style string (the file name for shared object)
     AbcFPtr(const std::string target) : AbcFPtr(target.c_str()) { } // construct from a std::string (the file name for shared object)
-    vector<ABC::float_type> operator()(
-      vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
+    vector<float_type> operator()(
+      vector<float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
     ) const {
         return fptr(pars, seed, serial, _mp);
     }
@@ -98,11 +98,11 @@ struct AbcExec : AbcSimFun {
     const string command;
     AbcExec(string _command) : command(_command) { }
 
-    vector<ABC::float_type> operator()(
-      vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
+    vector<float_type> operator()(
+      vector<float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
     ) const {
         auto execcom = command;
-        vector<ABC::float_type> mets;
+        vector<float_type> mets;
         for (auto par : pars) { execcom += " " + ABC::toString(par); }
 
         FILE* pipe = popen(execcom.c_str(), "r");
@@ -124,7 +124,7 @@ struct AbcExec : AbcSimFun {
             stringstream ss;
             ss.str(retval);
             // TODO deal with empty mets on !particle_success
-            ABC::float_type met;
+            float_type met;
             while(ss >> met) mets.push_back(met);
         }
 
