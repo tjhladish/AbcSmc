@@ -1,16 +1,30 @@
 #ifndef PLS_H
 #define PLS_H
 
-#include "AbcUtil.h"
+#include <Eigen/Eigenvalues>
+#include <vector>
+
+#ifdef MPREAL_SUPPORT
+#include "mpreal.h"
+#include <unsupported/Eigen/MPRealSupport>
+    using namespace mpfr;
+    typedef mpreal float_type;
+#else
+    typedef double float_type;
+#endif
+
 
 //using namespace std;
 using namespace Eigen;
-using namespace ABC;
 
-using std::cout;
-using std::cerr;
 using std::complex;
-using std::endl;
+
+typedef Matrix<float_type, Dynamic, Dynamic> Mat2D;
+typedef Matrix<float_type, Dynamic, 1>  Col;
+typedef Matrix<float_type, 1, Dynamic>  Row;
+typedef Matrix<int, 1, Dynamic>  Rowi;
+typedef Matrix<complex<float_type>, Dynamic, Dynamic> Mat2Dc;
+typedef Matrix<complex<float_type>, Dynamic, 1>  Colc;
 
 typedef enum { KERNEL_TYPE1, KERNEL_TYPE2 } METHOD;
 typedef enum { PRESS, RMSEP } VALIDATION_OUTPUT;
@@ -38,8 +52,134 @@ typedef enum { LOO, NEW_DATA } VALIDATION_METHOD;
  *     a     : integer counter for latent variable dimension
  */
 
-class PLS_Model {
-  public:
+// helper methods
+template<typename MATTYPE>
+size_t find_dominant_ev (const EigenSolver<MATTYPE> es) {
+    auto eig_val = es.eigenvalues();
+    float_type m = 0;
+    size_t idx = 0;
+
+    for (size_t i = 0; i < static_cast<size_t>(eig_val.size()); i++) {
+        if (imag(eig_val[i]) == 0) {
+            if (abs(eig_val[i]) > m) {
+                m = abs(eig_val[i]);
+                idx = i;
+            }
+        }
+    }
+    return idx;
+
+};
+
+float_type dominant_eigenvalue( EigenSolver<Mat2Dc> es ){
+    const size_t idx = find_dominant_ev(es);
+    return abs(es.eigenvalues()[idx].real());
+};
+
+
+Colc dominant_eigenvector( EigenSolver<Mat2D> es ){
+    const size_t idx = find_dominant_ev(es);
+    return es.eigenvectors().col(idx);
+}
+
+#include <algorithm> // sort
+#include <numeric> // iota
+
+// tag/index sort, from https://stackoverflow.com/a/37732329/167973
+template<typename T>
+std::vector<std::size_t> ordered(const T& v)
+{
+    std::vector<std::size_t> result(v.size());
+    std::iota(std::begin(result), std::end(result), 0);
+    std::sort(std::begin(result), std::end(result),
+            [&v](const auto & lhs, const auto & rhs)
+            {
+                return *(v.begin() + lhs) < *(v.begin()+ rhs);
+            }
+    );
+    return result;
+}
+
+//
+// Numerical Approximation to Normal Cumulative Distribution Function
+//
+// DESCRIPTION:
+// REFERENCE: Handbook of Mathematical Functions with Formulas, Graphs, and Mathematical
+// Tables, U.S. Dept of Commerce - National Bureau of Standards, Editors: M. Abramowitz and I. A. Stegun
+// December 1972, p. 932
+// INPUT: z=computed Z-value
+// OUTPUT: probn=cumulative probability from -infinity to z
+//
+//
+float_type normalcdf(float_type z){
+    const double c1 = 0.196854;
+    const double c2 = 0.115194;
+    const double c3 = 0.000344;
+    const double c4 = 0.019527;
+    float_type p;
+    if (z < 0) {
+        z = -z;
+        p = 1 - 0.5 / pow(1 + c1*z + c2*z*z + c3*z*z*z + c4*z*z*z*z,4);
+    } else {
+        p = 0.5 / pow(1 + c1*z + c2*z*z + c3*z*z*z + c4*z*z*z*z,4);
+    }
+    float_type probn = 1.0 - p;
+    return probn;
+}
+
+//
+// WILCOXON SIGNED RANK TEST FOR EVALUATING RELATIVE QUALITY OF TWO
+// COMPETING METHODS
+//
+// DESCRIPTION: Pairwise comparison between sets of model predictions
+// Competing models: model#1, model#2
+//
+// REFERENCE: Lehmann E. L. Nonparamtrics: Statistical Methods Based on Ranks.
+// Holden-Day: San Francisco, 1975, 120-132.
+//
+// Let: U=sum of postive ranks, V=sum of negative ranks
+// (V>U) is evidence that the model#1 is better)
+// Define: d=U-V and t=U+V=n(n+1)/2
+// Then V=(t-d)/2
+//
+// Asymptotic Theory: Suppose n is the number of samples.
+// Then, E(V)=n(n+1)/4 and Var(V)=n(n+1)(2n+1)/24.
+// It follows that (V-E(V))/Std(V) is approx. normally distributed.
+//
+// INPUT: err_1=prediction errors from model#1
+//        err_2=prediction errors from model#2
+//
+// OUTPUT: probw=Prob{V is larger than observed}
+// If probw is small enough, conclude that model#1 is better
+//
+// Based on Matlab code from
+// Thomas E. V. Non-parametric statistical methods for multivariate calibration
+// model selection and comparison. J. Chemometrics 2003; 17: 653–659
+//
+float_type wilcoxon(const Col err_1, const Col err_2) {
+    size_t n = err_1.rows();
+    Col del = err_1.cwiseAbs() - err_2.cwiseAbs();
+    Rowi sdel;
+    sdel.setZero(del.size());
+    //Matrix<int, Dynamic, 1> sdel = del.unaryExpr(std::ptr_fun(_sgn)); // can't get this to work
+    for (size_t i = 0; i < static_cast<size_t>(del.size()); i++)  sdel(i) = (0 < del(i)) - (del(i) < 0); // get the sign of each element
+    Col adel = del.cwiseAbs();
+    // 's' gives the original positions (indices) of the sorted values
+    auto s = ordered(adel);
+    float d = 0;
+    for (size_t i = 0; i < n; i++) d += (i+1)*sdel(s[i]);
+    float t  = n*(n+1)/2.0;
+    float v  = (t-d)/2.0;
+    float ev = t/2.0;
+    double sv = sqrt((double) n*(n+1)*(2*n+1)/24.0);
+    float_type z = (v-ev)/sv;
+    float_type probw = 1.0 - normalcdf(z);
+
+    return probw;
+}
+
+struct PLS_Model {
+
     Mat2Dc P, W, R, Q, T;
     int A;
     METHOD method;
@@ -149,7 +289,6 @@ class PLS_Model {
     Row explained_variance(const Mat2D& X, const Mat2D& Y) { return explained_variance(X, Y, A); }
     Row explained_variance(const Mat2D& X, const Mat2D& Y, int comp) {
         assert (A >= comp);
-    //    cerr << "ev: " << this->SSE(X, Y, comp).cwiseQuotient( SST(Y) ) << endl;
         return (1.0 - this->SSE(X, Y, comp).cwiseQuotient( SST(Y) ).array()).matrix();
     }
 
@@ -195,8 +334,6 @@ class PLS_Model {
         plsm_v.initialize(Xv.cols(), Yv.cols(), this->A);
         for (int i = 0; i < X.rows(); i++) {
             plsm_v.plsr(Xv, Yv, this->method);
-            //cerr << "Using matrix:\n" << Xv << "\n";
-            //cerr << "Excluding row " << i << ":\n" << X.row(i) << "\n\n";
             for (int j = 1; j <= this->A; j++) {
                 Row res = plsm_v.residuals(X.row(i), Y.row(i), j).row(0);
                 for (int k = 0; k < res.size(); k++) Ev[k](i,j-1) = res(k);
