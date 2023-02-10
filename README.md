@@ -1,7 +1,13 @@
 # AbcSmc
-Sequential Monte Carlo Approximate Bayesian Computation with Partial Least Squares
+*Sequential Monte Carlo Approximate Bayesian Computation with Partial Least Squares*
 
-AbcSmc is a parameter estimation library implemented in C++ that has been developed to enable fitting complex stochastic models to disparate types of empirical data.  We use partial least squares to address problems arising from parameters and/or empirical metrics that co-vary or are unidentifiable (parameters) or uninformative (metrics).  Because of the long running times, often requiring many processor-core years of computation, AbcSmc is particularly well-suited to being used in high performance (e.g. cluster or supercomputer) environments. AbcSmc includes a convenient means of distributing and gathering work in HPC environments: the program pulls jobs from and writes output to a standardized SQL database, and implements a dynamic load balancing scheme to compensate for variable simulation run times and hardware failures. AbcSmc uses SQLite for the database, for portability of data.
+`AbcSmc` is a combined parameter estimation and scenario projection library implemented in C++. `AbcSmc` specifically focuses on:
+
+ - complex, computationally demanding, stochastic models,
+ - fitted to disparate types of empirical data, which defy convenient likelihoods,
+ - and ambiguity as to what parameters are key and what metrics are informative.
+ 
+ `AbcSmc` use partial least squares to address problems arising from parameters and/or empirical metrics that co-vary or are unidentifiable (parameters) or uninformative (metrics).  Because of the long running times, often requiring many processor-core years of computation, AbcSmc is particularly well-suited to being used in high performance (e.g. cluster or supercomputer) environments. AbcSmc includes a convenient means of distributing and gathering work in HPC environments: the program pulls jobs from and writes output to a standardized SQL database, and implements a dynamic load balancing scheme to compensate for variable simulation run times and hardware failures. AbcSmc uses SQLite for the database, for portability of data.
 
 ## Peer-reviewed publications that have used AbcSmc:
 
@@ -15,3 +21,7 @@ Hladish, T.J., C.A.B. Pearson, D.L. Chao, D.P. Rojas, G.L. Recchia, H. Gómez-Da
 
 ## License
 AbcSmc is licensed under GPLv3 (or later, at your discretion); see license [here](LICENSE).
+
+## Database Schema
+
+`AbcSmc`
