@@ -151,10 +151,7 @@ PLS_Model& PLS_Model::plsr(const Mat2D& X, const Mat2D& Y, const METHOD algorith
         w /= sqrt((w.transpose()*w)(0,0)); // use normalize function from eigen?
         r = w;
 
-        std::cerr << "PLS_Model here?" << std::endl;
-        std::cerr << "P" << std::endl;
-
-        for (size_t j = 0; j <= i-1; j++) {
+        if (i != 0) for (size_t j = 0; j <= i - 1; j++) {
             r -= (P.col(j).transpose()*w)(0,0)*R.col(j);
         }
         

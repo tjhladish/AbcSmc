@@ -94,8 +94,11 @@ struct PLS_Model {
 
     PLS_Model(
       const size_t num_predictors, const size_t num_responses, const size_t num_components
-    ) : A(num_components), P(num_predictors, num_components), W(num_predictors, num_components),
-        R(num_predictors, num_components), Q(num_responses, num_components) {
+    ) : A(num_components) {
+        P.setZero(num_predictors, A);
+        W.setZero(num_predictors, A);
+        R.setZero(num_predictors, A);
+        Q.setZero(num_responses, A);
         // T will be initialized if needed
     }
 
