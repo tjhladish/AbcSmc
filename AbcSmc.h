@@ -405,6 +405,12 @@ class AbcSmc {
         Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
 
         Row _z_transform_observed_metrics( Row& means, Row& stdevs );
+
+        void read_SMC_complete();
+        void rank_SMC_last();
+        void summarize_SMC();
+
+
 };
 
 #endif

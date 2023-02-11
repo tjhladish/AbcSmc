@@ -480,6 +480,16 @@ bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
 }
 */
 
+void AbcSmc::read_SMC_complete() {
+
+};
+void AbcSmc::rank_SMC_last() {
+
+};
+void AbcSmc::summarize_SMC() {
+
+};
+
 // Read in existing sets and do particle filtering as appropriate
 bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
     // make sure database looks intact
@@ -1118,6 +1128,16 @@ void AbcSmc::_print_particle_table_header() {
     for (size_t i = 0; i < npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
     for (size_t i = 0; i < nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
 }
+
+// void AbcSmc::_update_predictive_prior(
+//     const size_t smcSet,
+//     const Col & distances,
+//     const size_t next_pred_prior_size
+// ) {
+//     vector<size_t> ranking = ordered(distances);
+//     vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
+//     _predictive_prior[t] = sample;
+// };
 
 void AbcSmc::_fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances) {
     vector<size_t> ranking = ordered(distances);
