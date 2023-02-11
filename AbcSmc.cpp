@@ -1212,6 +1212,7 @@ PLS_Model AbcSmc::_filter_particles (
     const size_t pls_training_set_size = round(X.rows() * _pls_training_fraction);
     // @tjh TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
     size_t ncomp = npar();             // It doesn't make sense to consider more components than model parameters
+
     PLS_Model plsm(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), ncomp);
 
     // A is number of components to use
