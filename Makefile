@@ -18,7 +18,7 @@ endif
 #LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas
 LIBS = -lm -lgsl -lgslcblas
 
-ABCSOURCES =  AbcSmc.cpp AbcUtil.cpp CCRC32.cpp
+ABCSOURCES =  pls.cpp AbcUtil.cpp AbcSmc.cpp CCRC32.cpp
 JSONSOURCES = $(patsubst %,$(JSONDIR)/src/%.cpp,json_reader json_value json_writer)
 SQLSOURCES  = $(addprefix $(SQLDIR)/,sqdb.cpp sqlite3.c)
 
@@ -37,7 +37,7 @@ libabc.a: $(filter-out CCRC32.o,$(ABCOBJECTS)) $(SQLOBJECTS) $(JSONOBJECTS)
 $(SQLDIR)/%.o:
 	$(MAKE) -C $(@D) $(@F)
 
-%.o: $(JSONDIR)/%.cpp
+$(JSONDIR)/%.o: $(JSONDIR)/%.cpp
 	$(CPP) $(CFLAGS) -c $< -o $@
 
 %.o: %.cpp $(ABC_HEADER)

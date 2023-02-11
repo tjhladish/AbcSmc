@@ -317,7 +317,7 @@ class AbcSmc {
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
 
-        PLS_Model run_PLS(Mat2D&, Mat2D&, const int pls_training_set_size, const int ncomp);
+        PLS_Model run_PLS(Mat2D&, Mat2D&, const int pls_training_set_size, const size_t ncomp);
         std::string get_database_filename()                 { return _database_filename; }
         std::vector< Mat2D > get_particle_parameters() { return _particle_parameters; }
         std::vector< Mat2D > get_particle_metrics()    { return _particle_metrics; }

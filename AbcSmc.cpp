@@ -1179,16 +1179,15 @@ void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int 
     _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
 }
 
-PLS_Model AbcSmc::run_PLS(Mat2D &X, Mat2D &Y, const int pls_training_set_size, const int ncomp) {
+PLS_Model AbcSmc::run_PLS(Mat2D &X, Mat2D &Y, const int pls_training_set_size, const size_t ncomp) {
     // Run PLS
     // Box-Cox transform data -- TODO?
     //void test_bc( Mat2D );
     //test_bc(Y_orig);
 
-    const int npred = X.cols();      // number of predictor variables
-    const int nresp = Y.cols();      // number of response variables
-    PLS_Model plsm;
-    plsm.initialize(npred, nresp, ncomp);
+    const size_t npred = X.cols();      // number of predictor variables
+    const size_t nresp = Y.cols();      // number of response variables
+    PLS_Model plsm(npred, nresp, ncomp);
     assert(pls_training_set_size <= X.rows()); // can't train against more observations than we have
     plsm.plsr(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), KERNEL_TYPE1);
     return plsm;
@@ -1202,7 +1201,7 @@ PLS_Model AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int ne
 
     const int pls_training_set_size = round(X.rows() * _pls_training_fraction);
     // TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
-    int ncomp = npar();             // It doesn't make sense to consider more components than model parameters
+    size_t ncomp = npar();             // It doesn't make sense to consider more components than model parameters
     PLS_Model plsm = run_PLS(X, Y, pls_training_set_size, ncomp);
 
 /*
@@ -1215,7 +1214,7 @@ cerr << "T:\n" << plsm.T << endl;
 cerr << "coefficients:\n" << plsm.coefficients() << endl;
 */
     // A is number of components to use
-    for (int A = 1; A<=ncomp; A++) {
+    for (size_t A = 1; A <= ncomp; A++) {
         // How well did we do with this many components?
         cerr << setw(2) << A << " components ";
         cerr << "explained variance: " << plsm.explained_variance(X, Y, A);
@@ -1224,8 +1223,8 @@ cerr << "coefficients:\n" << plsm.coefficients() << endl;
     }
 
     const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
-    Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
-    int num_components_used = num_components.maxCoeff();
+    auto num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
+    size_t num_components_used = num_components.maxCoeff();
     cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
     cerr << "Using " << num_components_used << " components." << endl;
 
