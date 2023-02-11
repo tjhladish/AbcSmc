@@ -32,6 +32,7 @@ const string JOB_TABLE  = "job";
 const string MET_TABLE  = "met";
 const string PAR_TABLE  = "par";
 const string UPAR_TABLE = "upar";
+const string SMC_VIEW = "smc_view";
 
 bool file_exists(const char *fileName) {
     std::ifstream infile(fileName);
@@ -480,12 +481,20 @@ bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
 }
 */
 
-void AbcSmc::read_SMC_complete() {
+// 
+void AbcSmc::read_SMC_complete(sqdb::Db &db, const bool all) {
+    // if (not all) {
 
+    // } else {
+    //     R"(SELECT smcSet, count(*)JOIN (SELECT MAX(smcSet) AS mset FROM job WHERE status == 'D' AND posterior != -1) AS mset ON job.smcSet = mset.mset;)"
+    // }
+    
 };
+
 void AbcSmc::rank_SMC_last() {
 
 };
+
 void AbcSmc::summarize_SMC() {
 
 };
@@ -813,19 +822,21 @@ bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
 
 bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
     // We don't need BEGIN EXCLUSIVE here because the calling function has already done it
-    bool db_success = false;
+    bool db_success = true;
     try {
-        db_success = db.Query(ss.str().c_str()).Next();
+        db.Query(ss.str().c_str()).Next();
     } catch (const Exception& e) {
         cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
+        cerr << e.GetErrorCode() << " : " << e.GetErrorMsg() << endl;
         cerr << "Failed query:" << endl;
         cerr << ss.str() << endl;
+        db_success = false;
     } catch (const exception& e) {
         cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
         cerr << "Failed query:" << endl;
         cerr << ss.str() << endl;
+        db_success = false;
     }
     ss.str(string());
     ss.clear();
@@ -896,7 +907,16 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 
         ss << "create table " << MET_TABLE << " ( serial int primary key, " << _build_sql_create_met_string("") << ");";
         _db_execute_stringstream(db, ss);
+        
         db.CommitTransaction();
+        
+        QueryStr qs;
+        ss << qs.Format(SQDB_MAKE_TEXT(
+            "CREATE VIEW %s AS SELECT serial, smcSet, posterior FROM %s WHERE posterior != -1 AND status == 'D' ORDER BY smcSet, posterior;"
+        ), SMC_VIEW.c_str(), JOB_TABLE.c_str());
+        _db_execute_stringstream(db, ss);
+
+
     } else {
         return false;
     }

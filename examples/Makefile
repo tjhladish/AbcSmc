@@ -78,7 +78,7 @@ run_all: $(addprefix run_,$(DEMOS))
 
 clean:
 	rm -f $(addprefix abc_,$(DEMOS)) dice_game dice.so
-	rm -f --interactive=once $(patsubst abc_%.sqlite,$(DEMOS))
+	rm -f --interactive=once $(patsubst %,abc_%.sqlite,$(DEMOS))
 
 cleanall: clean
 	$(MAKE) -C $(ABCDIR) clean

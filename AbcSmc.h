@@ -406,7 +406,7 @@ class AbcSmc {
 
         Row _z_transform_observed_metrics( Row& means, Row& stdevs );
 
-        void read_SMC_complete();
+        void read_SMC_complete(sqdb::Db &db, const bool all = true);
         void rank_SMC_last();
         void summarize_SMC();
 
