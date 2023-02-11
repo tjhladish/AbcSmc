@@ -317,7 +317,7 @@ class AbcSmc {
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
 
-        PLS_Model run_PLS(Mat2D&, Mat2D&, const int pls_training_set_size, const size_t ncomp);
+        PLS_Model& run_PLS(Mat2D&, Mat2D&, const size_t pls_training_set_size, const size_t ncomp);
         std::string get_database_filename()                 { return _database_filename; }
         std::vector< Mat2D > get_particle_parameters() { return _particle_parameters; }
         std::vector< Mat2D > get_particle_metrics()    { return _particle_metrics; }
@@ -361,13 +361,13 @@ class AbcSmc {
         void _particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG);
         void _particle_worker();
 
-        void _fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances);
-        void _filter_particles_simple ( int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size);
-        PLS_Model _filter_particles ( int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size);
+        void _fp_helper(const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances);
+        void _filter_particles_simple(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size);
+        PLS_Model _filter_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size, const bool verbose = true);
         void _print_particle_table_header();
         long double calculate_nrmse(vector<Col> posterior_mets);
 
-        void set_resume( bool res ) { resume_flag = res; }
+        void set_resume(const bool res) { resume_flag = res; }
         bool resume() { return resume_flag; }
         void set_resume_directory( std::string res_dir ) { resume_directory = res_dir; }
         bool read_particle_set( int t, Mat2D &X_orig, Mat2D &Y_orig );

@@ -3,6 +3,7 @@
 
 #include <Eigen/Eigenvalues>
 #include <vector>
+#include <iostream>
 
 #ifdef MPREAL_SUPPORT
 #include "mpreal.h"
@@ -98,7 +99,16 @@ struct PLS_Model {
         // T will be initialized if needed
     }
 
-    void plsr (const Mat2D& X, const Mat2D& Y, const METHOD algorithm);
+    PLS_Model(
+        const Mat2D& X, const Mat2D& Y,
+        const size_t num_components,
+        const METHOD algorithm = KERNEL_TYPE1
+    ) : PLS_Model(X.cols(), Y.cols(), num_components) {
+        method = algorithm;
+        plsr(X, Y, algorithm);
+    }
+
+    PLS_Model& plsr (const Mat2D& X, const Mat2D& Y, const METHOD algorithm);
 
     // latent X values, i.e. the orthogonal metrics you wish you could measure
     const Mat2Dc scores(const Mat2D& X_new, const size_t comp) const;
@@ -122,11 +132,11 @@ struct PLS_Model {
     const Row SSE(const Mat2D& X, const Mat2D& Y) const { return SSE(X, Y, A); }
 
     // Total sum of squares
-    Row SST(const Mat2D& Y) const;
+    const Row SST(const Mat2D& Y) const;
 
     // fraction of explainable variance
-    Row explained_variance(const Mat2D& X, const Mat2D& Y, const size_t comp) const;
-    Row explained_variance(const Mat2D& X, const Mat2D& Y) const { return explained_variance(X, Y, A); }
+    const Row explained_variance(const Mat2D& X, const Mat2D& Y, const size_t comp) const;
+    const Row explained_variance(const Mat2D& X, const Mat2D& Y) const { return explained_variance(X, Y, A); }
 
     // leave-one-out validation of model (i.e., are we overfitting?)
     Mat2D loo_validation(const Mat2D& X, const Mat2D& Y, const VALIDATION_OUTPUT out_type) const;
@@ -137,6 +147,10 @@ struct PLS_Model {
     // if val_method is LOO, X and Y should be original data
     // if val_method is NEW_DATA, X and Y should be observations not included in the original model
     const Rowsz optimal_num_components(const Mat2D& X, const Mat2D& Y, const VALIDATION_METHOD val_method) const;
+
+    // output methods
+    void print_explained_variance(const Mat2D& X, const Mat2D& Y, std::ostream& os = std::cerr) const;
+    void print_state(std::ostream& os) const;
 
     private:
         size_t A; // number of components

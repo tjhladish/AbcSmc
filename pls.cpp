@@ -1,5 +1,7 @@
 
 #include "pls.h"
+#include <cmath> // log10, ceil
+#include <iomanip> // setw
 
 /*
  *   Variable definitions from source paper:
@@ -125,7 +127,7 @@ float_type wilcoxon(const Col err_1, const Col err_2) {
 
 // "Modified kernel algorithms 1 and 2"
 // from Dayal and MacGregor (1997) "Improved PLS Algorithms" J. of Chemometrics. 11,73-85.
-void PLS_Model::plsr(const Mat2D& X, const Mat2D& Y, const METHOD algorithm) {
+PLS_Model& PLS_Model::plsr(const Mat2D& X, const Mat2D& Y, const METHOD algorithm) {
     method = algorithm;
     int M = Y.cols(); // Number of response variables == columns in Y
 
@@ -168,7 +170,7 @@ void PLS_Model::plsr(const Mat2D& X, const Mat2D& Y, const METHOD algorithm) {
         R.col(i) = r;
         if (algorithm == KERNEL_TYPE1) T.col(i) = t;
     }
-    return;
+    return *this;
 };
 
 const Mat2Dc PLS_Model::scores(const Mat2D& X_new, const size_t comp) const {
@@ -196,7 +198,7 @@ const Row PLS_Model::SSE(const Mat2D& X, const Mat2D& Y, const size_t comp) cons
 };
 
 // Total sum of squares
-Row PLS_Model::SST(const Mat2D& Y) const {
+const Row PLS_Model::SST(const Mat2D& Y) const {
     Row sst(Y.cols());
     for (size_t c = 0; c < static_cast<size_t>(Y.cols()); c++) {
         sst(c) = (Y.col(c).array() - (Y.col(c).sum()/Y.rows())).square().sum();
@@ -204,7 +206,7 @@ Row PLS_Model::SST(const Mat2D& Y) const {
     return sst;
 }
 
-Row PLS_Model::explained_variance(const Mat2D& X, const Mat2D& Y, const size_t comp) const {
+const Row PLS_Model::explained_variance(const Mat2D& X, const Mat2D& Y, const size_t comp) const {
     assert (A >= comp);
     return (1.0 - SSE(X, Y, comp).cwiseQuotient( SST(Y) ).array()).matrix();
 }
@@ -332,4 +334,33 @@ const Rowsz PLS_Model::optimal_num_components(const Mat2D& X, const Mat2D& Y, co
     }
 
     return best_comp;
+};
+
+void PLS_Model::print_explained_variance(const Mat2D& X, const Mat2D& Y, std::ostream& os) const {
+    const size_t wd = ceil(std::log10(A));
+    for (size_t ncomp = 1; ncomp <= A; ncomp++) {
+        // How well did we do with this many components?
+        os << std::setw(wd) << ncomp << " components ";
+        os << "explained variance: " << explained_variance(X, Y, ncomp);
+        //cerr << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
+        os << " SSE: " << SSE(X, Y, ncomp) <<  std::endl;
+    }
+};
+
+void PLS_Model::print_state(std::ostream& os) const {
+    //P, W, R, Q, T
+    os <<
+        "P:"   << std::endl <<
+        P << std::endl <<
+        "W:"   << std::endl <<
+        W << std::endl <<
+        "R:"   << std::endl <<
+        R << std::endl <<
+        "Q:"   << std::endl <<
+        Q << std::endl <<
+        "T:"   << std::endl <<
+        T << std::endl <<
+        "coefficients:" << std::endl <<
+        coefficients() << std::endl;
+
 };
