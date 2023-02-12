@@ -150,9 +150,11 @@ PLS_Model& PLS_Model::plsr(const Mat2D& X, const Mat2D& Y, const METHOD algorith
 
         w /= sqrt((w.transpose()*w)(0,0)); // use normalize function from eigen?
         r = w;
-        for (size_t j=0; j <= i-1; j++) {
+
+        if (i != 0) for (size_t j = 0; j <= i - 1; j++) {
             r -= (P.col(j).transpose()*w)(0,0)*R.col(j);
         }
+        
         if (algorithm == KERNEL_TYPE1) {
             t = X*r;
             tt = (t.transpose()*t)(0,0);
@@ -161,6 +163,7 @@ PLS_Model& PLS_Model::plsr(const Mat2D& X, const Mat2D& Y, const METHOD algorith
             tt = (r.transpose()*XX*r)(0,0);
             p.noalias() = (r.transpose()*XX).transpose();
         }
+
         p /= tt;
         q.noalias() = (r.transpose()*XY).transpose(); q /= tt;
         XY -= ((p*q.transpose())*tt).real(); // is casting this to 'real' always safe?
@@ -170,6 +173,9 @@ PLS_Model& PLS_Model::plsr(const Mat2D& X, const Mat2D& Y, const METHOD algorith
         R.col(i) = r;
         if (algorithm == KERNEL_TYPE1) T.col(i) = t;
     }
+
+
+
     return *this;
 };
 
