@@ -47,7 +47,7 @@ abc_%.json: reference.json %_partial.json
 .FORCE:
 
 ../libabc.a: .FORCE
-	$(MAKE) -C $(ABCDIR) -f Makefile
+	@$(MAKE) -s -C $(ABCDIR) -f Makefile
 
 # this defines how to make the various abc_(sql|exec|dynamic) executables
 abc_%: main_%.cpp examples.h ../libabc.a

@@ -4,11 +4,19 @@ Setup => Simulate => Process [=> Simulation => Process [...]] - ends with
 
 ## Setup
 
+### Current
+
+### Desired
+
 ## Simulate
+
+### Current
+
+### Desired
 
 ## Process
 
-### Current:
+### Current
 
 read_SMC_sets_from_database - receives DB + reference to vector-of-vector of serials (will become: smcsets of serials)
 
@@ -22,12 +30,12 @@ side effects: fills _predictive_priors (by smcset id, via _fp_helper), writes to
 _fp_helper - receives smcset id, distances, size
 side effects: 
 
-### Desired:
+### Desired
 
 desired behavior: split into stages:
 
 read_SMC_complete (bool for last vs all)
- - read all (last only) SMC sets with any members assigned to posterior
+ - read all (last only) SMC sets with any members assigned to posterior - side effect: fill particle_parameters, particle_metrics
  - confirm all sets => if not, warn => exit; if yes, read into _parameters, _metrics
 
 rank_SMC_last

@@ -483,11 +483,12 @@ bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
 
 // 
 void AbcSmc::read_SMC_complete(sqdb::Db &db, const bool all) {
-    // if (not all) {
 
-    // } else {
-    //     R"(SELECT smcSet, count(*)JOIN (SELECT MAX(smcSet) AS mset FROM job WHERE status == 'D' AND posterior != -1) AS mset ON job.smcSet = mset.mset;)"
-    // }
+    if (not all) { // ask smc_set
+
+    } else {
+
+    }
     
 };
 
@@ -907,16 +908,15 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 
         ss << "create table " << MET_TABLE << " ( serial int primary key, " << _build_sql_create_met_string("") << ");";
         _db_execute_stringstream(db, ss);
-        
-        db.CommitTransaction();
-        
+
         QueryStr qs;
         ss << qs.Format(SQDB_MAKE_TEXT(
             "CREATE VIEW %s AS SELECT serial, smcSet, posterior FROM %s WHERE posterior != -1 AND status == 'D' ORDER BY smcSet, posterior;"
         ), SMC_VIEW.c_str(), JOB_TABLE.c_str());
         _db_execute_stringstream(db, ss);
 
-
+        db.CommitTransaction();
+        
     } else {
         return false;
     }
