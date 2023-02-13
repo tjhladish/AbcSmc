@@ -1,6 +1,6 @@
 # Notes on FITTING mode flow
 
-Setup => Simulate => Process [=> Simulation => Process [...]] - ends with 
+Setup => Populate => Simulate => Process (= Filter + Populate) [=> Simulation => Process [...]] - ends with 
 
 ## Setup
 
