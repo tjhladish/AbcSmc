@@ -32,7 +32,8 @@ const string JOB_TABLE  = "job";
 const string MET_TABLE  = "met";
 const string PAR_TABLE  = "par";
 const string UPAR_TABLE = "upar";
-const string SMC_VIEW = "smc_view";
+
+extern const unsigned char _binary_sqlviews_sql_start[];
 
 bool file_exists(const char *fileName) {
     std::ifstream infile(fileName);
@@ -821,22 +822,27 @@ bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
 }
 
 
-bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
+bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss, const bool verbose) {
     // We don't need BEGIN EXCLUSIVE here because the calling function has already done it
     bool db_success = true;
+    auto as_str = ss.str();
     try {
-        db.Query(ss.str().c_str()).Next();
+        auto query = as_str.c_str();
+        while (*query) {
+            if (verbose) { cerr << query << endl; }
+            db.Query(query, &query).Next();
+        }
     } catch (const Exception& e) {
         cerr << "CAUGHT E: ";
         cerr << e.GetErrorCode() << " : " << e.GetErrorMsg() << endl;
         cerr << "Failed query:" << endl;
-        cerr << ss.str() << endl;
+        cerr << as_str << endl;
         db_success = false;
     } catch (const exception& e) {
         cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
         cerr << "Failed query:" << endl;
-        cerr << ss.str() << endl;
+        cerr << as_str << endl;
         db_success = false;
     }
     ss.str(string());
@@ -891,11 +897,9 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 
     stringstream ss;
     if ( !_db_tables_exist(db, {JOB_TABLE}) and !_db_tables_exist(db, {PAR_TABLE}) and !_db_tables_exist(db, {MET_TABLE}) ) {
-        db.Query("BEGIN EXCLUSIVE;").Next();
-        ss << "create table " << JOB_TABLE << " ( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration real, status text, posterior int, attempts int );";
-        _db_execute_stringstream(db, ss);
+        db.BeginTransaction();
 
-        ss << "create index idx1 on " << JOB_TABLE << " (status, attempts);";
+        ss << _binary_sqlviews_sql_start;
         _db_execute_stringstream(db, ss);
 
         ss << "create table " << PAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
@@ -907,12 +911,6 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         }
 
         ss << "create table " << MET_TABLE << " ( serial int primary key, " << _build_sql_create_met_string("") << ");";
-        _db_execute_stringstream(db, ss);
-
-        QueryStr qs;
-        ss << qs.Format(SQDB_MAKE_TEXT(
-            "CREATE VIEW %s AS SELECT serial, smcSet, posterior FROM %s WHERE posterior != -1 AND status == 'D' ORDER BY smcSet, posterior;"
-        ), SMC_VIEW.c_str(), JOB_TABLE.c_str());
         _db_execute_stringstream(db, ss);
 
         db.CommitTransaction();

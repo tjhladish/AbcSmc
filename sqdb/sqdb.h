@@ -193,7 +193,7 @@ public:
   void RollbackTransaction();
 
   bool TableExists(const SQDB_CHAR* tableName);
-  Statement Query(const SQDB_CHAR* queryStr);
+  Statement Query(const SQDB_CHAR* queryStr, const SQDB_CHAR** tail = NULL);
   long long LastId();
 
   Db(const Db& x);

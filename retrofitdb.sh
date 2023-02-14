@@ -1,3 +1,3 @@
 #!/bin/sh
 
-cat retrofitdb.sql | sqlite3 $1
+cat sqlviews.sql | sqlite3 $1

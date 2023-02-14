@@ -22,7 +22,7 @@ ABCSOURCES =  pls.cpp AbcUtil.cpp AbcSmc.cpp CCRC32.cpp
 JSONSOURCES = $(patsubst %,$(JSONDIR)/src/%.cpp,json_reader json_value json_writer)
 SQLSOURCES  = $(addprefix $(SQLDIR)/,sqdb.cpp sqlite3.c)
 
-ABCOBJECTS  = $(ABCSOURCES:.cpp=.o)
+ABCOBJECTS  = $(ABCSOURCES:.cpp=.o) sqlviews.o
 JSONOBJECTS = $(JSONSOURCES:.cpp=.o)
 SQLOBJECTS  = $(SQLDIR)/sqdb.o $(SQLDIR)/sqlite3.o
 ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h ./AbcSim.h
@@ -42,6 +42,11 @@ $(JSONDIR)/%.o: $(JSONDIR)/%.cpp
 
 pls.o: pls.cpp pls.h
 	$(CPP) $(CFLAGS) -c -I. $< -o $@
+
+# note, some wizardry may be required to make this work on OSX:
+# http://gareus.org/wiki/embedding_resources_in_executables#architecture_dependent_binary_linking
+sqlviews.o: sqlviews.sql
+	ld -r -b binary -o $@ $^
 
 %.o: %.cpp $(ABC_HEADER)
 	$(CPP) $(LIBS) $(CFLAGS) -c $(INCLUDE) $< -o $@

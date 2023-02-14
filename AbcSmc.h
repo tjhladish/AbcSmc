@@ -378,7 +378,7 @@ class AbcSmc {
         string _build_sql_create_par_string(string tag);
         string _build_sql_create_met_string(string tag);
 
-        bool _db_execute_stringstream(sqdb::Db &db, stringstream &ss);
+        bool _db_execute_stringstream(sqdb::Db &db, stringstream &ss, const bool verbose = false);
         bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
         bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
 

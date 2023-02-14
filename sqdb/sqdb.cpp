@@ -459,13 +459,13 @@ bool Db::TableExists(const SQDB_CHAR* tableName)
   return count > 0;
 }
 
-Statement Db::Query(const SQDB_CHAR* queryStr)
+Statement Db::Query(const SQDB_CHAR* queryStr, const SQDB_CHAR** tail)
 {
   sqlite3_stmt* stmt = NULL;
 #ifdef SQDB_UTF8
-  const int ret = sqlite3_prepare(m_db, queryStr, -1, &stmt, NULL);
+  const int ret = sqlite3_prepare_v2(m_db, queryStr, -1, &stmt, tail);
 #else
-  const int ret = sqlite3_prepare16(m_db, queryStr, -1, &stmt, NULL);
+  const int ret = sqlite3_prepare16_v2(m_db, queryStr, -1, &stmt, tail);
 #endif
   CHECK(m_db, ret);
 
