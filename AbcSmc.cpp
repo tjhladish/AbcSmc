@@ -6,10 +6,12 @@
 #include <sstream>
 #include <fstream>
 #include <chrono>
+#include <string_view>
 
 #include "pls.h"
 #include "RunningStat.h"
 #include "AbcSmc.h"
+#include "refsql.h"
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -30,16 +32,29 @@ const int PREC = 5;
 const int WIDTH = 12;
 const string JOB_TABLE  = "job";
 const string MET_TABLE  = "met";
-const string PAR_TABLE  = "par";
-const string UPAR_TABLE = "upar";
+const string MET_UNDER  = MET_TABLE + "_under";
+const string MET_REF  = MET_TABLE + "_name";
 
-extern const unsigned char _binary_sqlviews_sql_start[];
+const string PAR_TABLE  = "par";
+const string PAR_UNDER  = PAR_TABLE + "_under";
+const string PAR_REF  = PAR_TABLE + "_name";
+
+const string UPAR_TABLE = "upar";
 
 bool file_exists(const char *fileName) {
     std::ifstream infile(fileName);
     return infile.good();
 }
 
+template<typename ITERABLE>
+inline string join(const ITERABLE & v, const string & delim = ", ") {
+    stringstream ss;
+    for (auto it = v.begin(); it != v.end(); ++it) {
+        if (it != v.begin()) ss << delim;
+        ss << *it;
+    }
+    return ss.str();
+}
 
 vector<float> as_float_vector(Json::Value val, string key) { // not worth templating, despite appearances
     vector<float> extracted_vals;
@@ -339,7 +354,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
 
         db.Query("BEGIN EXCLUSIVE;").Next();
         //ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
-        //_db_execute_stringstream(db, ss);
+        //_db_execute(db, ss);
 
         stringstream ss;
         Row pars;
@@ -365,23 +380,23 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
                                                << time(NULL)
                                                << ", NULL, 'Q', -1, 0 );";
             //cerr << "attempting: " << ss.str() << endl;
-            _db_execute_stringstream(db, ss);
+            _db_execute(db, ss);
 
             const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
             ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
-            _db_execute_stringstream(db, ss);
+            _db_execute(db, ss);
 
             if (use_transformed_pars) {
                 vector<double> upars = do_complicated_untransformations(_model_pars, pars);
                 ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
                 //cerr << "attempting: " << ss.str() << endl;
-                _db_execute_stringstream(db, ss);
+                _db_execute(db, ss);
             }
 
             ss << "insert into " << MET_TABLE << " values ( " << serial; for (size_t j = 0; j < nmet(); j++) ss << ", NULL"; ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
-            _db_execute_stringstream(db, ss);
+            _db_execute(db, ss);
         }
         db.CommitTransaction();
         gsl_matrix_free(L);
@@ -478,7 +493,7 @@ bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
     ss << "update sets set status = 'D', ";
     for (int j = 0; j < npar(); ++j) ss << ", " << _model_pars[j]->get_short_name() << "_dv = " << _model_pars[j]->get_doubled_variance(t);
     ss << " where smcSet = " << t << ";";
-    return _db_execute_stringstream(db, ss);
+    return _db_execute(db, ss);
 }
 */
 
@@ -800,9 +815,7 @@ bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
     bool db_success = false;
     try {
         db.Query("BEGIN EXCLUSIVE;").Next();
-        for (size_t i = 0; i < update_buffer.size(); ++i) {
-            db.Query(update_buffer[i].c_str()).Next();
-        }
+        for (auto buff : update_buffer) { _db_execute(db, buff); }
         db_success = true;
         db.CommitTransaction();
     } catch (const Exception& e) {
@@ -821,35 +834,42 @@ bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
     return db_success;
 }
 
-
-bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss, const bool verbose) {
-    // We don't need BEGIN EXCLUSIVE here because the calling function has already done it
+bool _db_execute(sqdb::Db &db, const char * query, const bool verbose) {
     bool db_success = true;
-    auto as_str = ss.str();
+    if (verbose) {
+        cerr << query << endl;
+    }
     try {
-        auto query = as_str.c_str();
         while (*query) {
-            if (verbose) { cerr << query << endl; }
+            if (verbose) { cerr << string(query).substr(0, 10) << " ... " << endl; }
             db.Query(query, &query).Next();
         }
     } catch (const Exception& e) {
         cerr << "CAUGHT E: ";
         cerr << e.GetErrorCode() << " : " << e.GetErrorMsg() << endl;
         cerr << "Failed query:" << endl;
-        cerr << as_str << endl;
+        cerr << query << endl;
         db_success = false;
     } catch (const exception& e) {
         cerr << "CAUGHT e: ";
         cerr << e.what() << endl;
         cerr << "Failed query:" << endl;
-        cerr << as_str << endl;
+        cerr << query << endl;
         db_success = false;
     }
+    return db_success;
+};
+
+bool _db_execute(sqdb::Db &db, const std::string &ss, const bool verbose) {
+    return _db_execute(db, ss.c_str(), verbose);
+};
+
+bool _db_execute(sqdb::Db &db, stringstream &ss, const bool verbose) {
+    bool db_success = _db_execute(db, ss.str(), verbose);
     ss.str(string());
     ss.clear();
     return db_success;
-}
-
+};
 
 bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     // Note that retval here is whether tables exist, rather than whether
@@ -886,6 +906,47 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     return tables_exist;
 }
 
+bool setup(
+    const std::string dbfile,
+    const std::vector<std::string> &par_names,
+    const std::vector<std::string> &met_names,
+    const bool hasTransformed = false
+) {
+    // NB: the cast here is to do with c-nature of sqlite3 library
+    // we're doing this to make the `eval` command available in sqlite3 when we open the database 
+    sqlite3_auto_extension((void(*)())sqlite3_eval_init);
+
+    // assert: db empty
+    sqdb::Db db(dbfile.c_str());
+
+    stringstream ss;
+    db.BeginTransaction();
+
+    // set up the static elements of an abcsmc database
+    ss << bin2c_sqlviews_sql;
+
+    _db_execute(db, ss);
+
+    QueryStr qs;
+    ss << qs.Format(SQDB_MAKE_TEXT("INSERT INTO %s (name) VALUES ('%s');"), PAR_REF.c_str(), join(par_names, "'), ('").c_str());
+    ss << qs.Format(SQDB_MAKE_TEXT("INSERT INTO %s (name) VALUES ('%s');"), MET_REF.c_str(), join(met_names, "'), ('").c_str());
+    _db_execute(db, ss);
+
+    // apply the dynamically generated elements
+    ss << bin2c_sqldynamic_sql;
+    _db_execute(db, ss);
+
+    if (hasTransformed) {
+        // TODO
+        // ss << "create table " << UPAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
+        // _db_execute(db, ss);
+    }
+
+    db.CommitTransaction();
+        
+    return true;
+};
+
 
 bool AbcSmc::build_database(const gsl_rng* RNG) {
     if (_posterior_database_filename != "" and not file_exists(_posterior_database_filename.c_str())) {
@@ -893,68 +954,76 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         exit(-215);
     }
 
+
     sqdb::Db db(_database_filename.c_str());
 
     stringstream ss;
     if ( !_db_tables_exist(db, {JOB_TABLE}) and !_db_tables_exist(db, {PAR_TABLE}) and !_db_tables_exist(db, {MET_TABLE}) ) {
-        db.BeginTransaction();
-
-        ss << _binary_sqlviews_sql_start;
-        _db_execute_stringstream(db, ss);
-
-        ss << "create table " << PAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
-        _db_execute_stringstream(db, ss);
-
-        if (use_transformed_pars) {
-            ss << "create table " << UPAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
-            _db_execute_stringstream(db, ss);
-        }
-
-        ss << "create table " << MET_TABLE << " ( serial int primary key, " << _build_sql_create_met_string("") << ");";
-        _db_execute_stringstream(db, ss);
-
-        db.CommitTransaction();
-        
+        setup(_database_filename, parameter_short_names(), metric_short_names(), use_transformed_pars);
     } else {
         return false;
     }
+
 
     Mat2D posterior;
     if (_posterior_database_filename != "") {
         posterior = slurp_posterior();
     }
 
-    db.Query("BEGIN EXCLUSIVE;").Next();
+    db.BeginTransaction();
 
     Row pars;
     const size_t set_num = 0;
     const size_t num_particles = get_num_particles(set_num);
+
+
     for (size_t i = 0; i < num_particles; i++) {
         int posterior_rank = -1;
+
+        const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
         pars = sample_priors(RNG, posterior, posterior_rank);
+
         if (not _retain_posterior_rank) posterior_rank = -1;
         QueryStr qstr;
 
-        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, %d, %d, %d, NULL, 'Q', %d, 0 );"), JOB_TABLE.c_str(), i, set_num, i, time(NULL), posterior_rank)).Next();
+        db.Query(qstr.Format(SQDB_MAKE_TEXT(
+            "INSERT INTO %s (smcSet, particleIdx, posterior) values ( %d, %d, %d );"),
+            JOB_TABLE.c_str(), set_num, i, posterior_rank
+        )).Next();
 
-        Statement s = db.Query(("select last_insert_rowid() from " + JOB_TABLE + ";").c_str());
+        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT(
+            "SELECT last_insert_rowid() FROM %s;"
+        ), JOB_TABLE.c_str()));
+
         s.Next();
-        const int rowid = ((int) s.GetField(0)) - 1; // indexing should start at 0
+        const int rowid = s.GetField(0); // indexing should start at 0?
 
-        const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-        ss << "insert into " << PAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
-        _db_execute_stringstream(db, ss);
+        ss << qstr.Format(
+            SQDB_MAKE_TEXT("INSERT INTO seeds (seed) VALUES (%d);"), // (serial auto'd, just insert the seed)
+            seed
+        );
+        _db_execute(db, ss);
 
-        if (use_transformed_pars) {
-            vector<double> upars = do_complicated_untransformations(_model_pars, pars);
-            ss << "insert into " << UPAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
-            _db_execute_stringstream(db, ss);
+        for (size_t j = 0; j < npar(); j++) {
+            ss << qstr.Format(
+                SQDB_MAKE_TEXT("INSERT INTO %s VALUES (%d, %d, %f);"), // (serial, parIdx, value), (), ...
+                PAR_UNDER.c_str(), rowid, j+1, pars[j]
+            );
+            _db_execute(db, ss);
         }
 
-        ss << "insert into " << MET_TABLE << " values ( " << rowid; for (size_t j = 0; j < nmet(); j++) ss << ", NULL"; ss << " );";
-        _db_execute_stringstream(db, ss);
+        if (use_transformed_pars) {
+            // vector<double> upars = do_complicated_untransformations(_model_pars, pars);
+            // ss << "insert into " << UPAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
+            // _db_execute(db, ss);
+        }
+
+        // TODO: metrics only filled in after simulation via UPSERT
+        // ss << "insert into " << MET_TABLE << " values ( " << rowid; for (size_t j = 0; j < nmet(); j++) ss << ", NULL"; ss << " );";
+        // _db_execute(db, ss);
     }
     db.CommitTransaction();
+
     return true;
 }
 
@@ -1018,12 +1087,11 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
     bool db_success = false;
 
     try {
-        db.Query("BEGIN EXCLUSIVE;").Next();
+        db.BeginTransaction();
         for (size_t i = 0; i < update_metrics_strings.size(); ++i) {
-            db.Query(update_metrics_strings[i].c_str()).Next(); // update metrics table
-            db.Query(update_jobs_strings[i].c_str()).Next(); // update jobs table
+            _db_execute(db, update_metrics_strings[i]);
+            _db_execute(db, update_jobs_strings[i]);
         }
-
         db_success = true;
         db.CommitTransaction();
     } catch (const Exception& e) {
@@ -1101,19 +1169,22 @@ bool AbcSmc::simulate_next_particles(
             if (not success) exit(-211);
 
             stringstream ss;
-            ss << "update " << MET_TABLE << " set ";
-            for (size_t j = 0; j < nmet()-1; j++) { ss << _model_mets[j]->get_short_name() << "=" << met_mat[i][j] << ", "; }
-            ss << _model_mets.back()->get_short_name() << "=" << met_mat[i].rightCols(1) << " ";
-            // only update metrics if job status is still 'R' or 'Q' or has been paused ('P')
-            ss << "where serial = " << serial << " and (select (status is 'R' or status is 'Q' or status is 'P') from " << JOB_TABLE << " J where J.serial=" << serial << ");";
+            QueryStr qstr;
+            for (size_t j = 0; j < nmet(); j++) {
+                ss << qstr.Format(SQDB_MAKE_TEXT(
+                    "INSERT INTO %s (serial, metIdx, value) VALUES (%d, %d, %f) ON CONFLICT (serial, metIdx) DO NOTHING;"
+                ), MET_UNDER.c_str(), serial, j+1, met_mat[i][j]);
+            }
             update_metrics_strings.push_back(ss.str());
+
             ss.str(string()); ss.clear();
 
             const size_t time_since_unix_epoch = duration_cast<seconds>(start_time.time_since_epoch()).count();
-            const duration<double> time_span = duration_cast<duration<double>>(high_resolution_clock::now() - start_time); // duration in seconds
+            const duration<size_t> time_span = duration_cast<duration<size_t>>(high_resolution_clock::now() - start_time); // duration in seconds
             // build jobs update statement to indicate job is running
-            ss << "update " << JOB_TABLE << " set startTime = " << time_since_unix_epoch << ", duration = " << time_span.count()
-               << ", status = 'D' where serial = " << serial << " and (status = 'R' or status = 'Q' or status = 'P');";
+            ss << qstr.Format(SQDB_MAKE_TEXT(
+                "UPDATE %s SET startTime = %d, duration = %d, status = 'D' WHERE serial = %d AND (status = 'R' OR status = 'Q' OR status = 'P');"
+            ), JOB_TABLE.c_str(), time_since_unix_epoch, time_span.count(), serial);
             update_jobs_strings.push_back(ss.str());
             ss.str(string()); ss.clear();
         }
