@@ -2,3 +2,5 @@ local.mk
 *.o
 
 *.a
+
+refsql.*
