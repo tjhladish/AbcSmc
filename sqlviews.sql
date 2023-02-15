@@ -1,20 +1,25 @@
 
-/* TODO: figure out how to do this portably? */
-SELECT load_extension('sqdb/pivot_vtab');
-
+/* TODO: should jobs also be some sort of view? */
 CREATE TABLE IF NOT EXISTS job (
-    serial INTEGER PRIMARY KEY ASC,
-    smcSet INTEGER NOT NULL,
-    particleIdx INTEGER NOT NULL,
-    startTime INTEGER,
-    duration INTEGER,
-    status TEXT DEFAULT 'Q',
-    posterior INTEGER DEFAULT -1,
-    attempts INTEGER DEFAULT 0
+    serial INTEGER PRIMARY KEY ASC, -- all runs must have a serial
+    smcSet INTEGER,                 -- smcSet only required when doing fitting
+    particleIdx INTEGER,            -- particleIdx only required when doing scenario analysis
+    startTime INTEGER,              -- start time of run; initially NULL, then set at time of run
+    duration INTEGER,               -- duration of run; initially NULL, then set at time of run
+    status TEXT DEFAULT 'Q',        -- status of run; initially 'Q' for queued, then 'D' for done
+    posterior INTEGER DEFAULT -1,   -- posterior rank; defaults to -1 (not in posterior), potentially updated by processing
+    attempts INTEGER DEFAULT 0      -- number of times this job has been attempted; initially 0, then incremented on "checkout"
 );
 
 CREATE INDEX IF NOT EXISTS idx1 ON job (status, attempts);
 
+/* random seed container; "seed" is a special kind of parameter */
+CREATE TABLE IF NOT EXISTS seeds (
+    serial INTEGER PRIMARY KEY ASC,
+    seed BLOB
+);
+
+/* normal-formed parameters table. links run serial + parameter id => value of that parameter */
 CREATE TABLE IF NOT EXISTS par_under (
     serial INTEGER NOT NULL,
     parIdx INTEGER NOT NULL,
@@ -22,12 +27,14 @@ CREATE TABLE IF NOT EXISTS par_under (
     PRIMARY KEY (serial, parIdx)
 );
 
+/* meta-data on parameters; must be dynamically filled when setting up db */
 CREATE TABLE IF NOT EXISTS par_name (
     parIdx INTEGER PRIMARY KEY ASC,
     name TEXT NOT NULL,
     long_name TEXT
 );
 
+/* normal-formed metrics table. links run serial + metric id => value of that metric */
 CREATE TABLE IF NOT EXISTS met_under (
     serial INTEGER NOT NULL,
     metIdx INTEGER NOT NULL,
@@ -35,16 +42,11 @@ CREATE TABLE IF NOT EXISTS met_under (
     PRIMARY KEY (serial, metIdx)
 );
 
+/* meta-data on metrics; must be dynamically filled when setting up db */
 CREATE TABLE IF NOT EXISTS met_name (
     metIdx INTEGER PRIMARY KEY ASC,
     name TEXT NOT NULL,
     long_name TEXT
-);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS met USING pivot_vtab(
-    (SELECT serial FROM met_under GROUP BY serial),
-    (SELECT metIdx FROM met_name),
-    (SELECT parIdx, name FROM par_name)
 );
 
 /* SQLite supports VIEWs - these are essentially predefined queries, that are dynamically

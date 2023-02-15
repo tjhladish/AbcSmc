@@ -22,10 +22,10 @@ ABCSOURCES =  pls.cpp AbcUtil.cpp AbcSmc.cpp CCRC32.cpp
 JSONSOURCES = $(patsubst %,$(JSONDIR)/src/%.cpp,json_reader json_value json_writer)
 SQLSOURCES  = $(addprefix $(SQLDIR)/,sqdb.cpp sqlite3.c)
 
-ABCOBJECTS  = $(ABCSOURCES:.cpp=.o) sqlviews.o
+ABCOBJECTS  = $(ABCSOURCES:.cpp=.o) refsql.o
 JSONOBJECTS = $(JSONSOURCES:.cpp=.o)
 SQLOBJECTS  = $(SQLDIR)/sqdb.o $(SQLDIR)/sqlite3.o
-ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h ./AbcSim.h
+ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h ./AbcSim.h ./refsql.h
 
 default: libabc.a
 
@@ -43,10 +43,12 @@ $(JSONDIR)/%.o: $(JSONDIR)/%.cpp
 pls.o: pls.cpp pls.h
 	$(CPP) $(CFLAGS) -c -I. $< -o $@
 
-# note, some wizardry may be required to make this work on OSX:
-# http://gareus.org/wiki/embedding_resources_in_executables#architecture_dependent_binary_linking
-sqlviews.o: sqlviews.sql
-	ld -r -b binary -o $@ $^
+# bin2c available from hxtools via apt
+refsql.c: sqlviews.sql sqldynamic.sql
+	bin2c -C $@ $^
+
+refsql.o: refsql.c
+	$(CPP) $(CFLAGS) -c -I. $< -o $@
 
 %.o: %.cpp $(ABC_HEADER)
 	$(CPP) $(LIBS) $(CFLAGS) -c $(INCLUDE) $< -o $@
@@ -54,3 +56,6 @@ sqlviews.o: sqlviews.sql
 clean:
 	rm -f *.o *.a
 	$(MAKE) -C $(SQLDIR) clean
+
+test.sqlite: sqlviews.sql test.sql sqldynamic.sql
+	$(foreach sql,$^,cat $(sql) | sqlite3 $@;)
