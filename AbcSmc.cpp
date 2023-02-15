@@ -32,11 +32,11 @@ const int PREC = 5;
 const int WIDTH = 12;
 const string JOB_TABLE  = "job";
 const string MET_TABLE  = "met";
-const string MET_UNDER  = MET_TABLE + "_under";
+const string MET_UNDER  = MET_TABLE + "_vals";
 const string MET_REF  = MET_TABLE + "_name";
 
 const string PAR_TABLE  = "par";
-const string PAR_UNDER  = PAR_TABLE + "_under";
+const string PAR_UNDER  = PAR_TABLE + "_vals";
 const string PAR_REF  = PAR_TABLE + "_name";
 
 const string UPAR_TABLE = "upar";
@@ -373,7 +373,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
                 pars = sample_predictive_priors(next_set, RNG);
             }
             QueryStr qstr;
-
+// TODO here's the place to fix the NEXT SET problem
             ss << "insert into " << JOB_TABLE << " values ( " << serial << ", "
                                                << next_set << ", "
                                                << i << ", "
@@ -878,7 +878,7 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     bool tables_exist = true;
     try {
         for(string table_name: table_names) {
-            string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
+            string query_str = "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'view') and name='" + table_name + "';";
             //cerr << "Attempting: " << query_str << endl;
             Statement s = db.Query( query_str.c_str() );
             s.Next();
@@ -947,6 +947,28 @@ bool setup(
     return true;
 };
 
+bool populate(
+    sqdb::Db &db,
+    const std::vector<Row> &pars,
+    const std::vector<Row> &upars = {},
+    const size_t smcSet = -1
+) {
+// inserting pars.size() jobs into the db
+    assert((upars.size() == 0) or (upars.size() == pars.size()));
+
+    QueryStr qstr;
+
+    db.Query(qstr.Format(SQDB_MAKE_TEXT(
+        "INSERT INTO %s (smcSet, particleIdx, posterior) values ( %d, %d, %d );"),
+        JOB_TABLE.c_str(), set_num, i, posterior_rank
+    )).Next();
+
+        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT(
+            "SELECT last_insert_rowid() FROM %s;"
+        ), JOB_TABLE.c_str()));
+
+    return true;
+};
 
 bool AbcSmc::build_database(const gsl_rng* RNG) {
     if (_posterior_database_filename != "" and not file_exists(_posterior_database_filename.c_str())) {

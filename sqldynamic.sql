@@ -3,7 +3,7 @@
 -- SELECT load_extension('sqdb/eval');
 
 /* these blocks use `eval` to look at the contents of the (par|met)_name tables, and
-* then construct a view of the (par|mar)_under tables (which are long format),
+* then construct a view of the (par|mar)_vals tables (which are long format),
 * in long format, with the column names.
 * 
 * The view is dropped / recreated every time this is run: the view is dynamic, but its construction is
@@ -23,7 +23,7 @@ WITH expr AS (
     UNION ALL -- all of the unique parameter indices, and label them by name
     SELECT ', MAX(value) FILTER (WHERE parIdx == ' || parIdx || ') AS ' || name FROM par_name
     UNION ALL
-    SELECT ' FROM par_under JOIN seeds USING(serial) GROUP BY serial;' -- generate the pivot from the par_under(lying) table
+    SELECT ' FROM par_vals JOIN seeds USING(serial) GROUP BY serial;' -- generate the pivot from the par_vals(lying) table
 )
 SELECT eval(GROUP_CONCAT(line, '')) FROM expr; 
 
@@ -37,6 +37,6 @@ WITH expr AS (
     UNION ALL -- all of the unique metric indices, and label them by name
     SELECT ', MAX(value) FILTER (WHERE metIdx == ' || metIdx || ') AS ' || name || ' ' FROM met_name
     UNION ALL
-    SELECT 'FROM met_under GROUP BY serial;' -- generate the pivot from the par_under(lying) table
+    SELECT 'FROM met_vals GROUP BY serial;' -- generate the pivot from the par_vals(lying) table
 )
 SELECT eval(GROUP_CONCAT(line, '')) FROM expr;

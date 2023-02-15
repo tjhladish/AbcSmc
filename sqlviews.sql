@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS seeds (
 );
 
 /* normal-formed parameters table. links run serial + parameter id => value of that parameter */
-CREATE TABLE IF NOT EXISTS par_under (
+CREATE TABLE IF NOT EXISTS par_vals (
     serial INTEGER NOT NULL,
     parIdx INTEGER NOT NULL,
     value REAL,
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS par_name (
 );
 
 /* normal-formed metrics table. links run serial + metric id => value of that metric */
-CREATE TABLE IF NOT EXISTS met_under (
+CREATE TABLE IF NOT EXISTS met_vals (
     serial INTEGER NOT NULL,
     metIdx INTEGER NOT NULL,
     value REAL,
