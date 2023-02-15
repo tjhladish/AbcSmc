@@ -322,6 +322,18 @@ class AbcSmc {
         std::vector< Mat2D > get_particle_parameters() { return _particle_parameters; }
         std::vector< Mat2D > get_particle_metrics()    { return _particle_metrics; }
 
+        std::vector<string> parameter_short_names() const {
+            std::vector<string> names;
+            for (auto p: _model_pars) names.push_back(p->get_short_name());
+            return names;
+        }
+
+        std::vector<string> metric_short_names() const {
+            std::vector<string> names;
+            for (auto m: _model_mets) names.push_back(m->get_short_name());
+            return names;
+        }
+
     private:
         Mat2D X_orig;
         Mat2D Y_orig;
@@ -378,7 +390,6 @@ class AbcSmc {
         string _build_sql_create_par_string(string tag);
         string _build_sql_create_met_string(string tag);
 
-        bool _db_execute_stringstream(sqdb::Db &db, stringstream &ss, const bool verbose = false);
         bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
         bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
 
@@ -412,5 +423,9 @@ class AbcSmc {
 
 
 };
+
+bool _db_execute(sqdb::Db &db, const char * query, const bool verbose = false);
+bool _db_execute(sqdb::Db &db, const string &ss, const bool verbose = false);
+bool _db_execute(sqdb::Db &db, stringstream &ss, const bool verbose = false);
 
 #endif
