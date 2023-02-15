@@ -6,6 +6,7 @@
 #include <stdlib.h>
 
 #include "sqdb.h"
+#include "eval.c"
 
 #include <iostream>
 #include <unistd.h>

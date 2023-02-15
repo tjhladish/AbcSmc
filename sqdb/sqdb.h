@@ -38,6 +38,9 @@
 #  define SQDB_STD_STRING std::wstring
 #endif
 
+// forward define all embedded extension entry points here
+int sqlite3_eval_init(sqlite3 *db, char **pzErrMsg, const sqlite3_api_routines *pApi);
+
 namespace sqdb
 {
 
