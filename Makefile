@@ -43,9 +43,12 @@ $(JSONDIR)/%.o: $(JSONDIR)/%.cpp
 pls.o: pls.cpp pls.h
 	$(CPP) $(CFLAGS) -c -I. $< -o $@
 
+# https://stackoverflow.com/questions/4158900/embedding-resources-in-executable-using-gcc
 # bin2c available from hxtools via apt
-refsql.c: sqlviews.sql sqldynamic.sql
+refsql.h: sqlviews.sql sqldynamic.sql sqlutrans.sql
 	bin2c -C $@ $^
+
+refsql.c: refsql.h
 
 refsql.o: refsql.c
 	$(CPP) $(CFLAGS) -c -I. $< -o $@
