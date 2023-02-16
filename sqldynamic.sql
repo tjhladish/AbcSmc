@@ -19,11 +19,11 @@ WITH expr AS (
     UNION ALL
     SELECT 'SELECT serial' -- pivot on serial vs...
     UNION ALL
-    SELECT ', seed' -- add the seed column (from seeds table)
+    SELECT ', COALESCE(seed, serial) AS seed' -- add a seed column (from seeds table if filled, but defaults to serial)
     UNION ALL -- all of the unique parameter indices, and label them by name
     SELECT ', MAX(value) FILTER (WHERE parIdx == ' || parIdx || ') AS ' || name FROM par_name
     UNION ALL
-    SELECT ' FROM par_vals JOIN seeds USING(serial) GROUP BY serial;' -- generate the pivot from the par_vals(lying) table
+    SELECT ' FROM par_vals LEFT JOIN seeds USING(serial) GROUP BY serial;' -- generate the pivot from the par_vals(lying) table
 )
 SELECT eval(GROUP_CONCAT(line, '')) FROM expr; 
 
