@@ -11,6 +11,31 @@ CREATE TABLE IF NOT EXISTS job (
     attempts INTEGER DEFAULT 0      -- number of times this job has been attempted; initially 0, then incremented on "checkout"
 );
 
+/*
+CREATE TABLE IF NOT EXISTS job_data (
+    serial INTEGER PRIMARY KEY ASC,
+    startTime INTEGER, duration INTEGER,
+    attempts INTEGER DEFAULT 0,
+    priority INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS set_data (
+    serial INTEGER PRIMARY KEY ASC,
+    setId INTEGER DEFAULT -1,
+    rank INTEGER DEFAULT -1
+);
+
+CREATE VIEW IF NOT EXISTS job AS
+    SELECT serial, COALESCE(setId, -1) AS smcSet, 
+    startTime, duration,
+    status,
+    rank AS posterior, attempts
+    FROM job_data
+    LEFT JOIN set_data USING (serial)
+    LEFT JOIN met_vals USING (serial)
+    WHERE metIdx = 1;
+*/
+
 CREATE INDEX IF NOT EXISTS idx1 ON job (status, attempts);
 
 /* random seed container; "seed" is a special kind of parameter */
