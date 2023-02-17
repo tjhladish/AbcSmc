@@ -398,11 +398,19 @@ class AbcSmc {
 
         Col euclidean( Row obs_met, Mat2D sim_met );
 
-        Mat2D slurp_posterior();
+        Mat2D slurp_posterior(const bool verbose = false);
 
         Row sample_priors( const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank );
 
-        std::vector<double> do_complicated_untransformations( std::vector<Parameter*>& _model_pars, Row& pars );
+        bool _sample_priors(
+            const gsl_rng* RNG, const size_t n, // number of samples
+            vector<size_t> &seeds, // will be populated with seeds? will be pre-filled with seeds?
+            vector<Row> &pars, // will be populated with parameters
+            vector<Row> &upars, // will be populated with upars (if relevant)
+            vector<int> &ranks // will be populated with ranks (if relevant)
+        );
+
+        Row do_complicated_untransformations( std::vector<Parameter*>& _model_pars, Row& pars );
 
         void calculate_doubled_variances( int t );
 

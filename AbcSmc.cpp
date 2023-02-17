@@ -30,6 +30,7 @@ using namespace chrono;
 const string double_bar = "=========================================================================================";
 const int PREC = 5;
 const int WIDTH = 12;
+
 const string JOB_TABLE  = "job";
 const string MET_TABLE  = "met";
 const string MET_UNDER  = MET_TABLE + "_vals";
@@ -40,6 +41,8 @@ const string PAR_UNDER  = PAR_TABLE + "_vals";
 const string PAR_REF  = PAR_TABLE + "_name";
 
 const string UPAR_TABLE = "upar";
+const string UPAR_UNDER = UPAR_TABLE + "_vals";
+const string SEED_TABLE = "seed";
 
 bool file_exists(const char *fileName) {
     std::ifstream infile(fileName);
@@ -52,6 +55,20 @@ inline string join(const ITERABLE & v, const string & delim = ", ") {
     for (auto it = v.begin(); it != v.end(); ++it) {
         if (it != v.begin()) ss << delim;
         ss << *it;
+    }
+    return ss.str();
+}
+
+template<typename ITERABLE>
+inline string joineach(
+    const vector<ITERABLE> & v,
+    const string & outerdelim = "), (",
+    const string & innerdelim = ", "
+) {
+    stringstream ss;
+    for (auto it = v.begin(); it != v.end(); ++it) {
+        if (it != v.begin()) ss << outerdelim;
+        ss << join(*it, innerdelim);
     }
     return ss.str();
 }
@@ -305,11 +322,11 @@ bool AbcSmc::parse_config(string conf_filename) {
 }
 
 
-vector<double> AbcSmc::do_complicated_untransformations(vector<Parameter*>& _model_pars, Row& pars) {
+Row AbcSmc::do_complicated_untransformations(vector<Parameter*>& _model_pars, Row& pars) {
     assert( _model_pars.size() == npar() );
     assert( static_cast<size_t>(pars.size()) == npar() );
     const vector<double> identities = {0.0, 1.0, 0.0, 1.0};
-    vector<double> upars(npar());
+    Row upars(npar());
     for (size_t i = 0; i < npar(); ++i) {
 //cerr << "Parameter " << i << ": " << _model_pars[i]->get_name() << endl;
         const Parameter* mpar = _model_pars[i];
@@ -388,7 +405,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             _db_execute(db, ss);
 
             if (use_transformed_pars) {
-                vector<double> upars = do_complicated_untransformations(_model_pars, pars);
+                const Row upars = do_complicated_untransformations(_model_pars, pars);
                 ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
                 //cerr << "attempting: " << ss.str() << endl;
                 _db_execute(db, ss);
@@ -937,9 +954,8 @@ bool setup(
     _db_execute(db, ss);
 
     if (hasTransformed) {
-        // TODO
-        // ss << "create table " << UPAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
-        // _db_execute(db, ss);
+        ss << bin2c_sqlutrans_sql;
+        _db_execute(db, ss);
     }
 
     db.CommitTransaction();
@@ -947,35 +963,228 @@ bool setup(
     return true;
 };
 
+// converts a series of n serials + n value sets of k cols into long format for insertion into sql
+// e.g. (serial1, col1, value1), (serial1, col2, value2), ..., (serialn, colk, valuek)
+//
+// TODO: most typical use case is an iota of serials - might be worth providing default / additional
+// arguments / polymorphism in that direction
+//
+// TODO: for more generic storage, might make more sense to build an intermediate iterator
+// of (serial, col, value) tuples, then use that to build the string
+// that would provide a more general step that might be useable for other storage types that still
+// want long data, but don't use the same serialization format as SQL
+template <typename SerialIt, typename ValRowIt>
+std::string serial_id_values_stream(
+    const SerialIt & serials, // iterable of serials
+    const ValRowIt & vals // iterable of Rows of values 
+) {
+    assert(serials.size() == vals.size());
+    std::stringstream ss("(");
+    
+    for (size_t i = 0; i < serials.size(); ++i) {
+        for (size_t j = 0; j < vals[i].size(); ++j) {
+            if (j != 0) { ss << "), ("; };
+            ss << serials[i] << ", " << j + 1 << ", " << vals[i][j];
+        }
+    }
+
+    ss << ")";
+
+    return ss.str();
+};
+
+template <typename SerialIt, typename ValIt>
+std::string serial_values_stream(
+    const SerialIt & serials, // iterable of serials
+    const ValIt & vals // iterable of values 
+) {
+    assert(serials.size() == vals.size());
+    std::stringstream ss("(");
+    
+    for (size_t i = 0; i < serials.size(); ++i) {
+        if (i != 0) { ss << "), ("; };
+        ss << serials[i] << ", " << vals[i];
+    }
+
+    ss << ")";
+
+    return ss.str();
+};
+
 bool populate(
     sqdb::Db &db,
     const std::vector<Row> &pars,
-    const std::vector<Row> &upars = {},
-    const size_t smcSet = -1
+    const size_t smcSet = -1,
+    const std::vector<size_t> &seeds = {},
+    const std::vector<int> &ranks = {},
+    const std::vector<Row> &upars = {}
 ) {
-// inserting pars.size() jobs into the db
+    // inserting pars.size() jobs into the db; assert matching sizes for seeds, ranks, upars
     assert((upars.size() == 0) or (upars.size() == pars.size()));
+    assert((ranks.size() == 0) or (ranks.size() == pars.size()));
+    assert((seeds.size() == 0) or (seeds.size() == pars.size()));
 
     QueryStr qstr;
 
-    db.Query(qstr.Format(SQDB_MAKE_TEXT(
-        "INSERT INTO %s (smcSet, particleIdx, posterior) values ( %d, %d, %d );"),
-        JOB_TABLE.c_str(), set_num, i, posterior_rank
+// TODO: deal with alternative particleIdx? -- might solve this problem with posterior table, job becomes a view
+// desire to insert a bunch of rows with some fixed values, otherwise using defaults
+// https://stackoverflow.com/questions/65439177/how-to-add-specific-number-of-empty-rows-in-sqlite
+// bulk insert into the job table
+    db.Query(qstr.Format(R"SQL(
+        WITH RECURSIVE g(n) AS ( -- this creates a temporary table, column n, values 0, 1, ..., pars.size() - 1
+            VALUES (0)
+            UNION ALL
+            SELECT n + 1
+            FROM g WHERE n < %d
+        )
+        INSERT INTO %s (smcSet, particleIdx) -- then inserts those temporary values into the job table
+        SELECT %d, n FROM g;
+    )SQL", pars.size(), JOB_TABLE.c_str(), smcSet
     )).Next();
 
-        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT(
-            "SELECT last_insert_rowid() FROM %s;"
-        ), JOB_TABLE.c_str()));
+    // now collect the newly created serials
+    auto s = db.Query(qstr.Format(SQDB_MAKE_TEXT(
+        "SELECT last_insert_rowid() FROM %s;"
+    ), JOB_TABLE.c_str()));
+    s.Next();
+    const int last_serial = s.GetField(0);
+    const int first_serial = last_serial - pars.size() + 1;
+    std::vector<int> serials(pars.size());
+    std::iota(serials.begin(), serials.end(), first_serial);
+
+    // if we have ranks, update the job table with them
+    if (ranks.size() > 0) {
+        // bulk insert into the job table
+        auto insert = serial_values_stream(serials, ranks);
+        db.Query(qstr.Format(R"SQL(
+            WITH rankdata (rserial, rank) AS (VALUES %s) -- create a temporary table of serial => rank
+            UPDATE %s SET posterior = rank FROM rankdata -- update the job table with the rank
+            WHERE serial = rserial; -- where the serials match
+        )SQL", insert.c_str(), JOB_TABLE.c_str())).Next();
+    }
+
+    // bulk insert into the par table
+    auto insert = serial_id_values_stream(serials, pars);
+    db.Query(qstr.Format(SQDB_MAKE_TEXT(
+        "INSERT INTO %s (serial, parIdx, value) VALUES %s ON CONFLICT DO NOTHING;"
+    ), PAR_UNDER.c_str(), insert.c_str())).Next();
+
+    // if provided seeds, bulk insert into the seed table
+    if (seeds.size() > 0) {
+        db.Query(qstr.Format(SQDB_MAKE_TEXT(
+            "INSERT INTO %s (seed) VALUES (%s);"
+        ), SEED_TABLE.c_str(), join(seeds, "), ("))).Next();
+    }
+
+    // if we have u(ntransformed )pars, bulk insert into the upar table
+    if (upars.size() > 0) {
+        // n.b. this does not yet allow for upars being a different size than pars
+        // which might be a useful way to only xform a subset of the parameters
+        insert = serial_id_values_stream(serials, upars);
+        db.Query(qstr.Format(SQDB_MAKE_TEXT(
+            "INSERT INTO %s (serial, parIdx, value) VALUES %s ON CONFLICT DO NOTHING;"
+        ), UPAR_UNDER.c_str(), insert.c_str())).Next();
+    }
 
     return true;
 };
 
-bool AbcSmc::build_database(const gsl_rng* RNG) {
-    if (_posterior_database_filename != "" and not file_exists(_posterior_database_filename.c_str())) {
-        cerr << "ERROR: Cannot read in posterior database: " << _posterior_database_filename << " does not exist\n";
-        exit(-215);
+bool AbcSmc::_sample_priors(
+    const gsl_rng* RNG, const size_t n, // number of samples
+    vector<size_t> &seeds, // will be populated with seeds? will be pre-filled with seeds?
+    vector<Row> &pars, // will be populated with parameters
+    vector<Row> &upars, // will be populated with upars (if relevant)
+    vector<int> &ranks // will be populated with ranks (if relevant)
+) {
+
+    seeds.resize(n); pars.resize(n);
+    if (use_transformed_pars) { upars.resize(n); }
+    if (_retain_posterior_rank) { ranks.resize(n); }
+
+    Mat2D posterior = slurp_posterior();
+    
+    for (size_t i = 0; i < n; ++i) {
+        seeds[i] = gsl_rng_get(RNG);
+        pars[i] = Row::Zero(_model_pars.size());
+        vector<int> posterior_indices;
+
+        bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
+        bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
+        int posterior_rank = -1;
+
+        for (size_t j = 0; j < _model_pars.size(); j++) {
+            Parameter* p = _model_pars[j];
+            float_type val;
+            // if it's a non-random, PSEUDO parameter
+            if (p->get_prior_type() == PSEUDO) {
+                // get the state now, so that the first time it will have the initialized value
+                val = (float_type) p->get_state();
+                // We need to imitate the way nested loops work, but in a single loop.
+                // PSEUDO parameters only get incremented when any and all previous PSEUDO parameters
+                // have reached their max values and are being reset
+                if (increment_nonrandom_par) {
+                    // This parameter has reached it's max value and gets reset to minimum
+                    // Because of possible floating point errors, we check whether the state is within step/10,000 from the max
+                    const float_type PSEUDO_EPSILON = 0.0001 * p->get_step();
+                    if (p->get_state() + PSEUDO_EPSILON >= p->get_prior_max()) {
+                        p->reset_state();
+                    // otherwise, increment this one and prevent others from being incremented
+                    } else {
+                        p->increment_state();
+                        increment_nonrandom_par = false;
+                        increment_posterior     = false;
+                    }
+                }
+            } else if (p->get_prior_type() == POSTERIOR) {
+                val = 0; // will be replaced later in function
+                if (posterior_indices.size() == 0) {
+                    posterior_rank = (int) p->get_state();
+                } else {
+                    // require that posterior pars be synchronized
+                    assert(posterior_rank == (int) p->get_state());
+                }
+                posterior_indices.push_back(j);
+            } else {
+                // Random parameters get sampled independently from each other, and are therefore easy
+                val = p->sample(RNG);
+            }
+
+            pars[i](j) = val;
+        }
+
+        if (_posterior_database_filename != "") {
+
+            for (size_t c = 0; c < posterior_indices.size(); ++c) {
+                pars[i](posterior_indices[c]) = posterior(posterior_rank, c);
+                Parameter* p = _model_pars[posterior_indices[c]];
+
+                if (increment_posterior) {
+                    if (p->get_state() >= p->get_prior_max()) {
+                        p->reset_state();
+                    } else {
+                        p->increment_state();
+                    }
+                }
+
+            }
+
+        }
+
+        if (_retain_posterior_rank) { ranks[i] = posterior_rank; }
+        if (use_transformed_pars) { upars[i] = do_complicated_untransformations(_model_pars, pars[i]); }
+
     }
 
+    return true;
+
+};
+
+// this is now mostly ready to have a whatever-storage backend
+bool AbcSmc::build_database(const gsl_rng* RNG) {
+    if (_posterior_database_filename != "" and not file_exists(_posterior_database_filename.c_str())) {
+        std::cerr << "ERROR: Cannot read in posterior database: " << _posterior_database_filename << " does not exist\n";
+        exit(-215);
+    }
 
     sqdb::Db db(_database_filename.c_str());
 
@@ -986,64 +1195,20 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         return false;
     }
 
+    // no-op if posterior database is not specified
+    Mat2D posterior = slurp_posterior();
 
-    Mat2D posterior;
-    if (_posterior_database_filename != "") {
-        posterior = slurp_posterior();
-    }
+    const size_t num_particles = get_num_particles(0);
+
+    vector<size_t> seeds; // will be populated with seeds? will be pre-filled with seeds?
+    vector<Row> pars; // will be populated with parameters
+    vector<Row> upars; // will be populated with upars (if relevant)
+    vector<int> ranks; // will be populated with ranks (if relevant)
+
+    _sample_priors(RNG, num_particles, seeds, pars, upars, ranks);
 
     db.BeginTransaction();
-
-    Row pars;
-    const size_t set_num = 0;
-    const size_t num_particles = get_num_particles(set_num);
-
-
-    for (size_t i = 0; i < num_particles; i++) {
-        int posterior_rank = -1;
-
-        const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-        pars = sample_priors(RNG, posterior, posterior_rank);
-
-        if (not _retain_posterior_rank) posterior_rank = -1;
-        QueryStr qstr;
-
-        db.Query(qstr.Format(SQDB_MAKE_TEXT(
-            "INSERT INTO %s (smcSet, particleIdx, posterior) values ( %d, %d, %d );"),
-            JOB_TABLE.c_str(), set_num, i, posterior_rank
-        )).Next();
-
-        Statement s = db.Query(qstr.Format(SQDB_MAKE_TEXT(
-            "SELECT last_insert_rowid() FROM %s;"
-        ), JOB_TABLE.c_str()));
-
-        s.Next();
-        const int rowid = s.GetField(0); // indexing should start at 0?
-
-        ss << qstr.Format(
-            SQDB_MAKE_TEXT("INSERT INTO seeds (seed) VALUES (%d);"), // (serial auto'd, just insert the seed)
-            seed
-        );
-        _db_execute(db, ss);
-
-        for (size_t j = 0; j < npar(); j++) {
-            ss << qstr.Format(
-                SQDB_MAKE_TEXT("INSERT INTO %s VALUES (%d, %d, %f);"), // (serial, parIdx, value), (), ...
-                PAR_UNDER.c_str(), rowid, j+1, pars[j]
-            );
-            _db_execute(db, ss);
-        }
-
-        if (use_transformed_pars) {
-            // vector<double> upars = do_complicated_untransformations(_model_pars, pars);
-            // ss << "insert into " << UPAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
-            // _db_execute(db, ss);
-        }
-
-        // TODO: metrics only filled in after simulation via UPSERT
-        // ss << "insert into " << MET_TABLE << " values ( " << rowid; for (size_t j = 0; j < nmet(); j++) ss << ", NULL"; ss << " );";
-        // _db_execute(db, ss);
-    }
+    populate(db, pars, 0, seeds, ranks, upars);
     db.CommitTransaction();
 
     return true;
@@ -1378,9 +1543,14 @@ Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
     return distances;
 }
 
-Mat2D AbcSmc::slurp_posterior() {
+Mat2D AbcSmc::slurp_posterior(const bool verbose) {
     // TODO - handle sql/sqlite errors
     // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
+
+    if (_posterior_database_filename == "") {
+        if (verbose) { cerr << "No posterior database specified, skipping." << endl; }
+        return Mat2D();
+    }
 
     // determine dimensions of results we're going to read in
     sqdb::Db post_db(_posterior_database_filename.c_str());
@@ -1417,73 +1587,6 @@ Mat2D AbcSmc::slurp_posterior() {
     }
 
     return posterior;
-}
-
-
-Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank) {
-    Row par_sample = Row::Zero(_model_pars.size());
-    bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
-    bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
-    vector<int> posterior_indices;
-    // for each parameter
-    for (size_t i = 0; i < _model_pars.size(); i++) {
-        Parameter* p = _model_pars[i];
-        float_type val;
-        // if it's a non-random, PSEUDO parameter
-        if (p->get_prior_type() == PSEUDO) {
-            // get the state now, so that the first time it will have the initialized value
-            val = (float_type) p->get_state();
-            // We need to imitate the way nested loops work, but in a single loop.
-            // PSEUDO parameters only get incremented when any and all previous PSEUDO parameters
-            // have reached their max values and are being reset
-            if (increment_nonrandom_par) {
-                // This parameter has reached it's max value and gets reset to minimum
-                // Because of possible floating point errors, we check whether the state is within step/10,000 from the max
-                const float_type PSEUDO_EPSILON = 0.0001 * p->get_step();
-                if (p->get_state() + PSEUDO_EPSILON >= p->get_prior_max()) {
-                    p->reset_state();
-                // otherwise, increment this one and prevent others from being incremented
-                } else {
-                    p->increment_state();
-                    increment_nonrandom_par = false;
-                    increment_posterior     = false;
-                }
-            }
-        } else if (p->get_prior_type() == POSTERIOR) {
-            val = 0; // will be replaced later in function
-            if (posterior_indices.size() == 0) {
-                posterior_rank = (int) p->get_state();
-            } else {
-                // require that posterior pars be synchronized
-                assert(posterior_rank == (int) p->get_state());
-            }
-            posterior_indices.push_back(i);
-        } else {
-            // Random parameters get sampled independently from each other, and are therefore easy
-            val = p->sample(RNG);
-        }
-
-        par_sample(i) = val;
-    }
-    if (_posterior_database_filename != "") {
-
-        for (unsigned int c = 0; c < posterior_indices.size(); ++c) {
-            par_sample(posterior_indices[c]) = posterior(posterior_rank, c);
-            Parameter* p = _model_pars[posterior_indices[c]];
-
-            if (increment_posterior) {
-                if (p->get_state() >= p->get_prior_max()) {
-                    p->reset_state();
-                } else {
-                    p->increment_state();
-                }
-            }
-
-        }
-
-//cerr << "sample: " << par_sample << endl;
-    }
-    return par_sample;
 }
 
 void AbcSmc::calculate_doubled_variances( int t ) {
