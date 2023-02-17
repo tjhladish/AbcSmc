@@ -119,7 +119,7 @@ struct AbcExec : AbcSimFun {
         pclose(pipe);
 
         if (retval == "ERROR" or retval == "") {
-            std::cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << std::endl;
+            std::cerr << command << " does not exist or appears to be an invalid simulator" << std::endl;
         } else {
             stringstream ss;
             ss.str(retval);
