@@ -49,7 +49,7 @@ struct AbcSimFun {
 // will be thrown when the simulator is used.
 struct AbcSimUnset : AbcSimFun {
     vector<ABC::float_type> operator()(
-      vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
+      vector<ABC::float_type> /*pars*/, const unsigned long int /*seed*/, const unsigned long int /*serial*/, const ABC::MPI_par* /*_mp*/
     ) const {
         std::cerr << "ERROR: A pointer to a simulator function (prefered) or an external simulator executable must be defined." << std::endl;
         exit(100);
@@ -99,7 +99,7 @@ struct AbcExec : AbcSimFun {
     AbcExec(string _command) : command(_command) { }
 
     vector<ABC::float_type> operator()(
-      vector<ABC::float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
+      vector<ABC::float_type> pars, const unsigned long int /*seed*/, const unsigned long int /*serial*/, const ABC::MPI_par* /*_mp*/
     ) const {
         auto execcom = command;
         vector<ABC::float_type> mets;
@@ -119,7 +119,7 @@ struct AbcExec : AbcSimFun {
         pclose(pipe);
 
         if (retval == "ERROR" or retval == "") {
-            std::cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << std::endl;
+            std::cerr << command << " does not exist or appears to be an invalid simulator" << std::endl;
         } else {
             stringstream ss;
             ss.str(retval);
