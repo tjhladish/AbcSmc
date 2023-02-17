@@ -4,6 +4,11 @@
 #include <vector> // container for receiving parameters / returning metrics
 #include <dlfcn.h> // for dynamic version
 #include <fstream> // for external executable version
+#include <sstream> // for stringstream
+#include <string> // for string
+
+#include "pls.h" // for float_type
+#include "AbcMPIPar.h"
 
 using std::vector;
 
@@ -11,19 +16,6 @@ using std::vector;
 // this must be defined in a matching way between and AbcSmc executables *and*
 // other code using this header.
 namespace ABC {
-  #ifdef USING_MPI
-  #include <mpi.h>
-  struct MPI_par {
-      MPI_Comm comm;
-      MPI_Info info;
-      int mpi_size, mpi_rank;
-  };
-  #else
-  struct MPI_par {
-      const static int mpi_size = 1;
-      const static int mpi_rank = 0;
-  };
-  #endif
 
   template <typename T>
   inline std::string toString (const T& t) {
@@ -95,8 +87,8 @@ struct AbcFPtr : AbcSimFun {
 // which should receive the parameters as a sequence of command line arguments and reply on standard out with the metrics
 // as a series of numbers.
 struct AbcExec : AbcSimFun {
-    const string command;
-    AbcExec(string _command) : command(_command) { }
+    const std::string command;
+    AbcExec(std::string _command) : command(_command) { }
 
     vector<float_type> operator()(
       vector<float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
@@ -121,7 +113,7 @@ struct AbcExec : AbcSimFun {
         if (retval == "ERROR" or retval == "") {
             std::cerr << command << " does not exist or appears to be an invalid simulator on MPI rank " << _mp->mpi_rank << std::endl;
         } else {
-            stringstream ss;
+            std::stringstream ss;
             ss.str(retval);
             // TODO deal with empty mets on !particle_success
             float_type met;

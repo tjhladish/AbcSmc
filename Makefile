@@ -18,14 +18,14 @@ endif
 #LIBS = -lm -L$(TACC_GSL_LIB/) -L$(HPC_GSL_LIB/) -lgsl -lgslcblas
 LIBS = -lm -lgsl -lgslcblas
 
-ABCSOURCES =  pls.cpp AbcUtil.cpp AbcSmc.cpp CCRC32.cpp
+ABCSOURCES =  pls.cpp AbcUtil.cpp AbcSmc.cpp CCRC32.cpp AbcMPI.cpp
 JSONSOURCES = $(patsubst %,$(JSONDIR)/src/%.cpp,json_reader json_value json_writer)
 SQLSOURCES  = $(addprefix $(SQLDIR)/,sqdb.cpp sqlite3.c)
 
 ABCOBJECTS  = $(ABCSOURCES:.cpp=.o)
 JSONOBJECTS = $(JSONSOURCES:.cpp=.o)
 SQLOBJECTS  = $(SQLDIR)/sqdb.o $(SQLDIR)/sqlite3.o
-ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h ./AbcSim.h
+ABC_HEADER = ./pls.h ./AbcUtil.h ./AbcSmc.h ./AbcSim.h ./AbcMPI.h ./AbcMPIPar.h
 
 default: libabc.a
 
