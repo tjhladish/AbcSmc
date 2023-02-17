@@ -508,7 +508,11 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
 }*/
 
 
+<<<<<<< HEAD
 void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+=======
+void AbcSmc::_particle_scheduler(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+>>>>>>> 25e0c9c (encapsulate MPI support to clean up AbcSmc.cpp)
 
     auto _num_particles = get_num_particles(t);
 
@@ -531,7 +535,11 @@ void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_ori
 }
 
 
+<<<<<<< HEAD
 void AbcSmc::_particle_worker_mpi(
+=======
+void AbcSmc::_particle_worker(
+>>>>>>> 25e0c9c (encapsulate MPI support to clean up AbcSmc.cpp)
     const size_t seed,
     const size_t serial
 ) {
