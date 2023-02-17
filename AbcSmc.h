@@ -287,7 +287,7 @@ class AbcSmc {
 
         void process_predictive_prior_arguments(Json::Value par);
         bool parse_config(std::string conf_filename);
-        void report_convergence_data(const size_t t);
+        void report_convergence_data(const size_t lastn = 1);
 
 
         bool build_database(const gsl_rng* RNG);
@@ -386,10 +386,8 @@ class AbcSmc {
         bool read_particle_set( int t, Mat2D &X_orig, Mat2D &Y_orig );
         bool read_predictive_prior( int t );
 
-        string _build_sql_select_par_string(string tag);
         string _build_sql_select_met_string();
-        string _build_sql_create_par_string(string tag);
-        string _build_sql_create_met_string(string tag);
+    
 
         bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
         bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);

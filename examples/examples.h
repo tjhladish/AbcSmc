@@ -60,7 +60,14 @@ inline void abc_inner(ABC * abc, CLIArgs& args, const gsl_rng * RNG, size_t buff
 
     if (args.process_db) {
         gsl_rng_set(RNG, time(NULL) * getpid()); // seed the rng using sys time and the process id
-        abc->process_database(RNG);
+        // if the database file does not exist, create it
+        if () {
+
+        } else {
+            // otherwise process it, then report convergence
+            abc->process_database(RNG);
+        }
+        
     } 
 
     if (args.simulate_db) {

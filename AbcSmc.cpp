@@ -11,11 +11,8 @@
 #include "pls.h"
 #include "RunningStat.h"
 #include "AbcSmc.h"
-<<<<<<< HEAD
 #include "refsql.h"
-=======
 #include "AbcMPI.h"
->>>>>>> mpisep
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -358,90 +355,17 @@ Row AbcSmc::do_complicated_untransformations(vector<Parameter*>& _model_pars, Ro
 }
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
-// ++++++++++++++++++++ DATABASE FUNCTIONS +++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ CORE ALGORITHM STEPS +++++++++++++++++++++++++++++++++++ //
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 
-// Build DB if it doesn't exist;
-// If it does exist but more sets are needed, filter particles and sample for next set;
-// If the specified number of sets already exist, exit gracefully
-bool AbcSmc::process_database(const gsl_rng* RNG) {
-
-    if (build_database(RNG)) return true; // if DB doesn't exist, create it and exit
-
-    sqdb::Db db(_database_filename.c_str());
-    _particle_parameters.clear();
-    _particle_metrics.clear();
-    _weights.clear();
-    _predictive_prior.clear();
-
-    cerr << std::setprecision(PREC);
-
-    vector< vector<int> > serials;
-    if (not read_SMC_sets_from_database(db, serials)) return false; // slurp sets & do particle filtering (identify pred prior) if needed
-    const size_t next_set = serials.size();
-    assert(next_set > 0);
-    const size_t last_set = next_set - 1; // this set number
-
-//    if ( _pred_prior_size = 0) set_predictive_prior_size(last_set);
-
-    report_convergence_data(last_set);
-    cerr << endl << endl;
-
-    if (_num_smc_sets > next_set) {
-
-        db.Query("BEGIN EXCLUSIVE;").Next();
-        //ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
-        //_db_execute(db, ss);
-
-        stringstream ss;
-        Row pars;
-        const int last_serial = serials.back().back();
-        gsl_matrix* L = setup_mvn_sampler(next_set);
-
-        string noise_type = use_mvn_noise ? "MULTIVARIATE" : "INDEPENDENT";
-        cerr << "Populating next set using " << noise_type << " noising of parameters.\n";
-        const size_t num_particles = get_num_particles(next_set);
-        for (size_t i = 0; i < num_particles; i++) {
-            const int serial = last_serial + 1 + i;
-
-            if (use_mvn_noise) {
-                pars = sample_mvn_predictive_priors(next_set, RNG, L);
-            } else {
-                pars = sample_predictive_priors(next_set, RNG);
-            }
-            QueryStr qstr;
-// TODO here's the place to fix the NEXT SET problem
-            ss << "insert into " << JOB_TABLE << " values ( " << serial << ", "
-                                               << next_set << ", "
-                                               << i << ", "
-                                               << time(NULL)
-                                               << ", NULL, 'Q', -1, 0 );";
-            //cerr << "attempting: " << ss.str() << endl;
-            _db_execute(db, ss);
-
-            const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-            ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
-            //cerr << "attempting: " << ss.str() << endl;
-            _db_execute(db, ss);
-
-            if (use_transformed_pars) {
-                const Row upars = do_complicated_untransformations(_model_pars, pars);
-                ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
-                //cerr << "attempting: " << ss.str() << endl;
-                _db_execute(db, ss);
-            }
-
-            ss << "insert into " << MET_TABLE << " values ( " << serial; for (size_t j = 0; j < nmet(); j++) ss << ", NULL"; ss << " );";
-            //cerr << "attempting: " << ss.str() << endl;
-            _db_execute(db, ss);
-        }
-        db.CommitTransaction();
-        gsl_matrix_free(L);
-    } else {
-        cerr << "Database already contains " << _num_smc_sets << " complete sets.\n";
+bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed, const unsigned long int serial) {
+    vector<float_type> met_vec = (*_simulator)( as_vector(par), rng_seed, serial, _mp );
+    bool particle_success = (met_vec.size() == nmet());
+    if (!particle_success) {
+        cerr << "ERROR: simulator function returned the wrong number of metrics: expected " << nmet() << ", received " << met_vec.size() << endl;
     }
-
-    return true;
+    met = as_row(met_vec);
+    return particle_success;
 }
 
 void AbcSmc::read_SMC_complete(sqdb::Db &db, const bool all) {
@@ -462,343 +386,9 @@ void AbcSmc::summarize_SMC() {
 
 };
 
-// Read in existing sets and do particle filtering as appropriate
-bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
-    // make sure database looks intact
-    if ( not _db_tables_exist(db, {JOB_TABLE, PAR_TABLE, MET_TABLE}) ) {
-        cerr << "ERROR: Failed to read SMC set from database because one or more tables are missing.\n";
-        return false;
-    }
-
-    // make sure set t is a completed set
-    QueryStr qstr;
-    Statement s = db.Query(("select smcSet, count(*), COUNT(case status when 'D' then 1 else null end) from " + JOB_TABLE + " group by smcSet order by smcSet;").c_str());
-    serials.clear();
-    _particle_parameters.clear();
-    _particle_metrics.clear();
-    bool set_size_test_success = true;
-    while (s.Next()) {
-        int t = s.GetField(0);
-        int set_size = s.GetField(1);
-        int completed_set_size = s.GetField(2);
-        if (set_size != completed_set_size) {
-            cerr << "ERROR: Failed to read SMC set from database because not all particles are complete in set " << t << "\n";
-            return false;
-        }
-        const int json_set_size = get_num_particles(t, QUIET);
-        if (set_size != json_set_size) {
-            cerr << "ERROR:\tSet size for one or more sets does not agree between configuration file and database:" << endl
-                 << "\tSet " << t << " in configuration file has size " << json_set_size << " vs size " << set_size << " in database." << endl;
-//                 << "\tNB: You may want to edit the configuration file to have an array of set sizes that reflect what is already in the database." << endl;
-            set_size_test_success = false;
-            break;
-            //return false;
-        }
-        _particle_parameters.push_back( Mat2D::Zero( completed_set_size, npar() ) );
-        _particle_metrics.push_back( Mat2D::Zero( completed_set_size, nmet() ) );
-
-        // join all three tables for rows with smcSet = t, slurp and store values
-        string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
-                            + "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE + " P where J.serial = M.serial and J.serial = P.serial "
-                            + "and J.smcSet = " + to_string((long long) t) + ";";
-
-        serials.push_back( vector<int>(completed_set_size) );
-
-        Statement s2 = db.Query( select_str.c_str() );
-
-        int particle_counter = 0;
-        vector<pair<int, int> > posterior_pairs;
-        while (s2.Next()) {
-            size_t offset = 3; // first values are J.serial, J.particleIdx, J.rank
-            const int serial = s2.GetField(0);
-            const int particle_idx = s2.GetField(1);
-            const int posterior_rank = s2.GetField(2);
-
-            if (particle_counter != particle_idx) cerr << "ERROR: particle_counter != particle_idx (" << particle_counter << " != " << particle_idx << ")\n";
-            assert(particle_counter == particle_idx);
-            serials[t][particle_counter] = serial;
-            if (posterior_rank > -1) posterior_pairs.push_back(make_pair( posterior_rank, particle_idx ) );
-            for(size_t i = offset; i < offset + npar(); i++) _particle_parameters[t](particle_counter,i-offset) = (double) s2.GetField(i);
-            offset += npar();
-            for(size_t i = offset; i < offset + nmet(); i++) _particle_metrics[t](particle_counter,i-offset) = (double) s2.GetField(i);
-            particle_counter++;
-        }
-
-        //const int posterior_size = posterior_pairs.size() > 0 ? posterior_pairs.size() : _next_predictive_prior_size;
-        //_predictive_prior.push_back( vector<int>(posterior_size) );
-        if (posterior_pairs.size() > 0) { // This is a set that has already undergone particle filtering & ranking
-            _predictive_prior.push_back( vector<int>(posterior_pairs.size()) );
-            for (size_t i = 0; i < posterior_pairs.size(); i++) {
-                const int rank = posterior_pairs[i].first;
-                const int idx = posterior_pairs[i].second;
-                _predictive_prior.back()[rank] = idx;
-            }
-        } else { // Otherwise, do the filtering now and update the DB
-            //set_next_predictive_prior_size(t, _particle_parameters[t].size());
-            const size_t next_pred_prior_size = get_pred_prior_size(t);
-            _predictive_prior.push_back( vector<int>(next_pred_prior_size) );
-            cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
-            if (use_pls_filtering) {
-                _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
-            } else {
-                _filter_particles_simple( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
-            }
-            vector<string> update_strings(next_pred_prior_size);
-            for (size_t i = 0; i < next_pred_prior_size; i++) { // best to worst performing particle in posterior?
-                const int particle_idx = _predictive_prior[t][i];
-                const int particle_serial = serials[t][particle_idx];
-                stringstream ss;
-                ss << "update " << JOB_TABLE << " set posterior = " << i << " where serial = " << particle_serial << ";";
-                update_strings[i] = ss.str();
-            }
-            _db_execute_strings(db, update_strings);
-        }
-        calculate_predictive_prior_weights( t );
-
-    }
-
-    if (not set_size_test_success) {
-        s = db.Query(("select count(*) from " + JOB_TABLE + " group by smcSet order by smcSet;").c_str());
-        vector<int> db_set_sizes;
-        while (s.Next()) { db_set_sizes.push_back(s.GetField(0)); }
-        cerr << "\tNB: You may want to edit the configuration file to have an array of set sizes that reflect what is already in the database." << endl
-             << "\t    Sizes of sets currently in database: [";
-        cerr_vector(db_set_sizes, ", ");
-        cerr << "]" << endl;
-        exit(1);
-    }
-
-    return true;
-}
-
-
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
-// ++++++++++++++++++++ DIAGNOSTIC FUNCTIONS +++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ DATABASE FUNCTIONS +++++++++++++++++++++++++++++++++++++ //
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
-
-void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
-    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2
-                                                      << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
-}
-
-
-void AbcSmc::report_convergence_data(const size_t set_t) {
-    if( _predictive_prior.size() <= set_t ) {
-        cerr << "ERROR: attempting to report stats for set " << set_t << ", but data aren't available.\n"
-             << "       This can happen if --process is called on a database that is not ready to be processed.\n";
-        exit(-214);
-    }
-    vector<double> last_means( npar(), 0 );
-    vector<double> current_means( npar(), 0 );
-    for (size_t j = 0; j < npar(); j++) {
-    //cerr << "par " << j << endl;
-        size_t N = _predictive_prior[set_t].size();
-        for (size_t i = 0; i < N; i++) {
-            int particle_idx = _predictive_prior[set_t][i];
-            double par_value = _particle_parameters[set_t](particle_idx, j);
-            current_means[j] += par_value;
-        }
-        current_means[j] /= N;
-
-        if (set_t > 0) {
-            const size_t N2 = _predictive_prior[set_t-1].size();
-            for (size_t i = 0; i < N2; i++) {
-                int particle_idx = _predictive_prior[set_t-1][i];
-                double par_value = _particle_parameters[set_t-1](particle_idx, j);
-                last_means[j] += par_value;
-            }
-            last_means[j] /= N2;
-        }
-    }
-
-    cerr << double_bar << endl;
-    if (set_t == 0) {
-        cerr << "Predictive prior summary statistics:\n";
-    } else {
-        cerr << "Convergence data for predictive priors:\n";
-    }
-    for (size_t i = 0; i < _model_pars.size(); i++) {
-        const Parameter* par = _model_pars[i];
-        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
-        const double prior_mean = par->get_prior_mean();
-        const double prior_mean_delta = current_means[i] - prior_mean;
-        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
-
-        const double prior_stdev = par->get_prior_stdev();
-        const double prior_stdev_delta = current_stdev - prior_stdev;
-        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
-        if (set_t == 0) {
-            cerr << "  Par " << i << ": \"" << par->get_name() << "\"\n";
-
-            cerr << "  Means:\n";
-            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            cerr << "  Standard deviations:\n";
-            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
-        } else {
-            double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(set_t-1)/2.0);
-            double delta, pct_chg;
-
-            cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
-
-            delta = current_means[i] - last_means[i];
-            pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
-            cerr << "  Means:\n";
-            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            print_stats(cerr, "Last", " current", last_means[i], current_means[i], delta, pct_chg, "\n");
-
-            delta = current_stdev - last_stdev;
-            pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
-            cerr << "  Standard deviations:\n";
-            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
-            print_stats(cerr, "Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n");
-        }
-    }
-}
-
-
-
-void AbcSmc::_particle_scheduler(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
-
-    auto _num_particles = get_num_particles(t);
-
-    // sample parameter distributions; copy values into Y matrix and into send_data buffer
-    Row par_row;
-<<<<<<< HEAD
-    for (size_t i = 0; i< _num_particles; i++) {
-        if (t == 0) { // sample priors
-            par_row = sample_priors(RNG);
-            if (i < _num_particles) Y_orig.row(i) = par_row;
-        } else {      // sample predictive priors
-            par_row = sample_predictive_priors(t, RNG);
-            if (i < _num_particles) Y_orig.row(i) = par_row;
-        }
-        for (size_t j = 0; j < npar(); j++) { send_data[i*npar() + j] = par_row(j); }
-    }
-    // Seed the workers with the first 'num_workers' jobs
-    int particle_id = 0;
-    // Don't send particles that don't exist!
-    for (int rank = 1; rank < _mp->mpi_size and rank <= _num_particles; ++rank) {
-        particle_id = rank - 1;                       // which row in Y
-        MPI_Send(&send_data[particle_id*npar()],  // message buffer
-                 npar(),                          // number of elements
-                 MPI_LONG_DOUBLE,                 // data item is a double
-                 rank,                            // destination process rank
-                 particle_id,                     // message tag
-                 _mp->comm);                      // always use this
-    }
-
-    // Receive a result from any worker and dispatch a new work request
-    long double rec_buffer[nmet()];
-    particle_id++; // move cursor to next particle to be sent
-    while ( particle_id < _num_particles ) {
-        MPI_Recv(&rec_buffer,                     // message buffer
-                 nmet(),                          // message size
-                 MPI_LONG_DOUBLE,                 // of type double
-                 MPI_ANY_SOURCE,                  // receive from any sender
-                 MPI_ANY_TAG,                     // any type of message
-                 _mp->comm,                       // always use this
-                 &status);                        // received message info
-        for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
-
-        MPI_Send(&send_data[particle_id*npar()],  // message buffer
-                 npar(),                          // number of elements
-                 MPI_LONG_DOUBLE,                 // data item is a double
-                 status.MPI_SOURCE,               // send it to the rank that just finished
-                 particle_id,                     // message tag
-                 _mp->comm);                      // always use this
-        particle_id++; // move cursor
-    }
-
-    // receive results for outstanding work requests--there are exactly 'num_workers'
-    // or '_num_particles' left, whichever is smaller
-    for (int rank = 1; rank < _mp->mpi_size and rank <= _num_particles; ++rank) {
-        MPI_Recv(&rec_buffer,
-                 nmet(),
-                 MPI_LONG_DOUBLE,
-                 MPI_ANY_SOURCE,
-                 MPI_ANY_TAG,
-                 _mp->comm,
-                 &status);
-        for (int m = 0; m<nmet(); ++m) rec_data[status.MPI_TAG*nmet() + m] = rec_buffer[m];
-    }
-
-    // Tell all the workers they're done for now
-    for (int rank = 1; rank < _mp->mpi_size; ++rank) {
-        MPI_Send(0, 0, MPI_INT, rank, STOP_TAG, _mp->comm);
-    }
-
-    vector<int> bad_particle_idx; // bandaid, in case simulator returns nonsense values
-=======
->>>>>>> mpisep
-    for (size_t i = 0; i < _num_particles; i++) {
-        if (t == 0) { // sample priors
-            Mat2D posterior = slurp_posterior();
-            int posterior_rank = -1;
-            Y_orig.row(i) = sample_priors(RNG, posterior, posterior_rank);
-        } else {      // sample predictive priors
-            Y_orig.row(i) = sample_predictive_priors(t, RNG);
-        }
-    }
-
-    X_orig.resize(_num_particles, nmet());
-
-    ABC::particle_scheduler(X_orig, Y_orig, _mp);
-
-}
-
-
-void AbcSmc::_particle_worker(
-    const size_t seed,
-    const size_t serial
-) {
-    ABC::particle_worker(npar(), nmet(), _simulator, seed, serial, _mp);
-}
-
-
-bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed, const unsigned long int serial) {
-    vector<float_type> met_vec = (*_simulator)( as_vector(par), rng_seed, serial, _mp );
-    bool particle_success = (met_vec.size() == nmet());
-    if (!particle_success) {
-        cerr << "ERROR: simulator function returned the wrong number of metrics: expected " << nmet() << ", received " << met_vec.size() << endl;
-    }
-    met = as_row(met_vec);
-    return particle_success;
-}
-
-
-// TODO - these could likely be refactored to a single, more clever build sql string function
-
-string AbcSmc::_build_sql_create_par_string( string tag = "" ) {
-    stringstream ss;
-    for (size_t i = 0; i < npar()-1; i++) { ss << _model_pars[i]->get_short_name() << tag << " real, "; }
-    ss << _model_pars.back()->get_short_name() << tag << " real ";
-    return ss.str();
-}
-
-
-string AbcSmc::_build_sql_create_met_string( string tag = "" ) {
-    stringstream ss;
-    for (size_t i = 0; i < nmet()-1; i++) { ss << _model_mets[i]->get_short_name() << tag << " real, "; }
-    ss << _model_mets.back()->get_short_name() << tag << " real ";
-    return ss.str();
-}
-
-
-string AbcSmc::_build_sql_select_par_string( string tag = "" ) {
-    stringstream ss;
-    for (size_t i = 0; i<npar()-1; i++) { ss << "P." << _model_pars[i]->get_short_name() << tag << ", "; }
-    ss << "P." << _model_pars.back()->get_short_name() << tag << " ";
-    return ss.str();
-}
-
-
-string AbcSmc::_build_sql_select_met_string() {
-    stringstream ss;
-    for (size_t i = 0; i<nmet()-1; i++) { ss << "M." << _model_mets[i]->get_short_name() << ", "; }
-    ss << "M." << _model_mets.back()->get_short_name() << " ";
-    return ss.str();
-}
-
 
 bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
     bool db_success = false;
@@ -894,6 +484,340 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     }
     return tables_exist;
 }
+
+
+// Build DB if it doesn't exist;
+// If it does exist but more sets are needed, filter particles and sample for next set;
+// If the specified number of sets already exist, exit gracefully
+bool AbcSmc::process_database(const gsl_rng* RNG) {
+
+    if (build_database(RNG)) return true; // if DB doesn't exist, create it and exit
+
+    sqdb::Db db(_database_filename.c_str());
+    _particle_parameters.clear();
+    _particle_metrics.clear();
+    _weights.clear();
+    _predictive_prior.clear();
+
+    vector< vector<int> > serials;
+    if (not read_SMC_sets_from_database(db, serials)) return false; // slurp sets & do particle filtering (identify pred prior) if needed
+    const size_t next_set = serials.size();
+    assert(next_set > 0);
+    const size_t last_set = next_set - 1; // this set number
+
+
+    if (_num_smc_sets > next_set) {
+
+        db.Query("BEGIN EXCLUSIVE;").Next();
+        //ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
+        //_db_execute(db, ss);
+
+        stringstream ss;
+        Row pars;
+        const int last_serial = serials.back().back();
+        gsl_matrix* L = setup_mvn_sampler(next_set);
+
+        string noise_type = use_mvn_noise ? "MULTIVARIATE" : "INDEPENDENT";
+        cerr << "Populating next set using " << noise_type << " noising of parameters.\n";
+        const size_t num_particles = get_num_particles(next_set);
+        for (size_t i = 0; i < num_particles; i++) {
+            const int serial = last_serial + 1 + i;
+
+            if (use_mvn_noise) {
+                pars = sample_mvn_predictive_priors(next_set, RNG, L);
+            } else {
+                pars = sample_predictive_priors(next_set, RNG);
+            }
+            QueryStr qstr;
+// TODO here's the place to fix the NEXT SET problem
+            ss << "insert into " << JOB_TABLE << " values ( " << serial << ", "
+                                               << next_set << ", "
+                                               << i << ", "
+                                               << time(NULL)
+                                               << ", NULL, 'Q', -1, 0 );";
+            //cerr << "attempting: " << ss.str() << endl;
+            _db_execute(db, ss);
+
+            const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
+            ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
+            //cerr << "attempting: " << ss.str() << endl;
+            _db_execute(db, ss);
+
+            if (use_transformed_pars) {
+                const Row upars = do_complicated_untransformations(_model_pars, pars);
+                ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
+                //cerr << "attempting: " << ss.str() << endl;
+                _db_execute(db, ss);
+            }
+
+            ss << "insert into " << MET_TABLE << " values ( " << serial; for (size_t j = 0; j < nmet(); j++) ss << ", NULL"; ss << " );";
+            //cerr << "attempting: " << ss.str() << endl;
+            _db_execute(db, ss);
+        }
+        db.CommitTransaction();
+        gsl_matrix_free(L);
+    } else {
+        cerr << "Database already contains " << _num_smc_sets << " complete sets.\n";
+    }
+
+    return true;
+}
+
+// Read in existing sets and do particle filtering as appropriate
+bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
+    // make sure database looks intact
+    if ( not _db_tables_exist(db, {JOB_TABLE, PAR_TABLE, MET_TABLE}) ) {
+        cerr << "ERROR: Failed to read SMC set from database because one or more tables are missing.\n";
+        return false;
+    }
+
+    // make sure set t is a completed set
+    QueryStr qstr;
+    Statement s = db.Query(qstr.Format("SELECT smcSet, total, run FROM smc_summary ORDER BY smcSet;"));
+
+    serials.clear();
+    _particle_parameters.clear();
+    _particle_metrics.clear();
+    bool set_size_test_success = true;
+
+    while (s.Next()) {
+        int t = s.GetField(0);
+        int set_size = s.GetField(1);
+        int completed_set_size = s.GetField(2);
+        if (set_size != completed_set_size) {
+            cerr << "ERROR: Failed to read SMC set from database because not all particles are complete in set " << t << "\n";
+            return false;
+        }
+        const int json_set_size = get_num_particles(t, QUIET);
+        if (set_size != json_set_size) {
+            cerr << "ERROR:\tSet size for one or more sets does not agree between configuration file and database:" << endl
+                 << "\tSet " << t << " in configuration file has size " << json_set_size << " vs size " << set_size << " in database." << endl;
+//                 << "\tNB: You may want to edit the configuration file to have an array of set sizes that reflect what is already in the database." << endl;
+            set_size_test_success = false;
+            break;
+            //return false;
+        }
+
+        _particle_parameters.push_back( Mat2D::Zero( completed_set_size, npar() ) );
+        _particle_metrics.push_back( Mat2D::Zero( completed_set_size, nmet() ) );
+
+        // join all three tables for rows with smcSet = t, slurp and store values
+        string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
+                            + "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE + " P where J.serial = M.serial and J.serial = P.serial "
+                            + "and J.smcSet = " + to_string((long long) t) + ";";
+
+        serials.push_back( vector<int>(completed_set_size) );
+
+        Statement s2 = db.Query( select_str.c_str() );
+
+        int particle_counter = 0;
+        vector<pair<int, int> > posterior_pairs;
+        while (s2.Next()) {
+            size_t offset = 3; // first values are J.serial, J.particleIdx, J.rank
+            const int serial = s2.GetField(0);
+            const int particle_idx = s2.GetField(1);
+            const int posterior_rank = s2.GetField(2);
+
+            if (particle_counter != particle_idx) cerr << "ERROR: particle_counter != particle_idx (" << particle_counter << " != " << particle_idx << ")\n";
+            assert(particle_counter == particle_idx);
+            serials[t][particle_counter] = serial;
+            if (posterior_rank > -1) posterior_pairs.push_back(make_pair( posterior_rank, particle_idx ) );
+            for(size_t i = offset; i < offset + npar(); i++) _particle_parameters[t](particle_counter,i-offset) = (double) s2.GetField(i);
+            offset += npar();
+            for(size_t i = offset; i < offset + nmet(); i++) _particle_metrics[t](particle_counter,i-offset) = (double) s2.GetField(i);
+            particle_counter++;
+        }
+
+        //const int posterior_size = posterior_pairs.size() > 0 ? posterior_pairs.size() : _next_predictive_prior_size;
+        //_predictive_prior.push_back( vector<int>(posterior_size) );
+        if (posterior_pairs.size() > 0) { // This is a set that has already undergone particle filtering & ranking
+            _predictive_prior.push_back( vector<int>(posterior_pairs.size()) );
+            for (size_t i = 0; i < posterior_pairs.size(); i++) {
+                const int rank = posterior_pairs[i].first;
+                const int idx = posterior_pairs[i].second;
+                _predictive_prior.back()[rank] = idx;
+            }
+        } else { // Otherwise, do the filtering now and update the DB
+            //set_next_predictive_prior_size(t, _particle_parameters[t].size());
+            const size_t next_pred_prior_size = get_pred_prior_size(t);
+            _predictive_prior.push_back( vector<int>(next_pred_prior_size) );
+            cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
+            if (use_pls_filtering) {
+                _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+            } else {
+                _filter_particles_simple( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+            }
+            vector<string> update_strings(next_pred_prior_size);
+            for (size_t i = 0; i < next_pred_prior_size; i++) { // best to worst performing particle in posterior?
+                const int particle_idx = _predictive_prior[t][i];
+                const int particle_serial = serials[t][particle_idx];
+                stringstream ss;
+                ss << "update " << JOB_TABLE << " set posterior = " << i << " where serial = " << particle_serial << ";";
+                update_strings[i] = ss.str();
+            }
+            _db_execute_strings(db, update_strings);
+        }
+        calculate_predictive_prior_weights( t );
+
+    }
+
+    if (not set_size_test_success) {
+        s = db.Query(("select count(*) from " + JOB_TABLE + " group by smcSet order by smcSet;").c_str());
+        vector<int> db_set_sizes;
+        while (s.Next()) { db_set_sizes.push_back(s.GetField(0)); }
+        cerr << "\tNB: You may want to edit the configuration file to have an array of set sizes that reflect what is already in the database." << endl
+             << "\t    Sizes of sets currently in database: [";
+        cerr_vector(db_set_sizes, ", ");
+        cerr << "]" << endl;
+        exit(1);
+    }
+
+    return true;
+}
+
+
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ DIAGNOSTIC FUNCTIONS +++++++++++++++++++++++++++++++++++ //
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+
+void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
+    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2
+                                                      << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
+}
+
+bool AbcSmc::read_SMC_sets(
+    const size_t lastn,
+    std::vector< Mat2D > &pars // the associated parameters - TODO actually necessary to get everything, or just the predictive prior?
+) {
+
+}
+
+void AbcSmc::report_convergence_data(
+    const size_t lastn
+) {
+    // obtain whats on deck for simulation
+    if (lastn == 0) {
+        // only report what's on deck for simulation
+    } else {
+        std::vector<Mat2D> ppars;
+        read_SMC_sets(lastn, ppars);
+        // obtain the lastn processed sets
+        if( ppars.size() < lastn ) {
+            std::cerr << "ERROR: attempting to report stats for last " << lastn << " set(s), but data are only available for " << ppars.size() << "." << std::endl
+                      << "Did you --process your most recent results?" << std::endl;
+            exit(-214);
+        }
+        // do pairwise comparisons
+        Row last_means, current_means;
+        current_means.setZero( ppars[0].cols() );
+        // assert: all ppars have the same number of columns
+        for (size_t i = 0; i < lastn; i++) {
+            last_means = current_means;
+            Mat2D cur_pars = ppars[i];
+            current_means = cur_pars.colwise().mean();
+            
+        }
+
+        // report what's on-deck for simulation
+    }
+
+    }
+
+
+
+    
+
+    cerr << double_bar << endl;
+    if (set_t == 0) {
+        cerr << "Predictive prior summary statistics:\n";
+    } else {
+        cerr << "Convergence data for predictive priors:\n";
+    }
+    for (size_t i = 0; i < _model_pars.size(); i++) {
+        const Parameter* par = _model_pars[i];
+        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
+        const double prior_mean = par->get_prior_mean();
+        const double prior_mean_delta = current_means[i] - prior_mean;
+        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
+
+        const double prior_stdev = par->get_prior_stdev();
+        const double prior_stdev_delta = current_stdev - prior_stdev;
+        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
+        if (set_t == 0) {
+            cerr << "  Par " << i << ": \"" << par->get_name() << "\"\n";
+
+            cerr << "  Means:\n";
+            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
+        } else {
+            double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(set_t-1)/2.0);
+            double delta, pct_chg;
+
+            cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
+
+            delta = current_means[i] - last_means[i];
+            pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
+            cerr << "  Means:\n";
+            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            print_stats(cerr, "Last", " current", last_means[i], current_means[i], delta, pct_chg, "\n");
+
+            delta = current_stdev - last_stdev;
+            pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
+            cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
+            print_stats(cerr, "Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n");
+        }
+    }
+}
+
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ MPI SUPPORT FUNCTIONS ++++++++++++++++++++++++++++++++++ //
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+
+void AbcSmc::_particle_scheduler(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+
+    auto _num_particles = get_num_particles(t);
+
+    // sample parameter distributions; copy values into Y matrix and into send_data buffer
+    Row par_row;
+    for (size_t i = 0; i < _num_particles; i++) {
+        if (t == 0) { // sample priors
+            Mat2D posterior = slurp_posterior();
+            int posterior_rank = -1;
+            Y_orig.row(i) = sample_priors(RNG, posterior, posterior_rank);
+        } else {      // sample predictive priors
+            Y_orig.row(i) = sample_predictive_priors(t, RNG);
+        }
+    }
+
+    X_orig.resize(_num_particles, nmet());
+
+    ABC::particle_scheduler(X_orig, Y_orig, _mp);
+
+}
+
+
+void AbcSmc::_particle_worker(const size_t seed, const size_t serial) {
+    ABC::particle_worker(npar(), nmet(), _simulator, seed, serial, _mp);
+}
+
+// TODO - these could likely be refactored to a single, more clever build sql string function
+
+// string AbcSmc::_build_sql_select_par_string( string tag = "" ) {
+//     stringstream ss;
+//     for (size_t i = 0; i<npar()-1; i++) { ss << "P." << _model_pars[i]->get_short_name() << tag << ", "; }
+//     ss << "P." << _model_pars.back()->get_short_name() << tag << " ";
+//     return ss.str();
+// }
+
+
+// string AbcSmc::_build_sql_select_met_string() {
+//     stringstream ss;
+//     for (size_t i = 0; i<nmet()-1; i++) { ss << "M." << _model_mets[i]->get_short_name() << ", "; }
+//     ss << "M." << _model_mets.back()->get_short_name() << " ";
+//     return ss.str();
+// }
 
 bool setup(
     const std::string dbfile,
