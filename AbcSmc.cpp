@@ -11,7 +11,11 @@
 #include "pls.h"
 #include "RunningStat.h"
 #include "AbcSmc.h"
+<<<<<<< HEAD
 #include "refsql.h"
+=======
+#include "AbcMPI.h"
+>>>>>>> mpisep
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -653,14 +657,13 @@ void AbcSmc::report_convergence_data(const size_t set_t) {
 
 
 
-void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
-#ifdef USING_MPI
-    MPI_Status status;
-    long double *send_data = new long double[npar() * _num_particles](); // all params, flattened array
-    long double *rec_data  = new long double[nmet() * _num_particles](); // all metrics, flattened array
+void AbcSmc::_particle_scheduler(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+
+    auto _num_particles = get_num_particles(t);
 
     // sample parameter distributions; copy values into Y matrix and into send_data buffer
     Row par_row;
+<<<<<<< HEAD
     for (size_t i = 0; i< _num_particles; i++) {
         if (t == 0) { // sample priors
             par_row = sample_priors(RNG);
@@ -725,66 +728,30 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
     }
 
     vector<int> bad_particle_idx; // bandaid, in case simulator returns nonsense values
+=======
+>>>>>>> mpisep
     for (size_t i = 0; i < _num_particles; i++) {
-        for (size_t j = 0; j < nmet(); j++) {
-            const double met_val = rec_data[i*nmet() + j];
-            if (not isfinite(met_val)) bad_particle_idx.push_back(i);
-            X_orig(i,j) = rec_data[i*nmet() + j];
+        if (t == 0) { // sample priors
+            Mat2D posterior = slurp_posterior();
+            int posterior_rank = -1;
+            Y_orig.row(i) = sample_priors(RNG, posterior, posterior_rank);
+        } else {      // sample predictive priors
+            Y_orig.row(i) = sample_predictive_priors(t, RNG);
         }
     }
 
-    // bandaid, in case simulator returns nonsense values
-    for (size_t i = 0; i < bad_particle_idx.size(); i++) {
-        X_orig.row(i).fill(numeric_limits<float_type>::min());
-        Y_orig.row(i).fill(numeric_limits<float_type>::min());
-    }
+    X_orig.resize(_num_particles, nmet());
 
-    delete[] send_data;
-    delete[] rec_data;
-#endif
+    ABC::particle_scheduler(X_orig, Y_orig, _mp);
+
 }
 
 
-void AbcSmc::_particle_worker() {
-#ifdef USING_MPI
-    MPI_Status status;
-    long double *local_Y_data = new long double[npar()]();
-    long double *local_X_data = new long double[nmet()]();
-
-    while (1) {
-        MPI_Recv(local_Y_data,
-                 npar(),
-                 MPI_LONG_DOUBLE,
-                 mpi_root,
-                 MPI_ANY_TAG,
-                 _mp->comm,
-                 &status);
-
-        // Check the tag of the received message.
-        if (status.MPI_TAG == STOP_TAG) {
-            delete[] local_Y_data;
-            delete[] local_X_data;
-            return;
-        }
-
-        Row pars(npar());
-        Row mets(nmet());
-
-        for (size_t j = 0; j < npar(); j++) { pars[j] = local_Y_data[j]; }
-
-        bool success = _run_simulator(pars, mets);
-        if (not success) exit(-210);
-
-        for (size_t j = 0; j < nmet(); j++) { local_X_data[j] = mets[j]; }
-
-        MPI_Send(local_X_data,
-                 nmet(),
-                 MPI_LONG_DOUBLE,
-                 mpi_root,
-                 status.MPI_TAG,
-                 _mp->comm);
-    }
-#endif
+void AbcSmc::_particle_worker(
+    const size_t seed,
+    const size_t serial
+) {
+    ABC::particle_worker(npar(), nmet(), _simulator, seed, serial, _mp);
 }
 
 
