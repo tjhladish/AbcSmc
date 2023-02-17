@@ -44,6 +44,10 @@ const string UPAR_TABLE = "upar";
 const string UPAR_UNDER = UPAR_TABLE + "_vals";
 const string SEED_TABLE = "seed";
 
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++++++++ HELPER FUNS ++++++++++++++++++++++++++++++++++++++ //
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+
 bool file_exists(const char *fileName) {
     std::ifstream infile(fileName);
     return infile.good();
@@ -99,6 +103,11 @@ vector<int> as_int_vector(Json::Value val, string key) {
     }
     return extracted_vals;
 }
+
+
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ CONFIG PARSING +++++++++++++++++++++++++++++++++++++++++ //
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 
 
 void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
@@ -321,6 +330,9 @@ bool AbcSmc::parse_config(string conf_filename) {
     return true;
 }
 
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ PARAMETER FUNCTIONS ++++++++++++++++++++++++++++++++++++ //
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 
 Row AbcSmc::do_complicated_untransformations(vector<Parameter*>& _model_pars, Row& pars) {
     assert( _model_pars.size() == npar() );
@@ -332,14 +344,18 @@ Row AbcSmc::do_complicated_untransformations(vector<Parameter*>& _model_pars, Ro
         const Parameter* mpar = _model_pars[i];
         vector<double> modifiers(identities); // TODO -- double check that this is a legit copy constructor
         map<string, vector<int> > mod_map = mpar->get_par_modification_map();
-        for (size_t j = 0; j < mod_map["transformed_addend"].size(); ++j)   modifiers[0] += pars[mod_map["transformed_addend"][j]];
-        for (size_t j = 0; j < mod_map["transformed_factor"].size(); ++j)   modifiers[1] *= pars[mod_map["transformed_factor"][j]];
-        for (size_t j = 0; j < mod_map["untransformed_addend"].size(); ++j) modifiers[2] += pars[mod_map["untransformed_addend"][j]];
-        for (size_t j = 0; j < mod_map["untransformed_factor"].size(); ++j) modifiers[3] *= pars[mod_map["untransformed_factor"][j]];
+        for (auto which : mod_map["transformed_addend"]) { modifiers[0] += pars[which]; }
+        for (auto which : mod_map["transformed_factor"]) { modifiers[1] *= pars[which]; }
+        for (auto which : mod_map["untransformed_addend"]) { modifiers[2] += pars[which]; }
+        for (auto which : mod_map["untransformed_factor"]) { modifiers[3] *= pars[which]; }
         upars[i] = mpar->untransform(pars[i], modifiers);
     }
     return upars;
 }
+
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ DATABASE FUNCTIONS +++++++++++++++++++++++++++++++++++++ //
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 
 // Build DB if it doesn't exist;
 // If it does exist but more sets are needed, filter particles and sample for next set;
@@ -424,97 +440,6 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
     return true;
 }
 
-
-void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
-    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2
-                                                      << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
-}
-
-
-void AbcSmc::report_convergence_data(const size_t set_t) {
-    if( _predictive_prior.size() <= set_t ) {
-        cerr << "ERROR: attempting to report stats for set " << set_t << ", but data aren't available.\n"
-             << "       This can happen if --process is called on a database that is not ready to be processed.\n";
-        exit(-214);
-    }
-    vector<double> last_means( npar(), 0 );
-    vector<double> current_means( npar(), 0 );
-    for (size_t j = 0; j < npar(); j++) {
-    //cerr << "par " << j << endl;
-        size_t N = _predictive_prior[set_t].size();
-        for (size_t i = 0; i < N; i++) {
-            int particle_idx = _predictive_prior[set_t][i];
-            double par_value = _particle_parameters[set_t](particle_idx, j);
-            current_means[j] += par_value;
-        }
-        current_means[j] /= N;
-
-        if (set_t > 0) {
-            const size_t N2 = _predictive_prior[set_t-1].size();
-            for (size_t i = 0; i < N2; i++) {
-                int particle_idx = _predictive_prior[set_t-1][i];
-                double par_value = _particle_parameters[set_t-1](particle_idx, j);
-                last_means[j] += par_value;
-            }
-            last_means[j] /= N2;
-        }
-    }
-
-    cerr << double_bar << endl;
-    if (set_t == 0) {
-        cerr << "Predictive prior summary statistics:\n";
-    } else {
-        cerr << "Convergence data for predictive priors:\n";
-    }
-    for (size_t i = 0; i < _model_pars.size(); i++) {
-        const Parameter* par = _model_pars[i];
-        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
-        const double prior_mean = par->get_prior_mean();
-        const double prior_mean_delta = current_means[i] - prior_mean;
-        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
-
-        const double prior_stdev = par->get_prior_stdev();
-        const double prior_stdev_delta = current_stdev - prior_stdev;
-        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
-        if (set_t == 0) {
-            cerr << "  Par " << i << ": \"" << par->get_name() << "\"\n";
-
-            cerr << "  Means:\n";
-            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            cerr << "  Standard deviations:\n";
-            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
-        } else {
-            double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(set_t-1)/2.0);
-            double delta, pct_chg;
-
-            cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
-
-            delta = current_means[i] - last_means[i];
-            pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
-            cerr << "  Means:\n";
-            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            print_stats(cerr, "Last", " current", last_means[i], current_means[i], delta, pct_chg, "\n");
-
-            delta = current_stdev - last_stdev;
-            pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
-            cerr << "  Standard deviations:\n";
-            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
-            print_stats(cerr, "Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n");
-        }
-    }
-}
-
-/*
-bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
-    stringstream ss;
-    ss << "update sets set status = 'D', ";
-    for (int j = 0; j < npar(); ++j) ss << ", " << _model_pars[j]->get_short_name() << "_dv = " << _model_pars[j]->get_doubled_variance(t);
-    ss << " where smcSet = " << t << ";";
-    return _db_execute(db, ss);
-}
-*/
-
-// 
 void AbcSmc::read_SMC_complete(sqdb::Db &db, const bool all) {
 
     if (not all) { // ask smc_set
@@ -643,9 +568,89 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
 }
 
 
-/*void AbcSmc::set_next_predictive_prior_size(int set_idx, int set_size) {
-    _next_predictive_prior_size = round(set_size * _predictive_prior_fraction);
-}*/
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ DIAGNOSTIC FUNCTIONS +++++++++++++++++++++++++++++++++++ //
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+
+void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
+    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2
+                                                      << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
+}
+
+
+void AbcSmc::report_convergence_data(const size_t set_t) {
+    if( _predictive_prior.size() <= set_t ) {
+        cerr << "ERROR: attempting to report stats for set " << set_t << ", but data aren't available.\n"
+             << "       This can happen if --process is called on a database that is not ready to be processed.\n";
+        exit(-214);
+    }
+    vector<double> last_means( npar(), 0 );
+    vector<double> current_means( npar(), 0 );
+    for (size_t j = 0; j < npar(); j++) {
+    //cerr << "par " << j << endl;
+        size_t N = _predictive_prior[set_t].size();
+        for (size_t i = 0; i < N; i++) {
+            int particle_idx = _predictive_prior[set_t][i];
+            double par_value = _particle_parameters[set_t](particle_idx, j);
+            current_means[j] += par_value;
+        }
+        current_means[j] /= N;
+
+        if (set_t > 0) {
+            const size_t N2 = _predictive_prior[set_t-1].size();
+            for (size_t i = 0; i < N2; i++) {
+                int particle_idx = _predictive_prior[set_t-1][i];
+                double par_value = _particle_parameters[set_t-1](particle_idx, j);
+                last_means[j] += par_value;
+            }
+            last_means[j] /= N2;
+        }
+    }
+
+    cerr << double_bar << endl;
+    if (set_t == 0) {
+        cerr << "Predictive prior summary statistics:\n";
+    } else {
+        cerr << "Convergence data for predictive priors:\n";
+    }
+    for (size_t i = 0; i < _model_pars.size(); i++) {
+        const Parameter* par = _model_pars[i];
+        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
+        const double prior_mean = par->get_prior_mean();
+        const double prior_mean_delta = current_means[i] - prior_mean;
+        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
+
+        const double prior_stdev = par->get_prior_stdev();
+        const double prior_stdev_delta = current_stdev - prior_stdev;
+        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
+        if (set_t == 0) {
+            cerr << "  Par " << i << ": \"" << par->get_name() << "\"\n";
+
+            cerr << "  Means:\n";
+            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
+        } else {
+            double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(set_t-1)/2.0);
+            double delta, pct_chg;
+
+            cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
+
+            delta = current_means[i] - last_means[i];
+            pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
+            cerr << "  Means:\n";
+            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
+            print_stats(cerr, "Last", " current", last_means[i], current_means[i], delta, pct_chg, "\n");
+
+            delta = current_stdev - last_stdev;
+            pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
+            cerr << "  Standard deviations:\n";
+            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
+            print_stats(cerr, "Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n");
+        }
+    }
+}
+
 
 
 void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
@@ -656,7 +661,7 @@ void AbcSmc::_particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_
 
     // sample parameter distributions; copy values into Y matrix and into send_data buffer
     Row par_row;
-    for (size_t i = 0; i<_num_particles; i++) {
+    for (size_t i = 0; i< _num_particles; i++) {
         if (t == 0) { // sample priors
             par_row = sample_priors(RNG);
             if (i < _num_particles) Y_orig.row(i) = par_row;
