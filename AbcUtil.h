@@ -52,16 +52,16 @@ namespace ABC {
   inline float_type logit(const float_type p) { assert(p <= 1.0); assert (p >= 0.0); return log( p / (1.0 - p) ); }
   inline float_type logistic(const float_type l) { return 1.0 / (1.0 + exp(-l)); }
 
-  inline Row col_means( Mat2D mat ) { return mat.colwise().sum() / mat.rows(); }
-
   //int _sgn(float_type val) { return (0 < val) - (val < 0); }
 
   Mat2D read_matrix_file(std::string filename, char sep);
 
-  Row col_stdev( Mat2D mat, Row means );
+  Row col_stdev(const Mat2D& mat);
+  Row col_stdev(const Mat2D& mat, const Row& means );
 
   Mat2D colwise_z_scores( const Mat2D& mat );
   Mat2D colwise_z_scores( const Mat2D& mat, Row& means, Row& stdev );
+  Row z_transform_vals(const Row& vals, const Row& means, const Row& stdevs);
 
   float_type mean(const Col data);
 

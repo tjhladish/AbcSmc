@@ -264,6 +264,8 @@ class AbcSmc {
         Metric* add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
             Metric* m = new Metric(name, short_name, ntype, obs_val);
             _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
+            _model_vals.resize(_model_mets.size());
+            _model_vals[_model_mets.size() - 1] = obs_val;
             return m;
         }
         Parameter* add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step,double (*u)(const double), std::pair<double, double> r, std::map<std::string, std::vector<int> > mm) {
@@ -334,11 +336,16 @@ class AbcSmc {
             return names;
         }
 
+        void print_bestworst();
+
     private:
         Mat2D X_orig;
         Mat2D Y_orig;
         std::vector<Parameter*> _model_pars;
+        // we use _model_mets for various display reasons, but really only access the values in bulk
         std::vector<Metric*> _model_mets;
+        Row _model_vals;
+
         size_t _num_smc_sets;
         vector<int> _smc_set_sizes;
         //int _num_particles;
@@ -357,7 +364,7 @@ class AbcSmc {
         bool _retain_posterior_rank;
         std::vector< Mat2D > _particle_metrics;
         std::vector< Mat2D > _particle_parameters;
-        std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
+        std::vector< std::vector<size_t> > _predictive_prior; // vector of row indices for particle metrics and parameters
         std::vector< std::vector<double> > _weights;
         bool use_mvn_noise;
         bool use_pls_filtering;
@@ -421,8 +428,6 @@ class AbcSmc {
         Row sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L );
 
         Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
-
-        Row _z_transform_observed_metrics( Row& means, Row& stdevs );
 
         void read_SMC_complete(sqdb::Db &db, const bool all = true);
         void rank_SMC_last();

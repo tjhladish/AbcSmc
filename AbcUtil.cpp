@@ -81,27 +81,22 @@ namespace ABC {
       return X;
   }
 
-
-  Row col_stdev( Mat2D mat, Row means ) {
-      Row stdevs = Row::Zero(mat.cols());
-      const float_type N = mat.rows();
-      if ( N < 2 ) return stdevs;
-
-      const float_type N_inv = 1.0/(N-1); // N-1 for unbiased sample variance
-      for (int i=0; i<mat.cols(); i++) {
-          stdevs[i] = sqrt( (mat.col(i).array()-means[i]).square().sum() * N_inv );
-      }
-      return stdevs;
+  Row col_stdev(const Mat2D& m, const Row& means) {
+      return (m.rowwise() - means).array().square().colwise().mean().sqrt();
   }
 
-  Mat2D colwise_z_scores( const Mat2D& mat) {
+  Row col_stdev(const Mat2D& m) {
+      return col_stdev(m, m.colwise().mean());
+  }
+
+  Mat2D colwise_z_scores(const Mat2D& mat) {
       Row means, stdev;
       return colwise_z_scores(mat, means, stdev);
   }
 
-  Mat2D colwise_z_scores( const Mat2D& mat, Row& means, Row& stdev ) {
+  Mat2D colwise_z_scores(const Mat2D& mat, Row& means, Row& stdev) {
       // Standardize values by column, i.e. convert to Z-scores
-      means = col_means( mat );
+      means = mat.colwise().mean();
       stdev = col_stdev( mat, means );
 
       // This is not technically correct, since z scores are undefined if the stdev is 0.
@@ -114,6 +109,11 @@ namespace ABC {
       Mat2D zmat = Mat2D::Zero(mat.rows(), mat.cols());
       for (int r = 0; r<mat.rows(); r++) { zmat.row(r) = (mat.row(r) - means).cwiseQuotient(stdev); }
       return zmat;
+  }
+
+  Row z_transform_vals(const Row& vals, const Row& means, const Row& stdevs) {
+    assert((vals.size() == means.size()) and (vals.size() == stdevs.size()));
+    return (vals - means).array() / stdevs.array();
   }
 
   /*

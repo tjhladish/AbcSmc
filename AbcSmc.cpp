@@ -804,21 +804,6 @@ void AbcSmc::_particle_worker(const size_t seed, const size_t serial) {
 
 // TODO - these could likely be refactored to a single, more clever build sql string function
 
-// string AbcSmc::_build_sql_select_par_string( string tag = "" ) {
-//     stringstream ss;
-//     for (size_t i = 0; i<npar()-1; i++) { ss << "P." << _model_pars[i]->get_short_name() << tag << ", "; }
-//     ss << "P." << _model_pars.back()->get_short_name() << tag << " ";
-//     return ss.str();
-// }
-
-
-// string AbcSmc::_build_sql_select_met_string() {
-//     stringstream ss;
-//     for (size_t i = 0; i<nmet()-1; i++) { ss << "M." << _model_mets[i]->get_short_name() << ", "; }
-//     ss << "M." << _model_mets.back()->get_short_name() << " ";
-//     return ss.str();
-// }
-
 bool setup(
     const std::string dbfile,
     const std::vector<std::string> &par_names,
@@ -1311,11 +1296,37 @@ void AbcSmc::_print_particle_table_header() {
 //     _predictive_prior[t] = sample;
 // };
 
-void AbcSmc::_fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances) {
-    vector<size_t> ranking = ordered(distances);
+template <typename Orderable>
+vector<size_t> ranked_sample(
+    const Orderable & values, // the values to be ranked 
+    const size_t samplen,
+    vector<size_t> & ranking
+) {
+    assert(values.size() >= samplen);
+    ranking = ordered(distances);
+    return vector<size_t>(ranking.begin(), ranking.begin() + samplen);
+}
 
-    vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
-    _predictive_prior[t] = sample;
+void AbcSmc::print_bestworst(
+    const ostream & os = std::cerr
+
+) {
+
+    os << "Observed:" << std::endl;
+    _print_particle_table_header();
+
+    for (size_t i = 0; i < npar(); i++) { os << setw(WIDTH) << "---"; } cerr << " | ";
+    for (size_t i = 0; i < nmet(); i++) { os << setw(WIDTH) << _model_mets[i]->get_obs_val(); } cerr << endl;
+
+};
+
+void AbcSmc::_fp_helper (
+    const int t,
+    const Mat2D &X_orig, const Mat2D &Y_orig,
+    const int next_pred_prior_size, const Col& distances
+) {
+    vector<size_t> ranking;
+    _predictive_prior[t] = ranked_sample(distances, next_pred_prior_size, ranking);
 
     cerr << "Observed:\n";
     _print_particle_table_header();
@@ -1348,7 +1359,7 @@ void AbcSmc::_fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, 
         for (size_t i = 0; i < static_cast<size_t>(X_orig.cols()); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
     }
 
-    cerr << "Worst five:\n";
+    std::cerr << "Worst five:\n";
     _print_particle_table_header();
     for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
         const int idx = ranking[q];
@@ -1362,9 +1373,9 @@ void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int 
     Row X_sim_means, X_sim_stdev;
     Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
     Mat2D Y = colwise_z_scores( Y_orig );
-    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
+    Row obs_met_z = ABC::z_transform_vals(_model_vals, X_sim_means, X_sim_stdev);
 
-    Col distances  = euclidean(obs_met, X);
+    Col distances  = euclidean(obs_met_z, X);
     _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
 }
 
@@ -1399,7 +1410,7 @@ PLS_Model AbcSmc::_filter_particles (
     Row X_sim_means, X_sim_stdev;
     Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
     Mat2D Y = colwise_z_scores( Y_orig );
-    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
+    Row obs_met = ABC::z_transform_vals(_model_vals, X_sim_means, X_sim_stdev);
 
     const size_t pls_training_set_size = round(X.rows() * _pls_training_fraction);
     // @tjh TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
@@ -1639,10 +1650,3 @@ Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
     }
     return par_values;
 }
-
-Row AbcSmc::_z_transform_observed_metrics(Row& means, Row& stdevs) {
-    Row zmat = Row::Zero(nmet());
-    for (size_t i = 0; i < nmet(); i++) { zmat(i) = (_model_mets[i]->get_obs_val() - means(i)) / stdevs(i); }
-    return zmat;
-}
-
