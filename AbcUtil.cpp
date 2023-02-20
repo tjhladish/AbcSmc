@@ -460,3 +460,24 @@ namespace ABC {
   }
 
 }
+
+double ABC::calculate_nrmse(
+    const Mat2D & posterior_mets, // rows are posterior samples, columns are metrics
+    const Row & observed
+) {
+    assert(posterior_mets.cols() == observed.size());
+
+    // get the simulated mean of each metric
+    Row sim = posterior_mets.colwise().mean();
+    // take the average of the observed and simulated values as the "reference"
+    // tjh TODO: where does the fabs come from?
+    Row expected = (observed.array().abs() + sim.array().abs()) / 2.0;
+    // where sim == obs, set expected == 1 (precludes divide by zero, and otherwise doesn't matter)
+    for (size_t i = 0; i < expected.size(); ++i) { if (sim[i] == observed[i]) expected[i] = 1; }
+
+    // delta = (sim - obs) / expected => each squared => collapse to mean => sqrt
+    double res = mean(((sim - observed).array() / expected.array()).square());
+
+    return sqrt(res);
+
+}

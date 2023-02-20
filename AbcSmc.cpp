@@ -11,6 +11,7 @@
 #include "RunningStat.h"
 #include "AbcSmc.h"
 #include "AbcMPI.h"
+#include "AbcLog.h"
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -26,9 +27,7 @@ using namespace sqdb;
 using namespace ABC;
 using namespace chrono;
 
-const string double_bar = "=========================================================================================";
 const int PREC = 5;
-const int WIDTH = 12;
 const string JOB_TABLE  = "job";
 const string MET_TABLE  = "met";
 const string PAR_TABLE  = "par";
@@ -331,7 +330,8 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
 
 //    if ( _pred_prior_size = 0) set_predictive_prior_size(last_set);
 
-    report_convergence_data(last_set);
+    AbcLog::report_convergence_data(this, last_set);
+
     cerr << endl << endl;
 
     if (_num_smc_sets > next_set) {
@@ -390,96 +390,6 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
 
     return true;
 }
-
-
-void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
-    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2
-                                                      << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
-}
-
-
-void AbcSmc::report_convergence_data(const size_t set_t) {
-    if( _predictive_prior.size() <= set_t ) {
-        cerr << "ERROR: attempting to report stats for set " << set_t << ", but data aren't available.\n"
-             << "       This can happen if --process is called on a database that is not ready to be processed.\n";
-        exit(-214);
-    }
-    vector<double> last_means( npar(), 0 );
-    vector<double> current_means( npar(), 0 );
-    for (size_t j = 0; j < npar(); j++) {
-    //cerr << "par " << j << endl;
-        size_t N = _predictive_prior[set_t].size();
-        for (size_t i = 0; i < N; i++) {
-            int particle_idx = _predictive_prior[set_t][i];
-            double par_value = _particle_parameters[set_t](particle_idx, j);
-            current_means[j] += par_value;
-        }
-        current_means[j] /= N;
-
-        if (set_t > 0) {
-            const size_t N2 = _predictive_prior[set_t-1].size();
-            for (size_t i = 0; i < N2; i++) {
-                int particle_idx = _predictive_prior[set_t-1][i];
-                double par_value = _particle_parameters[set_t-1](particle_idx, j);
-                last_means[j] += par_value;
-            }
-            last_means[j] /= N2;
-        }
-    }
-
-    cerr << double_bar << endl;
-    if (set_t == 0) {
-        cerr << "Predictive prior summary statistics:\n";
-    } else {
-        cerr << "Convergence data for predictive priors:\n";
-    }
-    for (size_t i = 0; i < _model_pars.size(); i++) {
-        const Parameter* par = _model_pars[i];
-        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
-        const double prior_mean = par->get_prior_mean();
-        const double prior_mean_delta = current_means[i] - prior_mean;
-        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
-
-        const double prior_stdev = par->get_prior_stdev();
-        const double prior_stdev_delta = current_stdev - prior_stdev;
-        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
-        if (set_t == 0) {
-            cerr << "  Par " << i << ": \"" << par->get_name() << "\"\n";
-
-            cerr << "  Means:\n";
-            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            cerr << "  Standard deviations:\n";
-            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
-        } else {
-            double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(set_t-1)/2.0);
-            double delta, pct_chg;
-
-            cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
-
-            delta = current_means[i] - last_means[i];
-            pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
-            cerr << "  Means:\n";
-            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            print_stats(cerr, "Last", " current", last_means[i], current_means[i], delta, pct_chg, "\n");
-
-            delta = current_stdev - last_stdev;
-            pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
-            cerr << "  Standard deviations:\n";
-            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
-            print_stats(cerr, "Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n");
-        }
-    }
-}
-
-/*
-bool AbcSmc::_update_sets_table(sqdb::Db &db, const int t) {
-    stringstream ss;
-    ss << "update sets set status = 'D', ";
-    for (int j = 0; j < npar(); ++j) ss << ", " << _model_pars[j]->get_short_name() << "_dv = " << _model_pars[j]->get_doubled_variance(t);
-    ss << " where smcSet = " << t << ";";
-    return _db_execute_stringstream(db, ss);
-}
-*/
 
 // Read in existing sets and do particle filtering as appropriate
 bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
@@ -556,12 +466,15 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             //set_next_predictive_prior_size(t, _particle_parameters[t].size());
             const size_t next_pred_prior_size = get_pred_prior_size(t);
             _predictive_prior.push_back( vector<int>(next_pred_prior_size) );
-            cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
             if (use_pls_filtering) {
                 _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
             } else {
                 _filter_particles_simple( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
             }
+            auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::all);
+            auto posterior_mets = _particle_metrics[t](_predictive_prior[t], Eigen::all);
+            AbcLog::filtering_report(this, t, posterior_pars, posterior_mets);
+
             vector<string> update_strings(next_pred_prior_size);
             for (size_t i = 0; i < next_pred_prior_size; i++) { // best to worst performing particle in posterior?
                 const int particle_idx = _predictive_prior[t][i];
@@ -573,7 +486,6 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             _db_execute_strings(db, update_strings);
         }
         calculate_predictive_prior_weights( t );
-
     }
 
     if (not set_size_test_success) {
@@ -994,72 +906,15 @@ bool AbcSmc::simulate_next_particles(
     return true;
 }
 
-
-long double AbcSmc::calculate_nrmse(vector<Col> posterior_mets) {
-    long double nrmse = 0.0;
-    size_t n = 0;
-    for (size_t i = 0; i < nmet(); i++) {
-        long double obs = _model_mets[i]->get_obs_val();
-        long double sim = mean(posterior_mets[i]);
-        if (obs != sim) { // also means they're not both zero
-            long double expected = (fabs(obs)+fabs(sim))/2;
-            nrmse += pow((sim-obs)/expected, 2);
-        }
-        n++;
-    }
-    assert(n>0);
-    return sqrt(nrmse/n);
-}
-
-void AbcSmc::_print_particle_table_header() {
-    for (size_t i = 0; i < npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
-    for (size_t i = 0; i < nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
-}
-
-void AbcSmc::_fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances) {
+void AbcSmc::_set_predictive_prior (
+    const int t,
+    const int next_pred_prior_size,
+    const Col& distances
+) {
     vector<size_t> ranking = ordered(distances);
-
     vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
     _predictive_prior[t] = sample;
 
-    cerr << "Observed:\n";
-    _print_particle_table_header();
-    for (size_t i = 0; i < npar(); i++) { cerr << setw(WIDTH) << "---"; } cerr << " | ";
-    for (size_t i = 0; i < nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_obs_val(); } cerr << endl;
-
-    vector<Col> posterior_pars(npar(), Col(next_pred_prior_size));
-    vector<Col> posterior_mets(nmet(), Col(next_pred_prior_size));
-    for (size_t i = 0; i < sample.size(); ++i) {
-        const int idx = sample[i];
-        for (size_t j = 0; j < npar(); j++) posterior_pars[j](i) = Y_orig(idx, j);
-        for (size_t j = 0; j < nmet(); j++) posterior_mets[j](i) = X_orig(idx, j);
-    }
-    cerr << "Normalized RMSE for metric means (lower is better):  " << calculate_nrmse(posterior_mets) << "\n";
-    cerr << "Posterior means:\n";
-    _print_particle_table_header();
-    for (size_t i = 0; i < npar(); i++) { cerr << setw(WIDTH) << mean(posterior_pars[i]); } cerr << " | ";
-    for (size_t i = 0; i < nmet(); i++) { cerr << setw(WIDTH) << mean(posterior_mets[i]); } cerr << endl;
-
-    cerr << "Posterior medians:\n";
-    _print_particle_table_header();
-    for (size_t i = 0; i < npar(); i++) { cerr << setw(WIDTH) << median(posterior_pars[i]); } cerr << " | ";
-    for (size_t i = 0; i < nmet(); i++) { cerr << setw(WIDTH) << median(posterior_mets[i]); } cerr << endl;
-
-    cerr << "Best five:\n";
-    _print_particle_table_header();
-    for (size_t q = 0; q < 5; q++) {
-        const int idx = ranking[q];
-        for (size_t i = 0; i < static_cast<size_t>(Y_orig.cols()); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
-        for (size_t i = 0; i < static_cast<size_t>(X_orig.cols()); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
-    }
-
-    cerr << "Worst five:\n";
-    _print_particle_table_header();
-    for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
-        const int idx = ranking[q];
-        for (size_t i = 0; i < static_cast<size_t>(Y_orig.cols()); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
-        for (size_t i = 0; i < static_cast<size_t>(X_orig.cols()); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
-    }
 }
 
 void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
@@ -1070,7 +925,7 @@ void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int 
     Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
 
     Col distances  = euclidean(obs_met, X);
-    _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
+    _set_predictive_prior (t, next_pred_prior_size, distances);
 }
 
 // Run PLS
@@ -1129,7 +984,8 @@ PLS_Model AbcSmc::_filter_particles (
     Mat2D sim_scores = plsm.scores(X, num_components_used).real();
     Col   distances  = euclidean(obs_scores, sim_scores);
 
-    _fp_helper(t, X_orig, Y_orig, next_pred_prior_size, distances);
+    _set_predictive_prior(t, next_pred_prior_size, distances);
+
     return plsm;
 }
 
