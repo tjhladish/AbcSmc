@@ -204,6 +204,11 @@ namespace ABC {
         const Mat2D & params
     );
 
+  double calculate_nrmse(
+    const Mat2D & posterior_mets,
+    const Row & observed
+  );
+
 }
 
 #endif

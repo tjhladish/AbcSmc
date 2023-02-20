@@ -894,6 +894,103 @@ bool AbcSmc::simulate_next_particles(
     return true;
 }
 
+<<<<<<< HEAD
+=======
+void AbcSmc::_set_predictive_prior (
+    const int t,
+    const int next_pred_prior_size,
+    const Col& distances
+) {
+    vector<size_t> ranking = ordered(distances);
+    vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
+    _predictive_prior[t] = sample;
+
+}
+
+void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
+    // x is metrics, y is parameters
+    Row X_sim_means, X_sim_stdev;
+    Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
+    Mat2D Y = colwise_z_scores( Y_orig );
+    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
+
+    Col distances  = euclidean(obs_met, X);
+    _set_predictive_prior (t, next_pred_prior_size, distances);
+}
+
+// Run PLS
+// Box-Cox transform data -- TODO?
+//void test_bc( Mat2D );
+//test_bc(Y_orig);
+// @tjh TODO: obsolete? have updated the PLS constructor to just do the calculation if presented with X/Y/components/method
+// as that seems to be the most common use case
+PLS_Model& AbcSmc::run_PLS(
+    Mat2D &X, // predictors; rows = sample, cols = variables
+    Mat2D &Y, // responses; rows = sample, cols = variables
+    const size_t pls_training_set_size, // number of samples from X and Y to use
+    const size_t ncomp // number of PLS components to keep
+) {
+
+    // assert same rows to X and Y? or perhaps manage that in PLS?
+    assert(pls_training_set_size <= static_cast<size_t>(X.rows())); // can't train against more observations than we have
+    const size_t npred = X.cols();      // number of predictor variables
+    const size_t nresp = Y.cols();      // number of response variables
+    return PLS_Model(npred, nresp, ncomp).plsr(
+        X.topRows(pls_training_set_size),
+        Y.topRows(pls_training_set_size), KERNEL_TYPE1
+    );
+    
+}
+
+PLS_Model AbcSmc::_filter_particles (
+    int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size,
+    const bool verbose
+) {
+    Row X_sim_means, X_sim_stdev;
+    Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
+    Mat2D Y = colwise_z_scores( Y_orig );
+    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
+
+    const size_t pls_training_set_size = round(X.rows() * _pls_training_fraction);
+    // @tjh TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
+    size_t ncomp = npar();             // It doesn't make sense to consider more components than model parameters
+
+    PLS_Model plsm(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), ncomp);
+
+    // A is number of components to use
+    if (verbose) { plsm.print_explained_variance(X, Y); }
+
+    const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
+    auto num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
+    size_t num_components_used = num_components.maxCoeff();
+    if (verbose) {
+        cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
+        cerr << "Using " << num_components_used << " components." << endl;
+    }
+
+    // Calculate new, orthogonal metrics (==scores) using the pls model
+    // Is casting as real always safe?
+    Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
+    Mat2D sim_scores = plsm.scores(X, num_components_used).real();
+    Col   distances  = euclidean(obs_scores, sim_scores);
+
+    _set_predictive_prior(t, next_pred_prior_size, distances);
+
+    return plsm;
+}
+
+Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
+    Col distances = Col::Zero(sim_met.rows());
+    for (int r = 0; r<sim_met.rows(); r++) {
+        for (int c = 0; c<sim_met.cols(); c++) {
+            distances(r) += pow(obs_met(c) - sim_met(r,c), 2);
+        }
+        distances(r) = sqrt( distances(r) );
+    }
+    return distances;
+}
+
+>>>>>>> aa94816 (compartmentalizes diagnostic-style outputs)
 Mat2D AbcSmc::slurp_posterior() {
     // TODO - handle sql/sqlite errors
     // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
