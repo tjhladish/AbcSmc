@@ -10,6 +10,8 @@
 #include "AbcSim.h"
 #include "pls.h"
 
+class AbcLog; // forward declaration of AbcLog; see AbcLog.h
+
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
 enum VerboseType {QUIET, VERBOSE};
@@ -264,8 +266,8 @@ class AbcSmc {
         Metric* add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
             Metric* m = new Metric(name, short_name, ntype, obs_val);
             _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
-            _model_vals.resize(_model_mets.size());
-            _model_vals[_model_mets.size() - 1] = obs_val;
+            _met_vals.resize(_model_mets.size());
+            _met_vals[_model_mets.size()-1] = obs_val;
             return m;
         }
         Parameter* add_next_parameter(std::string name, std::string short_name, PriorType ptype, NumericType ntype, double val1, double val2, double step,double (*u)(const double), std::pair<double, double> r, std::map<std::string, std::vector<int> > mm) {
@@ -289,8 +291,6 @@ class AbcSmc {
 
         void process_predictive_prior_arguments(Json::Value par);
         bool parse_config(std::string conf_filename);
-        void report_convergence_data(const size_t lastn = 1);
-
 
         bool build_database(const gsl_rng* RNG);
         bool process_database(const gsl_rng* RNG);
@@ -339,13 +339,14 @@ class AbcSmc {
         void print_bestworst();
 
     private:
+        friend AbcLog;
         Mat2D X_orig;
         Mat2D Y_orig;
         std::vector<Parameter*> _model_pars;
         // we use _model_mets for various display reasons, but really only access the values in bulk
         std::vector<Metric*> _model_mets;
-        Row _model_vals;
-
+        Row _met_vals;
+        
         size_t _num_smc_sets;
         vector<int> _smc_set_sizes;
         //int _num_particles;
@@ -381,10 +382,9 @@ class AbcSmc {
         void _particle_scheduler(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG);
         void _particle_worker(const size_t seed, const size_t serial);
 
-        void _fp_helper(const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances);
+        void _set_predictive_prior(const int t, const int next_pred_prior_size, const Col& distances);
         void _filter_particles_simple(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size);
         PLS_Model _filter_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size, const bool verbose = true);
-        void _print_particle_table_header();
         long double calculate_nrmse(vector<Col> posterior_mets);
 
         void set_resume(const bool res) { resume_flag = res; }

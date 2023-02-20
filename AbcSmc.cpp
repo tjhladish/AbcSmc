@@ -13,6 +13,7 @@
 #include "AbcSmc.h"
 #include "refsql.h"
 #include "AbcMPI.h"
+#include "AbcLog.h"
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -28,10 +29,7 @@ using namespace sqdb;
 using namespace ABC;
 using namespace chrono;
 
-const string double_bar = "=========================================================================================";
 const int PREC = 5;
-const int WIDTH = 12;
-
 const string JOB_TABLE  = "job";
 const string MET_TABLE  = "met";
 const string MET_UNDER  = MET_TABLE + "_vals";
@@ -505,6 +503,11 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
     assert(next_set > 0);
     const size_t last_set = next_set - 1; // this set number
 
+//    if ( _pred_prior_size = 0) set_predictive_prior_size(last_set);
+
+    AbcLog::report_convergence_data(this, last_set);
+
+    cerr << endl << endl;
 
     if (_num_smc_sets > next_set) {
 
@@ -641,12 +644,15 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             //set_next_predictive_prior_size(t, _particle_parameters[t].size());
             const size_t next_pred_prior_size = get_pred_prior_size(t);
             _predictive_prior.push_back( vector<int>(next_pred_prior_size) );
-            cerr << double_bar << endl << "Set " << t << endl << double_bar << endl;
             if (use_pls_filtering) {
                 _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
             } else {
                 _filter_particles_simple( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
             }
+            auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::all);
+            auto posterior_mets = _particle_metrics[t](_predictive_prior[t], Eigen::all);
+            AbcLog::filtering_report(this, t, posterior_pars, posterior_mets);
+
             vector<string> update_strings(next_pred_prior_size);
             for (size_t i = 0; i < next_pred_prior_size; i++) { // best to worst performing particle in posterior?
                 const int particle_idx = _predictive_prior[t][i];
@@ -658,7 +664,6 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             _db_execute_strings(db, update_strings);
         }
         calculate_predictive_prior_weights( t );
-
     }
 
     if (not set_size_test_success) {
@@ -1264,108 +1269,26 @@ bool AbcSmc::simulate_next_particles(
     return true;
 }
 
-
-long double AbcSmc::calculate_nrmse(vector<Col> posterior_mets) {
-    long double nrmse = 0.0;
-    size_t n = 0;
-    for (size_t i = 0; i < nmet(); i++) {
-        long double obs = _model_mets[i]->get_obs_val();
-        long double sim = mean(posterior_mets[i]);
-        if (obs != sim) { // also means they're not both zero
-            long double expected = (fabs(obs)+fabs(sim))/2;
-            nrmse += pow((sim-obs)/expected, 2);
-        }
-        n++;
-    }
-    assert(n>0);
-    return sqrt(nrmse/n);
-}
-
-void AbcSmc::_print_particle_table_header() {
-    for (size_t i = 0; i < npar(); i++) { cerr << setw(WIDTH) << _model_pars[i]->get_short_name(); } cerr << " | ";
-    for (size_t i = 0; i < nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_short_name(); } cerr << endl;
-}
-
-// void AbcSmc::_update_predictive_prior(
-//     const size_t smcSet,
-//     const Col & distances,
-//     const size_t next_pred_prior_size
+// template <typename Orderable>
+// vector<size_t> ranked_sample(
+//     const Orderable & values, // the values to be ranked 
+//     const size_t samplen,
+//     vector<size_t> & ranking
 // ) {
-//     vector<size_t> ranking = ordered(distances);
-//     vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
-//     _predictive_prior[t] = sample;
-// };
+//     assert(values.size() >= samplen);
+//     ranking = ordered(distances);
+//     return vector<size_t>(ranking.begin(), ranking.begin() + samplen);
+// }
 
-template <typename Orderable>
-vector<size_t> ranked_sample(
-    const Orderable & values, // the values to be ranked 
-    const size_t samplen,
-    vector<size_t> & ranking
-) {
-    assert(values.size() >= samplen);
-    ranking = ordered(distances);
-    return vector<size_t>(ranking.begin(), ranking.begin() + samplen);
-}
-
-void AbcSmc::print_bestworst(
-    const ostream & os = std::cerr
-
-) {
-
-    os << "Observed:" << std::endl;
-    _print_particle_table_header();
-
-    for (size_t i = 0; i < npar(); i++) { os << setw(WIDTH) << "---"; } cerr << " | ";
-    for (size_t i = 0; i < nmet(); i++) { os << setw(WIDTH) << _model_mets[i]->get_obs_val(); } cerr << endl;
-
-};
-
-void AbcSmc::_fp_helper (
+void AbcSmc::_set_predictive_prior (
     const int t,
-    const Mat2D &X_orig, const Mat2D &Y_orig,
-    const int next_pred_prior_size, const Col& distances
+    const int next_pred_prior_size,
+    const Col& distances
 ) {
-    vector<size_t> ranking;
-    _predictive_prior[t] = ranked_sample(distances, next_pred_prior_size, ranking);
+    vector<size_t> ranking = ordered(distances);
+    vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
+    _predictive_prior[t] = sample;
 
-    cerr << "Observed:\n";
-    _print_particle_table_header();
-    for (size_t i = 0; i < npar(); i++) { cerr << setw(WIDTH) << "---"; } cerr << " | ";
-    for (size_t i = 0; i < nmet(); i++) { cerr << setw(WIDTH) << _model_mets[i]->get_obs_val(); } cerr << endl;
-
-    vector<Col> posterior_pars(npar(), Col(next_pred_prior_size));
-    vector<Col> posterior_mets(nmet(), Col(next_pred_prior_size));
-    for (size_t i = 0; i < sample.size(); ++i) {
-        const int idx = sample[i];
-        for (size_t j = 0; j < npar(); j++) posterior_pars[j](i) = Y_orig(idx, j);
-        for (size_t j = 0; j < nmet(); j++) posterior_mets[j](i) = X_orig(idx, j);
-    }
-    cerr << "Normalized RMSE for metric means (lower is better):  " << calculate_nrmse(posterior_mets) << "\n";
-    cerr << "Posterior means:\n";
-    _print_particle_table_header();
-    for (size_t i = 0; i < npar(); i++) { cerr << setw(WIDTH) << mean(posterior_pars[i]); } cerr << " | ";
-    for (size_t i = 0; i < nmet(); i++) { cerr << setw(WIDTH) << mean(posterior_mets[i]); } cerr << endl;
-
-    cerr << "Posterior medians:\n";
-    _print_particle_table_header();
-    for (size_t i = 0; i < npar(); i++) { cerr << setw(WIDTH) << median(posterior_pars[i]); } cerr << " | ";
-    for (size_t i = 0; i < nmet(); i++) { cerr << setw(WIDTH) << median(posterior_mets[i]); } cerr << endl;
-
-    cerr << "Best five:\n";
-    _print_particle_table_header();
-    for (size_t q = 0; q < 5; q++) {
-        const int idx = ranking[q];
-        for (size_t i = 0; i < static_cast<size_t>(Y_orig.cols()); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
-        for (size_t i = 0; i < static_cast<size_t>(X_orig.cols()); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
-    }
-
-    std::cerr << "Worst five:\n";
-    _print_particle_table_header();
-    for (unsigned int q=ranking.size()-1; q>=ranking.size()-5; q--) {
-        const int idx = ranking[q];
-        for (size_t i = 0; i < static_cast<size_t>(Y_orig.cols()); i++) { cerr << setw(WIDTH) << Y_orig(idx, i); } cerr << " | ";
-        for (size_t i = 0; i < static_cast<size_t>(X_orig.cols()); i++) { cerr << setw(WIDTH) << X_orig(idx, i); } cerr << endl;
-    }
 }
 
 void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
@@ -1373,10 +1296,10 @@ void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int 
     Row X_sim_means, X_sim_stdev;
     Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
     Mat2D Y = colwise_z_scores( Y_orig );
-    Row obs_met_z = ABC::z_transform_vals(_model_vals, X_sim_means, X_sim_stdev);
+    Row obs_met_z = ABC::z_transform_vals(_met_vals, X_sim_means, X_sim_stdev);
 
     Col distances  = euclidean(obs_met_z, X);
-    _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
+    _set_predictive_prior (t, next_pred_prior_size, distances);
 }
 
 // Run PLS
@@ -1435,7 +1358,8 @@ PLS_Model AbcSmc::_filter_particles (
     Mat2D sim_scores = plsm.scores(X, num_components_used).real();
     Col   distances  = euclidean(obs_scores, sim_scores);
 
-    _fp_helper(t, X_orig, Y_orig, next_pred_prior_size, distances);
+    _set_predictive_prior(t, next_pred_prior_size, distances);
+
     return plsm;
 }
 
