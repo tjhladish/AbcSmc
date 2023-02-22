@@ -52,7 +52,17 @@ CREATE TABLE IF NOT EXISTS par_vals (
     PRIMARY KEY (serial, parIdx)
 );
 
+/* normal-formed untransformed parameters table. links run serial + parameter id => untrans value of that parameter */
+/* always created, but can be left empty and everything else will just work. */
+CREATE TABLE IF NOT EXISTS upar_vals (
+    serial INTEGER NOT NULL,
+    parIdx INTEGER NOT NULL,
+    uvalue REAL,
+    PRIMARY KEY (serial, parIdx)
+);
+
 /* meta-data on parameters; must be dynamically filled when setting up db */
+/* TODO: should this include other meta information, e.g. if a parameter is untransformed? */
 CREATE TABLE IF NOT EXISTS par_name (
     parIdx INTEGER PRIMARY KEY ASC,
     name TEXT NOT NULL,
@@ -68,6 +78,7 @@ CREATE TABLE IF NOT EXISTS met_vals (
 );
 
 /* meta-data on metrics; must be dynamically filled when setting up db */
+/* TODO: should this include other meta information, e.g. the observed value? */
 CREATE TABLE IF NOT EXISTS met_name (
     metIdx INTEGER PRIMARY KEY ASC,
     name TEXT NOT NULL,
