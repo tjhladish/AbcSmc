@@ -224,8 +224,7 @@ class AbcSmc {
         [[deprecated("This configuration option is ignored; SMC iterates are performed on demand.")]]
         size_t get_smc_iterations() const { return _num_smc_sets; }
 
-        //void set_smc_set_sizes(vector<int> n) { _smc_set_sizes = n; }
-
+        [[deprecated("This public interface is going away. For internal access, use `_current_stage_sims()`")]]
         size_t get_num_particles(const size_t set_num, const VerboseType vt = VERBOSE) {
             int set_size = 0;
             if (set_num < _smc_set_sizes.size()) {
@@ -237,6 +236,7 @@ class AbcSmc {
             return set_size;
         }
 
+        [[deprecated("This public interface is going away. For internal access, use `_predictive_prior_size()`")]]
         size_t get_pred_prior_size(size_t set_num, VerboseType vt = VERBOSE) {
             int set_size = 0;
             if (set_num < _predictive_prior_sizes.size()) {
@@ -248,14 +248,10 @@ class AbcSmc {
             return set_size;
         }
 
-/*        void set_predictive_prior_fraction(float f) {
-            assert(f > 0);
-            assert(f <= 1);
-            _predictive_prior_fraction = f;
-        }*/
-
+        [[deprecated("This public interface is going away.")]]
         void set_next_predictive_prior_size(int set_idx, int set_size);
 
+        [[deprecated("")]]
         void set_pls_validation_training_fraction(float f) {
             assert(f > 0);
             assert(f <= 1);
@@ -401,8 +397,6 @@ class AbcSmc {
         void set_resume_directory( std::string res_dir ) { resume_directory = res_dir; }
         bool read_particle_set( int t, Mat2D &X_orig, Mat2D &Y_orig );
         bool read_predictive_prior( int t );
-
-        string _build_sql_select_met_string();
 
         bool _update_sets_table(sqdb::Db &db, int t);
         //bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
