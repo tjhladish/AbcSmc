@@ -24,6 +24,7 @@ using std::string;
 using std::stringstream;
 using std::ofstream;
 using std::setw;
+using std::cerr;
 
 using namespace sqdb;
 using namespace ABC;
@@ -388,7 +389,7 @@ void AbcSmc::summarize_SMC() {
 // ++++++++++++++++++++ DATABASE FUNCTIONS +++++++++++++++++++++++++++++++++++++ //
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 
-bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
+bool _db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
     bool db_success = false;
     try {
         db.Query("BEGIN EXCLUSIVE;").Next();
@@ -448,7 +449,7 @@ bool _db_execute(sqdb::Db &db, stringstream &ss, const bool verbose) {
     return db_success;
 };
 
-bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
+bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     // Note that retval here is whether tables exist, rather than whether
     // db transaction was successful.  A failed transaction will throw
     // an exception and exit.
@@ -502,8 +503,6 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
     const size_t next_set = serials.size();
     assert(next_set > 0);
     const size_t last_set = next_set - 1; // this set number
-
-//    if ( _pred_prior_size = 0) set_predictive_prior_size(last_set);
 
     AbcLog::report_convergence_data(this, last_set);
 
@@ -604,6 +603,15 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         _particle_parameters.push_back( Mat2D::Zero( completed_set_size, npar() ) );
         _particle_metrics.push_back( Mat2D::Zero( completed_set_size, nmet() ) );
 
+        QueryStr qstr;
+
+        auto q = qstr.Format(SQDB_MAKE_TEXT(R"SQL(
+            SELECT serial, particleIdx, posterior, P.*, M.* FROM %s
+            JOIN %s USING(serial)
+            JOIN %s USING(serial)
+            WHERE smcSet == %d;
+        )SQL"), JOB_TABLE.c_str(), PAR_TABLE.c_str(), MET_TABLE.c_str(), t);
+
         // join all three tables for rows with smcSet = t, slurp and store values
         string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
                             + "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE + " P where J.serial = M.serial and J.serial = P.serial "
@@ -634,7 +642,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         //const int posterior_size = posterior_pairs.size() > 0 ? posterior_pairs.size() : _next_predictive_prior_size;
         //_predictive_prior.push_back( vector<int>(posterior_size) );
         if (posterior_pairs.size() > 0) { // This is a set that has already undergone particle filtering & ranking
-            _predictive_prior.push_back( vector<int>(posterior_pairs.size()) );
+            _predictive_prior.push_back( vector<size_t>(posterior_pairs.size()) );
             for (size_t i = 0; i < posterior_pairs.size(); i++) {
                 const int rank = posterior_pairs[i].first;
                 const int idx = posterior_pairs[i].second;
@@ -643,7 +651,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         } else { // Otherwise, do the filtering now and update the DB
             //set_next_predictive_prior_size(t, _particle_parameters[t].size());
             const size_t next_pred_prior_size = get_pred_prior_size(t);
-            _predictive_prior.push_back( vector<int>(next_pred_prior_size) );
+            _predictive_prior.push_back( vector<size_t>(next_pred_prior_size) );
             if (use_pls_filtering) {
                 _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
             } else {
@@ -682,101 +690,6 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
 
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
-// ++++++++++++++++++++ DIAGNOSTIC FUNCTIONS +++++++++++++++++++++++++++++++++++ //
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
-
-void print_stats(ostream& stream, string str1, string str2, double val1, double val2, double delta, double pct_chg, string tail) {
-    stream << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2
-                                                      << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
-}
-
-bool AbcSmc::read_SMC_sets(
-    const size_t lastn,
-    std::vector< Mat2D > &pars // the associated parameters - TODO actually necessary to get everything, or just the predictive prior?
-) {
-
-}
-
-void AbcSmc::report_convergence_data(
-    const size_t lastn
-) {
-    // obtain whats on deck for simulation
-    if (lastn == 0) {
-        // only report what's on deck for simulation
-    } else {
-        std::vector<Mat2D> ppars;
-        read_SMC_sets(lastn, ppars);
-        // obtain the lastn processed sets
-        if( ppars.size() < lastn ) {
-            std::cerr << "ERROR: attempting to report stats for last " << lastn << " set(s), but data are only available for " << ppars.size() << "." << std::endl
-                      << "Did you --process your most recent results?" << std::endl;
-            exit(-214);
-        }
-        // do pairwise comparisons
-        Row last_means, current_means;
-        current_means.setZero( ppars[0].cols() );
-        // assert: all ppars have the same number of columns
-        for (size_t i = 0; i < lastn; i++) {
-            last_means = current_means;
-            Mat2D cur_pars = ppars[i];
-            current_means = cur_pars.colwise().mean();
-            
-        }
-
-        // report what's on-deck for simulation
-    }
-
-    }
-
-
-
-    
-
-    cerr << double_bar << endl;
-    if (set_t == 0) {
-        cerr << "Predictive prior summary statistics:\n";
-    } else {
-        cerr << "Convergence data for predictive priors:\n";
-    }
-    for (size_t i = 0; i < _model_pars.size(); i++) {
-        const Parameter* par = _model_pars[i];
-        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
-        const double prior_mean = par->get_prior_mean();
-        const double prior_mean_delta = current_means[i] - prior_mean;
-        const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
-
-        const double prior_stdev = par->get_prior_stdev();
-        const double prior_stdev_delta = current_stdev - prior_stdev;
-        const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
-        if (set_t == 0) {
-            cerr << "  Par " << i << ": \"" << par->get_name() << "\"\n";
-
-            cerr << "  Means:\n";
-            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            cerr << "  Standard deviations:\n";
-            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n");
-        } else {
-            double last_stdev = sqrt(_model_pars[i]->get_doubled_variance(set_t-1)/2.0);
-            double delta, pct_chg;
-
-            cerr << "  Par " << i << ": \"" << _model_pars[i]->get_name() << "\"\n";
-
-            delta = current_means[i] - last_means[i];
-            pct_chg = last_means[i] != 0 ? 100 * delta / last_means[i] : INFINITY;
-            cerr << "  Means:\n";
-            print_stats(cerr, "Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "");
-            print_stats(cerr, "Last", " current", last_means[i], current_means[i], delta, pct_chg, "\n");
-
-            delta = current_stdev - last_stdev;
-            pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
-            cerr << "  Standard deviations:\n";
-            print_stats(cerr, "Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "");
-            print_stats(cerr, "Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n");
-        }
-    }
-}
-
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 // ++++++++++++++++++++ MPI SUPPORT FUNCTIONS ++++++++++++++++++++++++++++++++++ //
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 
@@ -807,19 +720,30 @@ void AbcSmc::_particle_worker(const size_t seed, const size_t serial) {
     ABC::particle_worker(npar(), nmet(), _simulator, seed, serial, _mp);
 }
 
-// TODO - these could likely be refactored to a single, more clever build sql string function
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ CORE ALGORITHM LOOP ++++++++++++++++++++++++++++++++++++ //
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 
+// 0. Setup (= construct storage from scratch - not repeated, even across invocations)
+// 0.1 Populate (= Sample Priors + Generate Pseudos - not repeated, even across invocations)
+// 1. Simulate (= read parameters, run sim, write metrics)
+// 2. Process (= do PLS => new params)
+// 3. GOTO 1.
+
+// open the SQL database, write the static structure, write the needed simulation-specific structure,
+// then write the conditional-on-specifics-but-static elements of the database
 bool setup(
     const std::string dbfile,
     const std::vector<std::string> &par_names,
-    const std::vector<std::string> &met_names,
-    const bool hasTransformed = false
+    const std::vector<std::string> &met_names
 ) {
     // NB: the cast here is to do with c-nature of sqlite3 library
-    // we're doing this to make the `eval` command available in sqlite3 when we open the database 
+    // we're doing this to make the `eval` command available in sqlite3 when we open the database
+    // this is only needed when setting up the db
     sqlite3_auto_extension((void(*)())sqlite3_eval_init);
 
     // assert: db empty
+    // TODO: error (warn? allow with overwrite flag?) if db non-empty
     sqdb::Db db(dbfile.c_str());
 
     stringstream ss;
@@ -839,11 +763,6 @@ bool setup(
     ss << bin2c_sqldynamic_sql;
     _db_execute(db, ss);
 
-    if (hasTransformed) {
-        ss << bin2c_sqlutrans_sql;
-        _db_execute(db, ss);
-    }
-
     db.CommitTransaction();
         
     return true;
@@ -858,11 +777,11 @@ bool setup(
 // TODO: for more generic storage, might make more sense to build an intermediate iterator
 // of (serial, col, value) tuples, then use that to build the string
 // that would provide a more general step that might be useable for other storage types that still
-// want long data, but don't use the same serialization format as SQL
+// want long data, but don't use the same serialization format as SQL(ite)
 template <typename SerialIt, typename ValRowIt>
 std::string serial_id_values_stream(
     const SerialIt & serials, // iterable of serials
-    const ValRowIt & vals // iterable of Rows of values 
+    const ValRowIt & vals // iterable of "Rows" of values (something that has size + iterator) 
 ) {
     assert(serials.size() == vals.size());
     std::stringstream ss("(");
@@ -879,6 +798,7 @@ std::string serial_id_values_stream(
     return ss.str();
 };
 
+// similar to serial_id_values_stream, but for a single value per serial - i.e. no id key
 template <typename SerialIt, typename ValIt>
 std::string serial_values_stream(
     const SerialIt & serials, // iterable of serials
@@ -1333,7 +1253,7 @@ PLS_Model AbcSmc::_filter_particles (
     Row X_sim_means, X_sim_stdev;
     Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
     Mat2D Y = colwise_z_scores( Y_orig );
-    Row obs_met = ABC::z_transform_vals(_model_vals, X_sim_means, X_sim_stdev);
+    Row obs_met = ABC::z_transform_vals(_met_vals, X_sim_means, X_sim_stdev);
 
     const size_t pls_training_set_size = round(X.rows() * _pls_training_fraction);
     // @tjh TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables

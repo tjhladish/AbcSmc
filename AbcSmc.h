@@ -4,11 +4,12 @@
 #define mpi_root 0
 
 #include <map>
-#include "AbcUtil.h"
-#include "sqdb.h"
+#include <optional>
 #include <json/json.h>
-#include "AbcSim.h"
+#include "sqdb.h"
 #include "pls.h"
+#include "AbcUtil.h"
+#include "AbcSim.h"
 
 class AbcLog; // forward declaration of AbcLog; see AbcLog.h
 
@@ -213,8 +214,16 @@ class AbcSmc {
             use_pls_filtering = true;
         };
 
+        void parse(const std::string & config_file, const size_t verbose = 0);
+        void build(const gsl_rng* RNG, const size_t verbose = 0);
+        void process(const gsl_rng* RNG, const size_t verbose = 0);
+        void evaluate(const gsl_rng* RNG, const std::optional<size_t> num_sims, const size_t verbose = 0);
+
+        [[deprecated("This configuration option is ignored; SMC iterates are performed on demand.")]]
         void set_smc_iterations(int n) { _num_smc_sets = n; }
-        size_t get_smc_iterations() { return _num_smc_sets; }
+        [[deprecated("This configuration option is ignored; SMC iterates are performed on demand.")]]
+        size_t get_smc_iterations() const { return _num_smc_sets; }
+
         //void set_smc_set_sizes(vector<int> n) { _smc_set_sizes = n; }
 
         size_t get_num_particles(const size_t set_num, const VerboseType vt = VERBOSE) {
@@ -394,10 +403,6 @@ class AbcSmc {
         bool read_predictive_prior( int t );
 
         string _build_sql_select_met_string();
-    
-
-        bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
-        bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
 
         bool _update_sets_table(sqdb::Db &db, int t);
         //bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
@@ -439,5 +444,7 @@ class AbcSmc {
 bool _db_execute(sqdb::Db &db, const char * query, const bool verbose = false);
 bool _db_execute(sqdb::Db &db, const string &ss, const bool verbose = false);
 bool _db_execute(sqdb::Db &db, stringstream &ss, const bool verbose = false);
+bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
+bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
 
 #endif
