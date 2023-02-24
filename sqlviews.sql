@@ -1,6 +1,8 @@
 
-/* TODO: should jobs also be some sort of view? */
-CREATE TABLE IF NOT EXISTS job (
+/* WARNING: executing this file will overwrite any existing AbcSmc content in the database */
+
+DROP TABLE IF EXISTS job;
+CREATE TABLE job (
     serial INTEGER PRIMARY KEY ASC, -- all runs must have a serial
     smcSet INTEGER,                 -- smcSet only required when doing fitting
     particleIdx INTEGER,            -- particleIdx only required when doing scenario analysis
@@ -10,7 +12,9 @@ CREATE TABLE IF NOT EXISTS job (
     posterior INTEGER DEFAULT -1,   -- posterior rank; defaults to -1 (not in posterior), potentially updated by processing
     attempts INTEGER DEFAULT 0      -- number of times this job has been attempted; initially 0, then incremented on "checkout"
 );
+CREATE INDEX idx1 ON job (status, attempts);
 
+/* TODO: should jobs also be some sort of view? */
 /*
 CREATE TABLE IF NOT EXISTS job_data (
     serial INTEGER PRIMARY KEY ASC,
@@ -36,16 +40,16 @@ CREATE VIEW IF NOT EXISTS job AS
     WHERE metIdx = 1;
 */
 
-CREATE INDEX IF NOT EXISTS idx1 ON job (status, attempts);
-
 /* random seed container; "seed" is a special kind of parameter */
-CREATE TABLE IF NOT EXISTS seeds (
+DROP TABLE IF EXISTS seeds;
+CREATE TABLE seeds (
     serial INTEGER PRIMARY KEY ASC,
     seed BLOB
 );
 
 /* normal-formed parameters table. links run serial + parameter id => value of that parameter */
-CREATE TABLE IF NOT EXISTS par_vals (
+DROP TABLE IF EXISTS par_vals;
+CREATE TABLE par_vals (
     serial INTEGER NOT NULL,
     parIdx INTEGER NOT NULL,
     value REAL,
@@ -54,7 +58,8 @@ CREATE TABLE IF NOT EXISTS par_vals (
 
 /* normal-formed untransformed parameters table. links run serial + parameter id => untrans value of that parameter */
 /* always created, but can be left empty and everything else will just work. */
-CREATE TABLE IF NOT EXISTS upar_vals (
+DROP TABLE IF EXISTS upar_vals;
+CREATE TABLE upar_vals (
     serial INTEGER NOT NULL,
     parIdx INTEGER NOT NULL,
     uvalue REAL,
@@ -62,15 +67,18 @@ CREATE TABLE IF NOT EXISTS upar_vals (
 );
 
 /* meta-data on parameters; must be dynamically filled when setting up db */
+/* note: these names apply to be fitting / model space (i.e. par and upar) */
 /* TODO: should this include other meta information, e.g. if a parameter is untransformed? */
-CREATE TABLE IF NOT EXISTS par_name (
+DROP TABLE IF EXISTS par_name;
+CREATE TABLE par_name (
     parIdx INTEGER PRIMARY KEY ASC,
     name TEXT NOT NULL,
     long_name TEXT
 );
 
 /* normal-formed metrics table. links run serial + metric id => value of that metric */
-CREATE TABLE IF NOT EXISTS met_vals (
+DROP TABLE IF EXISTS met_vals;
+CREATE TABLE met_vals (
     serial INTEGER NOT NULL,
     metIdx INTEGER NOT NULL,
     value REAL,
@@ -79,7 +87,8 @@ CREATE TABLE IF NOT EXISTS met_vals (
 
 /* meta-data on metrics; must be dynamically filled when setting up db */
 /* TODO: should this include other meta information, e.g. the observed value? */
-CREATE TABLE IF NOT EXISTS met_name (
+DROP TABLE IF EXISTS met_name;
+CREATE TABLE met_name (
     metIdx INTEGER PRIMARY KEY ASC,
     name TEXT NOT NULL,
     long_name TEXT
@@ -110,7 +119,8 @@ CREATE TABLE IF NOT EXISTS met_name (
 *  writing posterior ranks matches the configuration file + writes them all
 *  as a transaction.
 */
-CREATE VIEW IF NOT EXISTS smc_summary AS
+DROP VIEW IF EXISTS smc_summary;
+CREATE VIEW smc_summary AS
     SELECT smcSet, MIN(serial) AS start_serial, MAX(serial) AS end_serial,
         COUNT(*) AS total, SUM(CASE WHEN status == 'D' THEN 1 ELSE 0 END) AS run,
         SUM(CASE WHEN posterior != -1 THEN 1 ELSE 0 END) AS postsize
@@ -122,56 +132,63 @@ CREATE VIEW IF NOT EXISTS smc_summary AS
 *  ignores elements *not* in the posterior and makes no reference to job status
 *  etc, because that's defined as done by this view.
 */
-CREATE VIEW IF NOT EXISTS post_done AS
-    SELECT serial, smcSet, posterior
+DROP VIEW IF EXISTS post_done;
+CREATE VIEW post_done AS
+    SELECT smcSet, serial, posterior -- set, serial, ranking
     FROM job
     JOIN (SELECT smcSet FROM smc_summary WHERE total == run AND postsize != 0)
     USING (smcSet)
-    ORDER BY smcSet, posterior;
+    WHERE posterior != -1 -- only include items in the posterior
+    ORDER BY smcSet, posterior, serial;
 
 /* add the "last complete posterior" view: finds the max value
 *  and then filters on that (via join - cannot directly use WHERE smcSet == MAX(smcSet))
 */
-CREATE VIEW IF NOT EXISTS post_last AS
-    SELECT * FROM post_done JOIN (
+DROP VIEW IF EXISTS post_last;
+CREATE VIEW post_last AS
+    SELECT * FROM post_done JOIN ( -- set, serial, ranking
         SELECT MAX(smcSet) AS smcSet FROM post_done
     ) USING (smcSet)
-    ORDER BY posterior;
+    ORDER BY posterior, serial;
 
 /* add the "still to process" view */
 /* NB: not aware of uses were there are multiple done-but-not processed waves, but
 *  can imagine a situation where that might be useful? Hence still introducing
 *  the all (post_todo) vs one (post_next) distinction
 */
-CREATE VIEW IF NOT EXISTS post_todo AS
-    SELECT serial, smcSet
+DROP VIEW IF EXISTS post_todo;
+CREATE VIEW post_todo AS
+    SELECT serial, smcSet -- set, serial [ranking absent]
     FROM job
-    JOIN (SELECT smcSet FROM smc_summary WHERE total == run AND posterior == 0)
+    JOIN (SELECT smcSet FROM smc_summary WHERE total == run AND postsize == 0)
     USING (smcSet)
-    ORDER BY smcSet, posterior;
+    ORDER BY smcSet, serial;
 
 /* add the "next to process" view;
 *  note parallel structure of post_todo/post_next vs post_done/post_last
 */
-CREATE VIEW IF NOT EXISTS post_next AS
-    SELECT * FROM post_todo JOIN (
+DROP VIEW IF EXISTS post_next;
+CREATE VIEW post_next AS
+    SELECT * FROM post_todo JOIN ( -- set, serial [ranking absent]
         SELECT MIN(smcSet) AS smcSet FROM post_todo
     ) USING (smcSet)
-    ORDER BY posterior;
+    ORDER BY serial;
 
 /* add the "still to simulate" view
 *  TODO: how to deal with prioritization of work?
 */
-CREATE VIEW IF NOT EXISTS work_open AS
-    SELECT smcSet, priority, serial
+DROP VIEW IF EXISTS work_open;
+CREATE VIEW work_open AS
+    SELECT smcSet, serial, priority -- priority generally ignored in code; used by storage to prioritize work
     FROM job
     JOIN (SELECT serial, CASE status WHEN 'Q' THEN attempts ELSE attempts + 100 END AS priority FROM job) USING (serial)
     WHERE status NOT IN ('D', 'P')
     ORDER BY smcSet, priority, serial;
 
 /* add the "next to simulate" view */
-CREATE VIEW IF NOT EXISTS work_next AS
-    SELECT serial FROM work_open JOIN (
+DROP VIEW IF EXISTS work_next;
+CREATE VIEW work_next AS
+    SELECT * FROM work_open JOIN ( -- set, serial, priority
         SELECT MIN(smcSet) AS smcSet FROM work_open
     ) USING (smcSet)
     ORDER BY priority, serial;
