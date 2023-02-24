@@ -68,9 +68,13 @@ run_dynamic: | dice.so
 # for the executable version, need to make the executable
 run_exec: | dice_game
 
+abc_%.sqlite: abc_% abc_%.json
+	rm -f $@
+	./$^ -b -p
+
 # this provides a convenient way to run all of the abc_(sql|exec|dynamic) executables
-run_%: abc_% abc_%.json
-	./$^ --process --simulate -n 1000
+run_%: abc_% abc_%.json | abc_%.sqlite
+	./$^ -e -v
 
 run_all: $(addprefix run_,$(DEMOS))
 

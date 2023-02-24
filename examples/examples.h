@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <vector>
 #include <optional>
+#include <algorithm>
 
 const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 
@@ -53,9 +54,18 @@ void usage(
 
 enum STEP { BUILD, PROCESS, EVALUATE };
 
+std::ostream& operator<<(std::ostream& os, const STEP& step) {
+    switch (step) {
+        case BUILD: os << "BUILD"; break;
+        case PROCESS: os << "PROCESS"; break;
+        case EVALUATE: os << "EVALUATE"; break;
+    }
+    return os;
+}
+
 struct CLIArgs {
     CLIArgs() = delete;
-    CLIArgs(const std::string & fc) : config_file(cf) {
+    CLIArgs(const std::string & cf) : config_file(cf) {
         // TODO assertions / error checking re config file?
     };
 
@@ -73,7 +83,7 @@ bool argcheck(const char * arg, const char * short_arg, const char * long_arg) {
 CLIArgs parse_args(const std::string & cmd, const int argc, const char * argv[]) {
 
     // check for help requested
-    if ((find(argv, argv + argc, "-h") != argv + argc) or (find(argv, argv + argc, "--help") != argv + argc)) {
+    if ((std::find(argv, argv + argc, "-h") != argv + argc) or (std::find(argv, argv + argc, "--help") != argv + argc)) {
         usage(cmd);
         exit(0);
     }
@@ -81,7 +91,7 @@ CLIArgs parse_args(const std::string & cmd, const int argc, const char * argv[])
 // assert argv[0] = this program
 // assert argv[1] = config file
 
-    CLIArgs args(std::string(argv[1]));
+    auto args = CLIArgs(std::string(argv[1]));
 
     for (int i = 2; i < argc;  i++ ) {
 
@@ -113,7 +123,7 @@ CLIArgs parse_args(const std::string & cmd, const int argc, const char * argv[])
         } else if ( argcheck(argv[i], "-v", "--verbose") ) {
             args.verbose += 1;
         } else {
-            usage(cmd, "Error: unrecognized argument: " + argv[i], 104);
+            usage(cmd, "Error: unrecognized argument: " + string(argv[i]), 104);
         }
     }
 
@@ -127,6 +137,15 @@ inline void do_abc(
 
     // this should set storage, set sizes, etc 
     abc->parse(args.config_file);
+
+    if (args.verbose > 0) {
+        std::cerr << "Running ABC as: " << std::endl;
+        for (auto it = args.steps.begin(); it != args.steps.end(); it++) {
+            if (it != args.steps.begin()) { std::cerr << " => "; }
+            std::cerr << *it;
+        }
+        std::cerr << std::endl;
+    }
 
     for (auto step : args.steps) {
         switch(step) {
