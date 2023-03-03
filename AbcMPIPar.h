@@ -1,4 +1,5 @@
 
+// forward definition required because AbcSmc <=> AbcMPI cyclic dependency
 #ifndef ABC_MPI_PAR_H
 #define ABC_MPI_PAR_H
 

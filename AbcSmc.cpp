@@ -596,7 +596,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
 }*/
 
 
-void AbcSmc::_particle_scheduler(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
 
     auto _num_particles = get_num_particles(t);
 
@@ -619,7 +619,7 @@ void AbcSmc::_particle_scheduler(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, c
 }
 
 
-void AbcSmc::_particle_worker(
+void AbcSmc::_particle_worker_mpi(
     const size_t seed,
     const size_t serial
 ) {
