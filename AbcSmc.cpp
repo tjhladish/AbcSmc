@@ -471,13 +471,13 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             } else {
                 _filter_particles_simple( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
             }
-            auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::all);
-            auto posterior_mets = _particle_metrics[t](_predictive_prior[t], Eigen::all);
+            auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
+            auto posterior_mets = _particle_metrics[t](_predictive_prior[t], Eigen::placeholders::all);
             AbcLog::filtering_report(this, t, posterior_pars, posterior_mets);
 
             vector<string> update_strings(next_pred_prior_size);
             for (size_t i = 0; i < next_pred_prior_size; i++) { // best to worst performing particle in posterior?
-                const int particle_idx = _predictive_prior[t][i];
+                const int particle_idx = _predictive_prior[t][i]; // TODO how might slice work here?
                 const int particle_serial = serials[t][particle_idx];
                 stringstream ss;
                 ss << "update " << JOB_TABLE << " set posterior = " << i << " where serial = " << particle_serial << ";";
@@ -1110,13 +1110,10 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_r
 
 void AbcSmc::calculate_doubled_variances( int t ) {
     vector<RunningStat> stats(npar());
-
-    for (size_t i = 0; i < _predictive_prior[t].size(); i++) {
-        for (size_t j = 0; j < npar(); j++) {
-            int particle_idx = _predictive_prior[t][i];
-            double par_value = _particle_parameters[t](particle_idx, j);
-            stats[j].Push(par_value);
-        }
+    Mat2D pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
+    // TODO: turn this into Eigen column-wise operation?
+    for (size_t i = 0; i < pars.cols(); i++) {
+        stats[i].Push(pars.col(i));
     }
     for (size_t j = 0; j < npar(); j++) {
         _model_pars[j]->append_doubled_variance( 2 * stats[j].Variance() );
@@ -1147,12 +1144,15 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
         _weights.push_back( vector<double>( _predictive_prior[set_num].size(), 0.0 ) );
         //_weights[set_num].resize( _predictive_prior[set_num].size() );
 
-        for (size_t i = 0; i < _predictive_prior[set_num].size(); i++) {
+        Mat2D pars = _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all);
+        Mat2D prev_pars = _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all);
+
+        for (size_t i = 0; i < pars.rows(); i++) {
             double numerator = 1;
             double denominator = 0.0;
-            for (size_t j = 0; j < npar(); j++) {
+            for (size_t j = 0; j < pars.cols(); j++) {
                 Parameter* par = _model_pars[j];
-                const double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
+                const double par_value = pars(i, j);
                 if (par->get_prior_type() == NORMAL) {
                     numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
                 } else if (par->get_prior_type() == UNIFORM) {
@@ -1162,11 +1162,11 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
                 }
             }
 
-            for (size_t k = 0; k < _predictive_prior[set_num - 1].size(); k++) {
+            for (size_t k = 0; k < prev_pars.rows(); k++) {
                 double running_product = _weights[set_num - 1][k];
-                for (size_t j = 0; j < npar(); j++) {
-                    double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
-                    double old_par_value = _particle_parameters[set_num-1](_predictive_prior[set_num-1][k], j);
+                for (size_t j = 0; j < prev_pars.cols(); j++) {
+                    double par_value = pars(i,j);
+                    double old_par_value = prev_pars(k, j);
                     double old_doubled_variance = _model_pars[j]->get_doubled_variance(set_num-1);
 
                     // This conditional handles the (often improbable) case where a parameter has completely converged.
@@ -1190,25 +1190,25 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
     // variance-covariance matrix calculated from pred prior values
     // NB: always allocate this small matrix, so that we don't have to check whether it's safe to free later
     const size_t num_pars = static_cast<size_t>(_particle_parameters[set_num-1].cols());
-    const size_t pred_prior_size = _predictive_prior[set_num-1].size();
     gsl_matrix* sigma_hat = gsl_matrix_alloc(num_pars, num_pars);
 
     if (use_mvn_noise) {
-        // container for predictive prior aka posterior from last set
-        gsl_matrix* posterior_par_vals = gsl_matrix_alloc(pred_prior_size, num_pars);
-
         // INITIALIZE DATA STRUCTURES
-        for (size_t i = 0; i < pred_prior_size; ++i) {
-            for (size_t j = 0; j < num_pars; ++j) {
+        Mat2D par = _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all);
+        // container for predictive prior aka posterior from last set
+        gsl_matrix* posterior_par_vals = gsl_matrix_alloc(par.rows(), par.cols());
+
+
+        for (size_t i = 0; i < par.rows(); ++i) {
+            for (size_t j = 0; j < par.cols(); ++j) {
                 // copy values from pred prior into a gsl matrix
-                const size_t particle_idx = _predictive_prior[set_num-1][i];
-                gsl_matrix_set(posterior_par_vals, i, j, _particle_parameters[set_num-1](particle_idx, j));
+                gsl_matrix_set(posterior_par_vals, i, j, par(i,j));
             }
         }
         // calculate maximum likelihood estimate of variance-covariance matrix sigma_hat
         gsl_ran_multivariate_gaussian_vcov(posterior_par_vals, sigma_hat);
 
-        for (size_t j = 0; j < npar(); j++) {
+        for (size_t j = 0; j < par.cols(); j++) {
             // sampling is done using a kernel with a broader kernel than found in pred prior values
             const double doubled_variance = 2 * gsl_matrix_get(sigma_hat, j, j);
             gsl_matrix_set(sigma_hat, j, j, doubled_variance);
@@ -1230,12 +1230,11 @@ Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_m
     // container for sampled values
     Row par_values = Row::Zero(npar());
     // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
-    int r = gsl_rng_nonuniform_int(_weights[set_num-1], RNG);
-    gsl_vector* par_val_hat = gsl_vector_alloc(npar());
-    for (size_t j = 0; j < npar(); j++) {
-        const int particle_idx = _predictive_prior[set_num-1][r];
-        const double par_value = _particle_parameters[set_num-1](particle_idx, j);
-        gsl_vector_set(par_val_hat, j, par_value);
+    const int r = _predictive_prior[set_num-1][gsl_rng_nonuniform_int(_weights[set_num-1], RNG)];
+    const Row par = _particle_parameters[set_num-1](r, Eigen::placeholders::all);
+    gsl_vector* par_val_hat = gsl_vector_alloc(par.cols());
+    for (size_t j = 0; j < par.cols(); j++) {
+        gsl_vector_set(par_val_hat, j, par[j]);
     }
     par_values = rand_trunc_mv_normal( _model_pars, par_val_hat, L, RNG );
     gsl_vector_free(par_val_hat);
@@ -1246,15 +1245,14 @@ Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_m
 Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
     Row par_values = Row::Zero(npar());
     // Select a particle index r to use from the predictive prior
-    int r = gsl_rng_nonuniform_int(_weights[set_num-1], RNG);
-    for (size_t j = 0; j < npar(); j++) {
-        int particle_idx = _predictive_prior[set_num-1][r];
-        double par_value = _particle_parameters[set_num-1](particle_idx, j);
+    int r = _predictive_prior[set_num-1][gsl_rng_nonuniform_int(_weights[set_num-1], RNG)];
+    const Row par = _particle_parameters[set_num-1](r, Eigen::placeholders::all);
+    for (size_t j = 0; j < par.cols(); j++) {
         const Parameter* parameter = _model_pars[j];
         double doubled_variance = parameter->get_doubled_variance(set_num-1);
         double par_min = parameter->get_prior_min();
         double par_max = parameter->get_prior_max();
-        par_values(j) = rand_trunc_normal( par_value, doubled_variance, par_min, par_max, RNG );
+        par_values(j) = rand_trunc_normal(par[j], doubled_variance, par_min, par_max, RNG );
 
         if (parameter->get_numeric_type() == INT) {
             par_values(j) = (double) ((int) (par_values(j) + 0.5));
