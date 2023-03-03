@@ -46,10 +46,10 @@ pls.o: pls.cpp pls.h
 # https://stackoverflow.com/questions/4158900/embedding-resources-in-executable-using-gcc
 # bin2c available from hxtools via apt
 # TODO: strip comments from sql files prior to feeding to bin2c
-refsql.h: sqlviews.sql sqldynamic.sql
+refsql.c: sqlviews.sql sqldynamic.sql
 	bin2c -C $@ $^
 
-refsql.c: refsql.h
+refsql.h: refsql.c
 
 refsql.o: refsql.c
 	$(CPP) $(CFLAGS) -c -I. $< -o $@

@@ -1,6 +1,7 @@
 #include <limits>
 #include "AbcUtil.h"
 #include "AbcSmc.h"
+#include "RunningStat.h"
 #include "gsl/gsl_multimin.h"
 #include "gsl/gsl_sf_gamma.h"
 
@@ -267,19 +268,22 @@ namespace ABC {
       return optimize_box_cox(data, -5, 5, 0.1);
   }
 
-  int gsl_rng_nonuniform_int(vector<double>& weights, const gsl_rng* rng) {
-      // Weights must sum to 1!!
-      double running_sum = 0;
+  template<typename Iterable>  
+  int gsl_rng_nonuniform_int(const Iterable & weights, const gsl_rng* rng) {
+      // assert: weights is a CDF - i.e. sorted, first element > 0, the last element is 1.0
       double r = gsl_rng_uniform(rng);
-      for (size_t i = 0; i<weights.size(); i++) {
-          running_sum += weights[i];
-          if (r<=running_sum) return i;
+      auto pos = std::upper_bound(weights.begin(), weights.end(), r);
+      if (pos != weights.end()) {
+          return std::distance(weights.begin(), pos);
+      } else {
+        std::cerr << "ERROR: Weights may not be a CDF." << std::endl << "\tweights.end() = " << *(weights.end()) << std::endl;
+        exit(100);
       }
-      cerr << "ERROR: Weights may not be normalized\n\t Weights summed to: " << running_sum << endl;
-      exit(100);
   }
 
-  Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng) {
+  Row rand_trunc_mv_normal(const std::vector<Parameter*> _model_pars, const Row & parrow, const gsl_matrix* L, const gsl_rng* rng) {
+      gsl_vector* mu = gsl_vector_alloc(parrow.size());
+      for (size_t i = 0; i < parrow.size(); i++) { gsl_vector_set(mu, i, parrow[i]); }
       const size_t npar = _model_pars.size();
       Row par_values = Row::Zero(npar);
       gsl_vector* result = gsl_vector_alloc(npar);
@@ -287,13 +291,14 @@ namespace ABC {
       while (not success) {
           success = true;
           gsl_ran_multivariate_gaussian(rng, mu, L, result);
-          for (size_t j = 0; j < npar; j++) {
+          for (size_t j = 0; (j < npar) and success; j++) {
               par_values[j] = gsl_vector_get(result, j);
               if (_model_pars[j]->get_numeric_type() == INT) par_values(j) = (double) ((int) (par_values(j) + 0.5));
               if (par_values[j] < _model_pars[j]->get_prior_min() or par_values[j] > _model_pars[j]->get_prior_max()) success = false;
           }
       }
       gsl_vector_free(result);
+      gsl_vector_free(mu);
       return par_values;
   }
 
@@ -480,4 +485,176 @@ double ABC::calculate_nrmse(
 
     return sqrt(res);
 
+}
+
+gsl_matrix* ABC::setup_mvn_sampler(
+    const Mat2D & particle_parameters // sliced to predictive prior
+) {
+    // ALLOCATE DATA STRUCTURES
+    // variance-covariance matrix calculated from pred prior values
+    // NB: always allocate this small matrix, so that we don't have to check whether it's safe to free later
+    gsl_matrix* sigma_hat = gsl_matrix_alloc(particle_parameters.cols(), particle_parameters.cols());
+
+    // container for predictive prior aka posterior from last set
+    gsl_matrix* posterior_par_vals = gsl_matrix_alloc(particle_parameters.rows(), particle_parameters.cols());
+
+    // INITIALIZE DATA STRUCTURES
+    for (size_t i = 0; i < particle_parameters.rows(); ++i) {
+        auto parrow = particle_parameters.row(i);
+        for (size_t j = 0; j < particle_parameters.cols(); ++j) {
+            // copy values from pred prior into a gsl matrix
+            gsl_matrix_set(posterior_par_vals, i, j, parrow[j]);
+        }
+    }
+    // calculate maximum likelihood estimate of variance-covariance matrix sigma_hat
+    gsl_ran_multivariate_gaussian_vcov(posterior_par_vals, sigma_hat);
+
+    for (size_t j = 0; j < particle_parameters.cols(); j++) {
+        // sampling is done using a kernel with a broader kernel than found in pred prior values
+        const double doubled_variance = 2 * gsl_matrix_get(sigma_hat, j, j);
+        gsl_matrix_set(sigma_hat, j, j, doubled_variance);
+    }
+
+    // not a nice interface, gsl.  sigma_hat is converted in place from a variance-covariance matrix
+    // to the same values in the upper triangle, and the diagonal and lower triangle equal to L,
+    // the Cholesky decomposition
+    gsl_linalg_cholesky_decomp1(sigma_hat);
+
+    gsl_matrix_free(posterior_par_vals);
+
+    return sigma_hat;
+}
+
+void ABC::normalize_weights( std::vector<float_type> & weights ) {
+    double total = std::accumulate(weights.begin(), weights.end(), 0.0);
+    for (size_t i = 0; i < weights.size(); i++) {
+        weights[i] /= total;
+    }
+}
+
+Col ABC::CDF_weights(const Col & weights) {
+    auto total = weights.sum();
+    Col cdf = Col::Zero(weights.size());
+    std::partial_sum(weights.begin(), weights.end(), cdf.begin());
+    return cdf.array() / total;
+}
+
+Col ABC::weight_predictive_prior(
+    const Mat2D & current_parameters,
+    const Mat2D & prev_parameters,
+    const std::vector<float_type> & prev_weights,
+    const std::vector<Parameter*> & model_pars,
+    const Row & prev_doubled_variances
+) {
+
+    assert(current_parameters.cols() == prev_parameters.cols());
+    assert(current_parameters.cols() == model_pars.size());
+    assert(prev_parameters.rows() == prev_weights.size());
+    assert(prev_doubled_variances.size() == model_pars.size());
+
+    Col weights = Col::Zero(current_parameters.rows());
+
+    for (size_t i = 0; i < current_parameters.rows(); i++) { // for each particle in the predictive prior
+    
+        const Row parrow = current_parameters.row(i);
+        double numerator = 1;
+        double denominator = 0.0;
+
+        // likelihood of parrow, given priors
+        for (size_t j = 0; j < model_pars.size(); j++) {
+            Parameter* par = model_pars[j];
+            const double par_value = parrow[j];
+            if (par->get_prior_type() == NORMAL) {
+                numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
+            } else if (par->get_prior_type() == UNIFORM) {
+                // The RHS here will be 1 under normal circumstances.  If the prior has been revised during a fit,
+                // this should throw out values outside of the prior's range
+                numerator *= (int) (par_value >= par->get_prior_min() and par_value <= par->get_prior_max());
+            }
+        }
+
+        // likelihood of parrow, given all previous rounds particles
+        for (size_t k = 0; k < prev_parameters.rows(); k++) { // for each particle in the previous predictive prior
+            double running_product = prev_weights[k]; // how likely was this (previous) particle
+            auto prev_parrow = prev_parameters.row(k);
+            for (size_t j = 0; j < model_pars.size(); j++) {
+                double par_value = parrow[j];
+                double old_par_value = prev_parrow[j];
+                double old_doubled_variance = prev_doubled_variances[j];
+
+                // This conditional handles the (often improbable) case where a parameter has completely converged.
+                // It allows ABC to continue exploring other parameters, rather than causing the math
+                // to fall apart because the density at the converged value is infinite.
+                if (old_doubled_variance != 0 or par_value != old_par_value) {
+                    running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_doubled_variance) );
+                }
+            }
+            denominator += running_product;
+        }
+
+        weights[i] = numerator / denominator;
+    }
+    weights.normalize();
+    return weights;
+    
+}
+
+Row ABC::sample_predictive_prior(
+    const gsl_rng* RNG,
+    const Col & weights,
+    const Mat2D & particle_parameters // sliced to predictive prior
+) {
+    assert(weights.size() == particle_parameters.rows());
+    // weighted-randomly draw a particle from predictive prior to use as mean of new value
+    return particle_parameters.row(gsl_rng_nonuniform_int(weights, RNG));
+}
+
+// sample_predictive_prior(RNG, weights, particle_parameters)
+
+Row ABC::noise_mv_parameters(
+    const gsl_rng* RNG,
+    const Row & pred_prior_mu,
+    const std::vector<Parameter*> & model_pars,
+    const gsl_matrix* L
+) {
+    // return a new particle from a multivariate normal distribution with mean parrow and covariance L
+    return rand_trunc_mv_normal(model_pars, pred_prior_mu, L, RNG);
+}
+
+Row ABC::noise_parameters(
+    const gsl_rng* RNG,
+    const Row & pred_prior_mu,
+    const std::vector<Parameter*> & model_pars,
+    const std::vector<float_type> & doubled_variances 
+) {
+    Row par_values = Row::Zero(model_pars.size());
+
+    for (size_t j = 0; j < model_pars.size(); j++) {
+        double par_value = pred_prior_mu[j];
+        const Parameter* parameter = model_pars[j];
+        double doubled_variance = doubled_variances[j];
+        double par_min = parameter->get_prior_min();
+        double par_max = parameter->get_prior_max();
+        par_values(j) = rand_trunc_normal( par_value, doubled_variance, par_min, par_max, RNG );
+
+        if (parameter->get_numeric_type() == INT) {
+            par_values(j) = (double) ((int) (par_values(j) + 0.5));
+        }
+    }
+
+    return par_values;
+}
+
+Row ABC::calculate_doubled_variances(const Mat2D & particle_parameters) {
+
+    std::vector<RunningStat> stats(particle_parameters.cols());
+    Row dvs = Row::Zero(particle_parameters.cols());
+
+    for (size_t j = 0; j < particle_parameters.cols(); j++) { stats[j].Push( particle_parameters.col(j) ); }
+
+    for (size_t j = 0; j < particle_parameters.cols(); j++) {
+        dvs[j] =  2 * stats[j].Variance();
+    }
+
+    return dvs;
 }

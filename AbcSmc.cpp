@@ -42,7 +42,7 @@ const string PAR_REF  = PAR_TABLE + "_name";
 
 const string UPAR_TABLE = "upar";
 const string UPAR_UNDER = UPAR_TABLE + "_vals";
-const string SEED_TABLE = "seed";
+const string SEED_TABLE = "seeds";
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 // ++++++++++++++++++++++++++ HELPER FUNS ++++++++++++++++++++++++++++++++++++++ //
@@ -104,6 +104,452 @@ vector<int> as_int_vector(Json::Value val, string key) {
     return extracted_vals;
 }
 
+void note(const char * msg, const size_t verbose, const size_t min = 0, ostream & os = std::cerr) {
+    if (verbose > min) { std::cerr << msg << std::endl; }
+}
+
+void note(const std::string & msg, const size_t verbose, const size_t min = 0, ostream & os = std::cerr) {
+    note(msg.c_str(), verbose, min, os);
+}
+
+// MOVE TO OTHER HEADERS / CLASSES
+
+// Future: AbcStorage derived class
+
+// open the SQL database, write the static structure, write the needed simulation-specific structure,
+// then write the conditional-on-specifics-but-static elements of the database
+namespace AbcSQL {
+
+    bool _db_execute(sqdb::Db &db, const char * query, const bool verbose = false) {
+        bool db_success = true;
+        if (verbose) {
+            cerr << query << endl;
+        }
+        try {
+            while (*query) {
+                if (verbose) { cerr << string(query).substr(0, 10) << " ... " << endl; }
+                db.Query(query, &query).Next();
+            }
+        } catch (const Exception& e) {
+            cerr << "CAUGHT E: ";
+            cerr << e.GetErrorCode() << " : " << e.GetErrorMsg() << endl;
+            cerr << "Failed query:" << endl;
+            cerr << query << endl;
+            db_success = false;
+        } catch (const exception& e) {
+            cerr << "CAUGHT e: ";
+            cerr << e.what() << endl;
+            cerr << "Failed query:" << endl;
+            cerr << query << endl;
+            db_success = false;
+        }
+        return db_success;
+    };
+
+    bool _db_execute(sqdb::Db &db, const unsigned char * query, const bool verbose = false) {
+        return _db_execute(db, reinterpret_cast<const char *>(query), verbose);
+    }
+
+    bool _db_execute(sqdb::Db &db, const std::string &ss, const bool verbose = false) {
+        return _db_execute(db, ss.c_str(), verbose);
+    };
+
+    bool _db_execute(sqdb::Db &db, stringstream &ss, const bool verbose = false) {
+        bool db_success = _db_execute(db, ss.str(), verbose);
+        ss.str(string());
+        ss.clear();
+        return db_success;
+    };
+
+    bool _db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
+        bool db_success = false;
+        try {
+            db.Query("BEGIN EXCLUSIVE;").Next();
+            for (auto buff : update_buffer) { _db_execute(db, buff); }
+            db_success = true;
+            db.CommitTransaction();
+        } catch (const Exception& e) {
+            db.RollbackTransaction();
+            cerr << "CAUGHT E: ";
+            cerr << e.GetErrorMsg() << endl;
+            cerr << "Failed query:" << endl;
+            for (size_t i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
+        } catch (const exception& e) {
+            db.RollbackTransaction();
+            cerr << "CAUGHT e: ";
+            cerr << e.what() << endl;
+            cerr << "Failed query:" << endl;
+            for (size_t i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
+        }
+        return db_success;
+    }
+
+    bool _db_tables_exist(sqdb::Db &db, const std::vector<std::string> table_names = { JOB_TABLE }) {
+        // Note that retval here is whether tables exist, rather than whether
+        // db transaction was successful.  A failed transaction will throw
+        // an exception and exit.
+        bool tables_exist = true;
+        try {
+            Statement s = db.Query(SQDB_MAKE_TEXT("SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'view') AND name='?';"));
+            for(string table_name: table_names) {
+                s.Bind(1, table_name); s.Next();
+                const int count = s.GetField(0);
+                if (count < 1) {
+                    std::cerr << "Table " << table_name << " does not exist in database." << std::endl;
+                    tables_exist = false;
+                }
+            }
+        } catch (const Exception& e) {
+            cerr << "CAUGHT E: ";
+            cerr << e.GetErrorMsg() << endl;
+            cerr << "Failed while checking whether the following tables exist:";
+            for(string table_name: table_names) cerr << " " << table_name;
+            cerr << endl;
+            exit(-212);
+        } catch (const exception& e) {
+            cerr << "CAUGHT e: ";
+            cerr << e.what() << endl;
+            cerr << "Failed while checking whether the following tables exist:";
+            for(string table_name: table_names) cerr << " " << table_name;
+            cerr << endl;
+            exit(-213);
+        }
+        return tables_exist;
+    }
+
+    bool _db_tables_exist(const std::string dbfile) {
+        sqdb::Db db(dbfile.c_str());
+        return _db_tables_exist(db);
+    }
+
+    bool _db_empty(sqdb::Db& db) {
+        // assert file exists, is readable, is a database, and has AbcSmc tables
+        auto stmt = db.Query(("SELECT COUNT(*) FROM " + JOB_TABLE + ";").c_str());
+        stmt.Next();
+        size_t count = stmt.GetField(0); 
+        return (count == 0);
+    }
+
+    // AbcStorage condition
+    enum Status {
+        UNINITIALIZED, // storage needs build
+        INITIALIZED,   // storage needs populate
+        READY,         // storage needs evaluate -- jobs available, may or not have some running/complete
+        COMPLETE,      // storage is done (done-done, or ready for process) - >1 jobs complete, no jobs staged
+        UNKNOWN        // storage is in an unknown state
+    };
+
+    bool _db_has_work(sqdb::Db& db) {
+        auto stmt = db.Query("SELECT COUNT(*) FROM work_next;");
+        stmt.Next();
+        size_t count = stmt.GetField(0); 
+        return (count != 0);
+    };
+
+    bool _db_has_post(sqdb::Db& db) {
+        auto stmt = db.Query("SELECT COUNT(*) FROM post_next;");
+        stmt.Next();
+        size_t count = stmt.GetField(0); 
+        return (count != 0);
+    };
+
+    Status status(const std::string & dbfile) {
+        std::ifstream dbfile_stream(dbfile);
+        if (!dbfile_stream.good() or !_db_tables_exist(dbfile)) {
+            return UNINITIALIZED;
+        }
+        
+        sqdb::Db db(dbfile.c_str());
+
+        if (_db_tables_exist(db) and _db_empty(db)) {
+            return INITIALIZED;
+        } else if (_db_has_work(db)) {
+            return READY;
+        } else if (_db_has_post(db)) {
+            return COMPLETE;
+        } else {
+            return UNKNOWN;
+        }
+    };
+
+
+    // converts a series of n serials + n value sets of k cols into long format for insertion into sql
+    // e.g. (serial1, col1, value1), (serial1, col2, value2), ..., (serialn, colk, valuek)
+    //
+    // TODO: most typical use case is an iota of serials - might be worth providing default / additional
+    // arguments / polymorphism in that direction
+    //
+    // TODO: for more generic storage, might make more sense to build an intermediate iterator
+    // of (serial, col, value) tuples, then use that to build the string
+    // that would provide a more general step that might be useable for other storage types that still
+    // want long data, but don't use the same serialization format as SQL(ite)
+    template <typename SerialIt, typename ValRowIt>
+    std::string serial_id_values_stream(
+        const SerialIt & serials, // iterable of serials
+        const ValRowIt & vals // iterable of "Rows" of values (something that has size + iterator) 
+    ) {
+        assert(serials.size() == vals.size());
+        std::stringstream ss; ss << "(";
+        
+        for (size_t i = 0; i < serials.size(); ++i) {
+            if (i != 0) { ss << "), ("; };
+            for (size_t j = 0; j < vals[i].size(); ++j) {
+                if (j != 0) { ss << "), ("; };
+                ss << serials[i] << ", " << j + 1 << ", " << vals[i][j];
+            }
+        }
+
+        ss << ")";
+
+        return ss.str();
+    };
+
+    // similar to serial_id_values_stream, but for a single value per serial - i.e. no id key
+    template <typename SerialIt, typename ValIt>
+    std::string serial_values_stream(
+        const SerialIt & serials, // iterable of serials
+        const ValIt & vals // iterable of values 
+    ) {
+        assert(serials.size() == vals.size());
+        std::stringstream ss("(");
+        
+        for (size_t i = 0; i < serials.size(); ++i) {
+            if (i != 0) { ss << "), ("; };
+            ss << serials[i] << ", " << vals[i];
+        }
+
+        ss << ")";
+
+        return ss.str();
+    };
+
+    bool build(
+        const std::string &dbfile,
+        const std::vector<std::string> &par_names,
+        const std::vector<std::string> &met_names,
+        const bool overwrite = false,
+        const size_t verbose = 0
+    ) {
+        // NB: the cast here is to do with c-nature of sqlite3 library
+        // we're doing this to make the `eval` command available in sqlite3 when we open the database
+        // this is only needed when setting up the db
+        sqlite3_auto_extension((void(*)())sqlite3_eval_init);
+
+        // assert: db empty
+        // TODO: error (warn? allow with overwrite flag?) if db non-empty
+        sqdb::Db db(dbfile.c_str());
+        bool exists = db.TableExists(JOB_TABLE.c_str());
+
+        if (!exists or overwrite) {
+            if (exists) { note("Warning: database already exists, but overwrite requested.", verbose); }
+            db.BeginTransaction();
+            _db_execute(db, bin2c_sqlviews_sql);
+            QueryStr qs;
+            _db_execute(db, qs.Format(SQDB_MAKE_TEXT("INSERT INTO %s (name) VALUES ('%s');"), PAR_REF.c_str(), join(par_names, "'), ('").c_str()));
+            _db_execute(db, qs.Format(SQDB_MAKE_TEXT("INSERT INTO %s (name) VALUES ('%s');"), MET_REF.c_str(), join(met_names, "'), ('").c_str()));
+            _db_execute(db, bin2c_sqldynamic_sql);
+            db.CommitTransaction();
+            return true;
+        } else {
+            note("Warning: database already exists. Skipping setup.", verbose);
+            return false;
+        }
+
+    };
+
+    bool populate(
+        const std::string &dbfile,
+        const std::vector<Row> &pars,
+        const size_t smcSet = -1,
+        const std::vector<size_t> &seeds = {},
+        const std::vector<int> &ranks = {},
+        const std::vector<Row> &upars = {},
+        const size_t verbose = 0
+    ) {
+        // inserting pars.size() jobs into the db; assert matching sizes for seeds, ranks, upars
+        assert((upars.size() == 0) or (upars.size() == pars.size()));
+        assert((ranks.size() == 0) or (ranks.size() == pars.size()));
+        assert((seeds.size() == 0) or (seeds.size() == pars.size()));
+
+        sqdb::Db db(dbfile.c_str());
+
+        QueryStr qstr;
+        auto qs = qstr.Format(R"SQL(
+            WITH RECURSIVE g(n) AS ( -- this creates a temporary table, column n, values 0, 1, ..., pars.size()-1
+                VALUES (0)
+                UNION ALL
+                SELECT n + 1
+                FROM g WHERE n < %d
+            )
+            INSERT INTO %s (smcSet, particleIdx) -- then inserts those temporary values into the job table
+            SELECT %d, n FROM g;
+        )SQL", pars.size()-1, JOB_TABLE.c_str(), smcSet
+        );
+
+        note("Creating jobs block with ...", verbose);
+        note(qs, verbose);
+
+    // TODO: deal with alternative particleIdx? -- might solve this problem with posterior table, job becomes a view
+    // desire to insert a bunch of rows with some fixed values, otherwise using defaults
+    // https://stackoverflow.com/questions/65439177/how-to-add-specific-number-of-empty-rows-in-sqlite
+    // bulk insert into the job table
+        db.Query(qs).Next();
+
+        // now collect the newly created serials
+        auto s = db.Query(qstr.Format(SQDB_MAKE_TEXT(
+            "SELECT last_insert_rowid() FROM %s;"
+        ), JOB_TABLE.c_str()));
+        s.Next();
+        const int last_serial = s.GetField(0);
+        const int first_serial = last_serial - pars.size() + 1;
+        std::vector<int> serials(pars.size());
+        std::iota(serials.begin(), serials.end(), first_serial);
+
+        note("Created serial range: " + to_string(first_serial) + " => " + to_string(last_serial), verbose);
+
+        // if we have ranks, update the job table with them
+        if (ranks.size() > 0) {
+            // bulk insert into the job table
+            auto insert = serial_values_stream(serials, ranks);
+            qs = qstr.Format(R"SQL(
+                WITH rankdata (rserial, rank) AS (VALUES %s) -- create a temporary table of serial => rank
+                UPDATE %s SET posterior = rank FROM rankdata -- update the job table with the rank
+                WHERE serial = rserial; -- where the serials match
+            )SQL", insert.c_str(), JOB_TABLE.c_str());
+
+            note("Updating ranks with:", verbose);
+            note(qs, verbose);
+
+            db.Query(qs).Next();
+        }
+
+        // bulk insert into the par table
+        auto insert = serial_id_values_stream(serials, pars);
+        qs = qstr.Format(SQDB_MAKE_TEXT(
+            "INSERT INTO %s (serial, parIdx, value) VALUES %s ON CONFLICT DO NOTHING;"
+        ), PAR_UNDER.c_str(), insert.c_str());
+
+        note("Inserting parameters with:", verbose);
+        note(qs, verbose);
+
+        db.Query(qs).Next();
+
+        // if provided seeds, bulk insert into the seed table
+        if (seeds.size() > 0) {
+            qs = qstr.Format(SQDB_MAKE_TEXT(
+                "INSERT INTO %s (seed) VALUES (%s);"
+            ), SEED_TABLE.c_str(), join(seeds, "), (").c_str());
+
+            note("Providing seeds:", verbose);
+            note(qs, verbose);
+
+            db.Query(qs).Next();
+        }
+
+        // if we have u(ntransformed )pars, bulk insert into the upar table
+        if (upars.size() > 0) {
+            // n.b. this does not yet allow for upars being a different size than pars
+            // which might be a useful way to only xform a subset of the parameters
+            insert = serial_id_values_stream(serials, upars);
+            qs = qstr.Format(SQDB_MAKE_TEXT(
+                "INSERT INTO %s (serial, parIdx, value) VALUES %s ON CONFLICT DO NOTHING;"
+            ), UPAR_UNDER.c_str(), insert.c_str());
+            note("Inserting untransformed parameters with:", verbose);
+            note(qs, verbose);
+            db.Query(qs).Next();
+        }
+
+        return true;
+    };
+
+    bool posterior(
+        const std::string &dbfile,
+        Mat2D & parameters,
+        Mat2D & metrics,
+        const size_t verbose = 0
+    ) {  
+        // sqdb::Db db(dbfile.c_str());
+
+        // QueryStr qstr;
+        // auto qs = qstr.Format("SELECT SELECT * FROM post_next;");
+        return false;
+    }
+
+    bool fresh(const std::string dbfile) {
+        // check for the existence of the job table
+        // check that the job table is empty
+        return false;
+    };
+
+}
+
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+// ++++++++++++++++++++ CORE ABCSMC VERBS ++++++++++++++++++++++++++++++++++++++ //
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
+
+bool AbcSmc::parse(const std::string & config_file, const size_t verbose) {
+    return parse_config(string(config_file));
+};
+
+bool AbcSmc::build(const bool overwrite, const size_t verbose) {
+
+    // TODO: confirm that AbcSmc object is configured, including internal AbcStorage object is ready
+    // then pass off to that internal AbcStorage object
+
+    // TODO: should storage object construction include db file, parameter names, metric names?
+    // obviously should *internal* methods that work that way.
+    return AbcSQL::build(
+        _database_filename,
+        parameter_short_names(),
+        metric_short_names(),
+        overwrite,
+        verbose
+    );
+
+};
+
+bool AbcSmc::process(const gsl_rng* RNG, const size_t verbose) {
+
+    auto stat = AbcSQL::status(_database_filename);
+
+    if (stat == AbcSQL::INITIALIZED) {
+        // initial population
+        if (_posterior_database_filename != "" and not file_exists(_posterior_database_filename.c_str())) {
+            std::cerr << "ERROR: Cannot read in posterior database: " << _posterior_database_filename << " does not exist\n";
+            exit(-215);
+        }
+
+        // no-op if posterior database is not specified
+        Mat2D posterior = slurp_posterior();
+
+        const size_t num_particles = get_num_particles(0);
+
+        note("Sampling priors for " + to_string(num_particles) + " particles...", verbose);
+
+        vector<size_t> seeds; // will be populated with seeds? will be pre-filled with seeds?
+        vector<Row> pars; // will be populated with parameters
+        vector<Row> upars; // will be populated with upars (if relevant)
+        vector<int> ranks; // will be populated with ranks (if relevant)
+
+        _sample_priors(RNG, num_particles, seeds, pars, upars, ranks);
+
+        return AbcSQL::populate(_database_filename, pars, 0, seeds, ranks, upars, verbose);
+
+    } else if (stat == AbcSQL::COMPLETE) { // doing smc step
+// TODO: guard against processing when in projection mode
+        Mat2D pars, mets; // will be populated with parameters, metrics
+
+        AbcSQL::posterior(_database_filename, pars, mets, verbose);
+        // read in completed particles
+        // rank them
+        // sample from them
+        // write out new particles
+    } else {
+        note("Cannot process database: in an invalid state " + to_string(stat), verbose);
+        return false;
+    }
+
+};
 
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 // ++++++++++++++++++++ CONFIG PARSING +++++++++++++++++++++++++++++++++++++++++ //
@@ -151,7 +597,6 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
         }
     }
 }
-
 
 bool AbcSmc::parse_config(string conf_filename) {
     if (not file_exists(conf_filename.c_str())) {
@@ -367,121 +812,17 @@ bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed
     return particle_success;
 }
 
-void AbcSmc::read_SMC_complete(sqdb::Db &db, const bool all) {
-
-    if (not all) { // ask smc_set
-
-    } else {
-
-    }
-    
-};
-
-void AbcSmc::rank_SMC_last() {
-
-};
-
-void AbcSmc::summarize_SMC() {
-
-};
-
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 // ++++++++++++++++++++ DATABASE FUNCTIONS +++++++++++++++++++++++++++++++++++++ //
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ //
 
-bool _db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
-    bool db_success = false;
-    try {
-        db.Query("BEGIN EXCLUSIVE;").Next();
-        for (auto buff : update_buffer) { _db_execute(db, buff); }
-        db_success = true;
-        db.CommitTransaction();
-    } catch (const Exception& e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed query:" << endl;
-        for (size_t i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
-    } catch (const exception& e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed query:" << endl;
-        for (size_t i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
-    }
-    return db_success;
-}
+// this is now mostly ready to have a whatever-storage backend
+bool AbcSmc::build_database(const gsl_rng* RNG) {
 
-bool _db_execute(sqdb::Db &db, const char * query, const bool verbose) {
-    bool db_success = true;
-    if (verbose) {
-        cerr << query << endl;
-    }
-    try {
-        while (*query) {
-            if (verbose) { cerr << string(query).substr(0, 10) << " ... " << endl; }
-            db.Query(query, &query).Next();
-        }
-    } catch (const Exception& e) {
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorCode() << " : " << e.GetErrorMsg() << endl;
-        cerr << "Failed query:" << endl;
-        cerr << query << endl;
-        db_success = false;
-    } catch (const exception& e) {
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed query:" << endl;
-        cerr << query << endl;
-        db_success = false;
-    }
-    return db_success;
-};
+    if (build()) { return true; }
 
-bool _db_execute(sqdb::Db &db, const std::string &ss, const bool verbose) {
-    return _db_execute(db, ss.c_str(), verbose);
-};
+    return process(RNG);
 
-bool _db_execute(sqdb::Db &db, stringstream &ss, const bool verbose) {
-    bool db_success = _db_execute(db, ss.str(), verbose);
-    ss.str(string());
-    ss.clear();
-    return db_success;
-};
-
-bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
-    // Note that retval here is whether tables exist, rather than whether
-    // db transaction was successful.  A failed transaction will throw
-    // an exception and exit.
-    bool tables_exist = true;
-    try {
-        for(string table_name: table_names) {
-            string query_str = "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'view') and name='" + table_name + "';";
-            //cerr << "Attempting: " << query_str << endl;
-            Statement s = db.Query( query_str.c_str() );
-            s.Next();
-            const int count = s.GetField(0);
-            if (count < 1) {
-                cerr << "Table " << table_name << " does not exist in database.\n";
-                tables_exist = false;
-            }
-        }
-    } catch (const Exception& e) {
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed while checking whether the following tables exist:";
-        for(string table_name: table_names) cerr << " " << table_name;
-        cerr << endl;
-        exit(-212);
-    } catch (const exception& e) {
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed while checking whether the following tables exist:";
-        for(string table_name: table_names) cerr << " " << table_name;
-        cerr << endl;
-        exit(-213);
-    }
-    return tables_exist;
 }
 
 
@@ -490,7 +831,7 @@ bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
 // If the specified number of sets already exist, exit gracefully
 bool AbcSmc::process_database(const gsl_rng* RNG) {
 
-    if (build_database(RNG)) return true; // if DB doesn't exist, create it and exit
+    if (build()) return true; // if DB doesn't exist, create it and exit
 
     sqdb::Db db(_database_filename.c_str());
     _particle_parameters.clear();
@@ -522,13 +863,16 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
         string noise_type = use_mvn_noise ? "MULTIVARIATE" : "INDEPENDENT";
         cerr << "Populating next set using " << noise_type << " noising of parameters.\n";
         const size_t num_particles = get_num_particles(next_set);
+        Mat2D prev_predictive_prior = _particle_parameters[last_set](_predictive_prior[next_set-1], Eigen::placeholders::all);
+        const std::vector<double> dv = ABC::doubled_variance(_particle_parameters[last_set]);
+
         for (size_t i = 0; i < num_particles; i++) {
             const int serial = last_serial + 1 + i;
-
+            auto parrow = ABC::sample_predictive_prior(RNG, _weights[last_set], prev_predictive_prior);
             if (use_mvn_noise) {
-                pars = sample_mvn_predictive_priors(next_set, RNG, L);
+                pars = ABC::noise_mv_parameters(RNG, parrow, _model_pars, L);
             } else {
-                pars = sample_predictive_priors(next_set, RNG);
+                pars = ABC::noise_parameters(RNG, parrow, _model_pars, dv);
             }
             QueryStr qstr;
 // TODO here's the place to fix the NEXT SET problem
@@ -538,23 +882,23 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
                                                << time(NULL)
                                                << ", NULL, 'Q', -1, 0 );";
             //cerr << "attempting: " << ss.str() << endl;
-            _db_execute(db, ss);
+            AbcSQL::_db_execute(db, ss);
 
             const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
             ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
-            _db_execute(db, ss);
+            AbcSQL::_db_execute(db, ss);
 
             if (use_transformed_pars) {
                 const Row upars = do_complicated_untransformations(_model_pars, pars);
                 ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
                 //cerr << "attempting: " << ss.str() << endl;
-                _db_execute(db, ss);
+                AbcSQL::_db_execute(db, ss);
             }
 
             ss << "insert into " << MET_TABLE << " values ( " << serial; for (size_t j = 0; j < nmet(); j++) ss << ", NULL"; ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
-            _db_execute(db, ss);
+            AbcSQL::_db_execute(db, ss);
         }
         db.CommitTransaction();
         gsl_matrix_free(L);
@@ -568,7 +912,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
 // Read in existing sets and do particle filtering as appropriate
 bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
     // make sure database looks intact
-    if ( not _db_tables_exist(db, {JOB_TABLE, PAR_TABLE, MET_TABLE}) ) {
+    if ( not AbcSQL::_db_tables_exist(db, {JOB_TABLE, PAR_TABLE, MET_TABLE}) ) {
         cerr << "ERROR: Failed to read SMC set from database because one or more tables are missing.\n";
         return false;
     }
@@ -613,13 +957,13 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         )SQL"), JOB_TABLE.c_str(), PAR_TABLE.c_str(), MET_TABLE.c_str(), t);
 
         // join all three tables for rows with smcSet = t, slurp and store values
-        string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
-                            + "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE + " P where J.serial = M.serial and J.serial = P.serial "
-                            + "and J.smcSet = " + to_string((long long) t) + ";";
+        // string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
+        //                     + "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE + " P where J.serial = M.serial and J.serial = P.serial "
+        //                     + "and J.smcSet = " + to_string((long long) t) + ";";
 
         serials.push_back( vector<int>(completed_set_size) );
 
-        Statement s2 = db.Query( select_str.c_str() );
+        Statement s2 = db.Query( q );
 
         int particle_counter = 0;
         vector<pair<int, int> > posterior_pairs;
@@ -657,8 +1001,8 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             } else {
                 _filter_particles_simple( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
             }
-            auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::all);
-            auto posterior_mets = _particle_metrics[t](_predictive_prior[t], Eigen::all);
+            auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
+            auto posterior_mets = _particle_metrics[t](_predictive_prior[t], Eigen::placeholders::all);
             AbcLog::filtering_report(this, t, posterior_pars, posterior_mets);
 
             vector<string> update_strings(next_pred_prior_size);
@@ -669,7 +1013,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
                 ss << "update " << JOB_TABLE << " set posterior = " << i << " where serial = " << particle_serial << ";";
                 update_strings[i] = ss.str();
             }
-            _db_execute_strings(db, update_strings);
+            AbcSQL::_db_execute_strings(db, update_strings);
         }
         calculate_predictive_prior_weights( t );
     }
@@ -697,16 +1041,17 @@ void AbcSmc::_particle_scheduler(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, c
 
     auto _num_particles = get_num_particles(t);
 
+    vector<size_t> seeds; // will be populated with seeds? will be pre-filled with seeds?
+    vector<Row> pars; // will be populated with parameters
+    vector<Row> upars; // will be populated with upars (if relevant)
+    vector<int> ranks; // will be populated with ranks (if relevant)
+
+    _sample_priors(RNG, _num_particles, seeds, pars, upars, ranks);
+
     // sample parameter distributions; copy values into Y matrix and into send_data buffer
     Row par_row;
     for (size_t i = 0; i < _num_particles; i++) {
-        if (t == 0) { // sample priors
-            Mat2D posterior = slurp_posterior();
-            int posterior_rank = -1;
-            Y_orig.row(i) = sample_priors(RNG, posterior, posterior_rank);
-        } else {      // sample predictive priors
-            Y_orig.row(i) = sample_predictive_priors(t, RNG);
-        }
+        Y_orig.row(i) = pars[i];
     }
 
     X_orig.resize(_num_particles, nmet());
@@ -729,171 +1074,6 @@ void AbcSmc::_particle_worker(const size_t seed, const size_t serial) {
 // 1. Simulate (= read parameters, run sim, write metrics)
 // 2. Process (= do PLS => new params)
 // 3. GOTO 1.
-
-// open the SQL database, write the static structure, write the needed simulation-specific structure,
-// then write the conditional-on-specifics-but-static elements of the database
-bool setup(
-    const std::string dbfile,
-    const std::vector<std::string> &par_names,
-    const std::vector<std::string> &met_names
-) {
-    // NB: the cast here is to do with c-nature of sqlite3 library
-    // we're doing this to make the `eval` command available in sqlite3 when we open the database
-    // this is only needed when setting up the db
-    sqlite3_auto_extension((void(*)())sqlite3_eval_init);
-
-    // assert: db empty
-    // TODO: error (warn? allow with overwrite flag?) if db non-empty
-    sqdb::Db db(dbfile.c_str());
-
-    stringstream ss;
-    db.BeginTransaction();
-
-    // set up the static elements of an abcsmc database
-    ss << bin2c_sqlviews_sql;
-
-    _db_execute(db, ss);
-
-    QueryStr qs;
-    ss << qs.Format(SQDB_MAKE_TEXT("INSERT INTO %s (name) VALUES ('%s');"), PAR_REF.c_str(), join(par_names, "'), ('").c_str());
-    ss << qs.Format(SQDB_MAKE_TEXT("INSERT INTO %s (name) VALUES ('%s');"), MET_REF.c_str(), join(met_names, "'), ('").c_str());
-    _db_execute(db, ss);
-
-    // apply the dynamically generated elements
-    ss << bin2c_sqldynamic_sql;
-    _db_execute(db, ss);
-
-    db.CommitTransaction();
-        
-    return true;
-};
-
-// converts a series of n serials + n value sets of k cols into long format for insertion into sql
-// e.g. (serial1, col1, value1), (serial1, col2, value2), ..., (serialn, colk, valuek)
-//
-// TODO: most typical use case is an iota of serials - might be worth providing default / additional
-// arguments / polymorphism in that direction
-//
-// TODO: for more generic storage, might make more sense to build an intermediate iterator
-// of (serial, col, value) tuples, then use that to build the string
-// that would provide a more general step that might be useable for other storage types that still
-// want long data, but don't use the same serialization format as SQL(ite)
-template <typename SerialIt, typename ValRowIt>
-std::string serial_id_values_stream(
-    const SerialIt & serials, // iterable of serials
-    const ValRowIt & vals // iterable of "Rows" of values (something that has size + iterator) 
-) {
-    assert(serials.size() == vals.size());
-    std::stringstream ss("(");
-    
-    for (size_t i = 0; i < serials.size(); ++i) {
-        for (size_t j = 0; j < vals[i].size(); ++j) {
-            if (j != 0) { ss << "), ("; };
-            ss << serials[i] << ", " << j + 1 << ", " << vals[i][j];
-        }
-    }
-
-    ss << ")";
-
-    return ss.str();
-};
-
-// similar to serial_id_values_stream, but for a single value per serial - i.e. no id key
-template <typename SerialIt, typename ValIt>
-std::string serial_values_stream(
-    const SerialIt & serials, // iterable of serials
-    const ValIt & vals // iterable of values 
-) {
-    assert(serials.size() == vals.size());
-    std::stringstream ss("(");
-    
-    for (size_t i = 0; i < serials.size(); ++i) {
-        if (i != 0) { ss << "), ("; };
-        ss << serials[i] << ", " << vals[i];
-    }
-
-    ss << ")";
-
-    return ss.str();
-};
-
-bool populate(
-    sqdb::Db &db,
-    const std::vector<Row> &pars,
-    const size_t smcSet = -1,
-    const std::vector<size_t> &seeds = {},
-    const std::vector<int> &ranks = {},
-    const std::vector<Row> &upars = {}
-) {
-    // inserting pars.size() jobs into the db; assert matching sizes for seeds, ranks, upars
-    assert((upars.size() == 0) or (upars.size() == pars.size()));
-    assert((ranks.size() == 0) or (ranks.size() == pars.size()));
-    assert((seeds.size() == 0) or (seeds.size() == pars.size()));
-
-    QueryStr qstr;
-
-// TODO: deal with alternative particleIdx? -- might solve this problem with posterior table, job becomes a view
-// desire to insert a bunch of rows with some fixed values, otherwise using defaults
-// https://stackoverflow.com/questions/65439177/how-to-add-specific-number-of-empty-rows-in-sqlite
-// bulk insert into the job table
-    db.Query(qstr.Format(R"SQL(
-        WITH RECURSIVE g(n) AS ( -- this creates a temporary table, column n, values 0, 1, ..., pars.size() - 1
-            VALUES (0)
-            UNION ALL
-            SELECT n + 1
-            FROM g WHERE n < %d
-        )
-        INSERT INTO %s (smcSet, particleIdx) -- then inserts those temporary values into the job table
-        SELECT %d, n FROM g;
-    )SQL", pars.size(), JOB_TABLE.c_str(), smcSet
-    )).Next();
-
-    // now collect the newly created serials
-    auto s = db.Query(qstr.Format(SQDB_MAKE_TEXT(
-        "SELECT last_insert_rowid() FROM %s;"
-    ), JOB_TABLE.c_str()));
-    s.Next();
-    const int last_serial = s.GetField(0);
-    const int first_serial = last_serial - pars.size() + 1;
-    std::vector<int> serials(pars.size());
-    std::iota(serials.begin(), serials.end(), first_serial);
-
-    // if we have ranks, update the job table with them
-    if (ranks.size() > 0) {
-        // bulk insert into the job table
-        auto insert = serial_values_stream(serials, ranks);
-        db.Query(qstr.Format(R"SQL(
-            WITH rankdata (rserial, rank) AS (VALUES %s) -- create a temporary table of serial => rank
-            UPDATE %s SET posterior = rank FROM rankdata -- update the job table with the rank
-            WHERE serial = rserial; -- where the serials match
-        )SQL", insert.c_str(), JOB_TABLE.c_str())).Next();
-    }
-
-    // bulk insert into the par table
-    auto insert = serial_id_values_stream(serials, pars);
-    db.Query(qstr.Format(SQDB_MAKE_TEXT(
-        "INSERT INTO %s (serial, parIdx, value) VALUES %s ON CONFLICT DO NOTHING;"
-    ), PAR_UNDER.c_str(), insert.c_str())).Next();
-
-    // if provided seeds, bulk insert into the seed table
-    if (seeds.size() > 0) {
-        db.Query(qstr.Format(SQDB_MAKE_TEXT(
-            "INSERT INTO %s (seed) VALUES (%s);"
-        ), SEED_TABLE.c_str(), join(seeds, "), ("))).Next();
-    }
-
-    // if we have u(ntransformed )pars, bulk insert into the upar table
-    if (upars.size() > 0) {
-        // n.b. this does not yet allow for upars being a different size than pars
-        // which might be a useful way to only xform a subset of the parameters
-        insert = serial_id_values_stream(serials, upars);
-        db.Query(qstr.Format(SQDB_MAKE_TEXT(
-            "INSERT INTO %s (serial, parIdx, value) VALUES %s ON CONFLICT DO NOTHING;"
-        ), UPAR_UNDER.c_str(), insert.c_str())).Next();
-    }
-
-    return true;
-};
 
 bool AbcSmc::_sample_priors(
     const gsl_rng* RNG, const size_t n, // number of samples
@@ -985,40 +1165,45 @@ bool AbcSmc::_sample_priors(
 
 };
 
-// this is now mostly ready to have a whatever-storage backend
-bool AbcSmc::build_database(const gsl_rng* RNG) {
-    if (_posterior_database_filename != "" and not file_exists(_posterior_database_filename.c_str())) {
-        std::cerr << "ERROR: Cannot read in posterior database: " << _posterior_database_filename << " does not exist\n";
-        exit(-215);
+bool AbcSmc::_resample_posterior(
+    const gsl_rng* RNG, const size_t n, // number of samples
+    Mat2D & parameters, // the slice of posterior to sample from
+    Col & weights, // the weights for the posterior
+    vector<size_t> &seeds, // will be populated with seeds? will be pre-filled with seeds?
+    vector<Row> &pars, // will be populated with parameters
+    vector<Row> &upars // will be populated with upars (if relevant)
+) {
+
+    seeds.resize(n); pars.resize(n);
+    if (use_transformed_pars) { upars.resize(n); }
+    
+    gsl_matrix* L = ABC::setup_mvn_sampler(parameters);
+
+    for (size_t i = 0; i < n; i++) {
+        const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
+        seeds[i] = seed;
+
+        if (use_mvn_noise) {
+            pars[i] = ABC::sample_mvn_predictive_priors(
+                RNG, L, weights,
+                parameters,
+                _model_pars
+            );
+        } else {
+            pars[i] = sample_predictive_priors(next_set, RNG);
+        }
+
+
+        if (use_transformed_pars) { upars[i] = do_complicated_untransformations(_model_pars, pars[i]); }
+
     }
-
-    sqdb::Db db(_database_filename.c_str());
-
-    stringstream ss;
-    if ( !_db_tables_exist(db, {JOB_TABLE}) and !_db_tables_exist(db, {PAR_TABLE}) and !_db_tables_exist(db, {MET_TABLE}) ) {
-        setup(_database_filename, parameter_short_names(), metric_short_names(), use_transformed_pars);
-    } else {
-        return false;
-    }
-
-    // no-op if posterior database is not specified
-    Mat2D posterior = slurp_posterior();
-
-    const size_t num_particles = get_num_particles(0);
-
-    vector<size_t> seeds; // will be populated with seeds? will be pre-filled with seeds?
-    vector<Row> pars; // will be populated with parameters
-    vector<Row> upars; // will be populated with upars (if relevant)
-    vector<int> ranks; // will be populated with ranks (if relevant)
-
-    _sample_priors(RNG, num_particles, seeds, pars, upars, ranks);
-
-    db.BeginTransaction();
-    populate(db, pars, 0, seeds, ranks, upars);
-    db.CommitTransaction();
+    
+    gsl_matrix_free(L);
 
     return true;
-}
+
+};
+
 
 
 bool AbcSmc::fetch_particle_parameters(
@@ -1082,8 +1267,8 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
     try {
         db.BeginTransaction();
         for (size_t i = 0; i < update_metrics_strings.size(); ++i) {
-            _db_execute(db, update_metrics_strings[i]);
-            _db_execute(db, update_jobs_strings[i]);
+            AbcSQL::_db_execute(db, update_metrics_strings[i]);
+            AbcSQL::_db_execute(db, update_jobs_strings[i]);
         }
         db_success = true;
         db.CommitTransaction();
@@ -1122,22 +1307,31 @@ bool AbcSmc::simulate_next_particles(
     assert(serial_req == -1 or posterior_req == -1);
 //bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
     sqdb::Db db(_database_filename.c_str());
-    string model_par_table = _db_tables_exist(db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
+    string model_par_table = AbcSQL::_db_tables_exist(db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
     vector<Row> par_mat;  //( n, Row(npar()) ); -- expected size, if n rows are available
     vector<Row> met_mat;  //( n, Row(nmet()) );
 
     stringstream select_ss;
-    string limit = n == -1 ? "" : "limit " + to_string(n);
-    select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
-    select_ss << "from " << model_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial ";
+    string limit = n == -1 ? "" : " limit " + to_string(n);
+ 
+    QueryStr qstr;
+    select_ss << qstr.Format(SQDB_MAKE_TEXT(R"SQL(
+        SELECT serial, seed, P.*
+        FROM %s JOIN %s USING(serial)
+    )SQL"), JOB_TABLE.c_str(), PAR_TABLE.c_str());
+
+    // select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
+    // select_ss << "from " << model_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial ";
+
+
     // Do already running jobs as well, if there are not enough queued jobs
     // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
     if (serial_req > -1) {
-        select_ss << "and J.serial = " << serial_req << ";";
+        select_ss << " WHERE serial = " << serial_req << ";";
     } else if (posterior_req > -1) {
-        select_ss << "and smcSet = (select max(smcSet) from job where posterior > -1) and posterior = " << posterior_req << ";";
+        select_ss << " WHERE smcSet = (select max(smcSet) FROM job WHERE posterior > -1) AND posterior = " << posterior_req << ";";
     } else {
-        select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts " << limit << ";";
+        select_ss << " WHERE status IN ('Q', 'R') ORDER BY status, attempts" << limit << ";";
     }
     //  line below is much faster for very large dbs, but not all particles will get run e.g. if some particles are killed by scheduler
     //  select_ss << "and J.status = 'Q' limit " << n << ";";
@@ -1206,8 +1400,7 @@ void AbcSmc::_set_predictive_prior (
     const Col& distances
 ) {
     vector<size_t> ranking = ordered(distances);
-    vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
-    _predictive_prior[t] = sample;
+    _predictive_prior[t] = vector<size_t>(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
 
 }
 
@@ -1324,7 +1517,7 @@ Mat2D AbcSmc::slurp_posterior(const bool verbose) {
     Mat2D posterior = Mat2D::Zero( posterior_size, num_posterior_pars );
 
     // Identify table to pull parameter values from
-    string post_par_table = _db_tables_exist(post_db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
+    string post_par_table = AbcSQL::_db_tables_exist(post_db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
     stringstream ss;
     ss << "select " << posterior_strings << " from " << post_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial and posterior > -1;";
     posterior_query = post_db.Query(ss.str().c_str());
@@ -1340,51 +1533,47 @@ Mat2D AbcSmc::slurp_posterior(const bool verbose) {
     return posterior;
 }
 
-void AbcSmc::calculate_doubled_variances( int t ) {
-    vector<RunningStat> stats(npar());
+// void AbcSmc::calculate_doubled_variances( int t ) {
 
-    for (size_t i = 0; i < _predictive_prior[t].size(); i++) {
-        for (size_t j = 0; j < npar(); j++) {
-            int particle_idx = _predictive_prior[t][i];
-            double par_value = _particle_parameters[t](particle_idx, j);
-            stats[j].Push(par_value);
-        }
-    }
-    for (size_t j = 0; j < npar(); j++) {
-        _model_pars[j]->append_doubled_variance( 2 * stats[j].Variance() );
-    }
-}
+//     Mat2D posterior = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
 
-void AbcSmc::normalize_weights( vector<double>& weights ) {
-    double total = 0;
-    for (size_t i = 0; i < weights.size(); i++) {
-        total += weights[i];
-    }
+//     vector<RunningStat> stats(posterior.cols());
 
-    for (size_t i = 0; i < weights.size(); i++) {
-        weights[i] /= total;
-    }
-}
+//     for (size_t j = 0; j < posterior.cols(); j++) { stats[j].Push( posterior.col(j) ); }
+
+//     for (size_t j = 0; j < npar(); j++) {
+//         _model_pars[j]->append_doubled_variance( 2 * stats[j].Variance() );
+//     }
+// }
 
 void AbcSmc::calculate_predictive_prior_weights(int set_num) {
+    auto pp = _predictive_prior[set_num];
     // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
-    calculate_doubled_variances( set_num );
+
+    // calculate_doubled_variances( set_num );
     if (set_num == 0) {
+        _doubled_variance.push_back(Row::Zero(npar()));
         // uniform weights for set 0 predictive prior
         //_weights[set_num].resize(_predictive_prior[set_num].size(), 1.0/(double) _predictive_prior[set_num].size());
-        const double uniform_wt = 1.0/(double) _predictive_prior[set_num].size();
-        _weights.push_back( vector<double>(_predictive_prior[set_num].size(), uniform_wt) );
+        const double uniform_wt = 1.0/static_cast<float_type>(pp.size());
+        _weights.push_back( Col::Constant(pp.size(), uniform_wt) );
     } else if ( set_num > 0 ) {
+        Mat2D parmat = _particle_parameters[set_num](pp, Eigen::placeholders::all); // ordered (by rank) slice of particle_parameters
+        _doubled_variance.push_back(ABC::calculate_doubled_variances(parmat));
         // weights from set - 1 are needed to calculate weights for current set
-        _weights.push_back( vector<double>( _predictive_prior[set_num].size(), 0.0 ) );
-        //_weights[set_num].resize( _predictive_prior[set_num].size() );
+        Col weights = Col::Zero( pp.size() );
 
-        for (size_t i = 0; i < _predictive_prior[set_num].size(); i++) {
+        auto pp_prev = _predictive_prior[set_num - 1];
+        Mat2D parmat_prev = _particle_parameters[set_num-1](pp_prev, Eigen::placeholders::all);
+
+        for (size_t i = 0; i < parmat.rows(); i++) { // for each particle in the predictive prior
             double numerator = 1;
             double denominator = 0.0;
+            auto parrow = parmat.row(i);
+            // likelihood of parrow, given priors
             for (size_t j = 0; j < npar(); j++) {
                 Parameter* par = _model_pars[j];
-                const double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
+                const double par_value = parrow[j];
                 if (par->get_prior_type() == NORMAL) {
                     numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
                 } else if (par->get_prior_type() == UNIFORM) {
@@ -1394,12 +1583,13 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
                 }
             }
 
-            for (size_t k = 0; k < _predictive_prior[set_num - 1].size(); k++) {
-                double running_product = _weights[set_num - 1][k];
+            // likelihood of parrow, given all previous rounds particles
+            for (size_t k = 0; k < parmat_prev.rows(); k++) { // for each particle in the previous predictive prior
+                double running_product = _weights[set_num - 1][k]; // how likely was this (previous) particle
                 for (size_t j = 0; j < npar(); j++) {
                     double par_value = _particle_parameters[set_num](_predictive_prior[set_num][i], j);
                     double old_par_value = _particle_parameters[set_num-1](_predictive_prior[set_num-1][k], j);
-                    double old_doubled_variance = _model_pars[j]->get_doubled_variance(set_num-1);
+                    double old_doubled_variance = _doubled_variance[set_num-1][j];
 
                     // This conditional handles the (often improbable) case where a parameter has completely converged.
                     // It allows ABC to continue exploring other parameters, rather than causing the math
@@ -1410,80 +1600,39 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
                 }
                 denominator += running_product;
             }
-            _weights[set_num][i] = numerator / denominator;
+            weights[i] = numerator / denominator;
         }
-        normalize_weights( _weights[set_num] );
+
+        _weights.push_back( ABC::CDF_weights(weights) );
+
     }
 }
-
 
 gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
-    // ALLOCATE DATA STRUCTURES
-    // variance-covariance matrix calculated from pred prior values
-    // NB: always allocate this small matrix, so that we don't have to check whether it's safe to free later
-    const size_t num_pars = static_cast<size_t>(_particle_parameters[set_num-1].cols());
-    const size_t pred_prior_size = _predictive_prior[set_num-1].size();
-    gsl_matrix* sigma_hat = gsl_matrix_alloc(num_pars, num_pars);
-
     if (use_mvn_noise) {
-        // container for predictive prior aka posterior from last set
-        gsl_matrix* posterior_par_vals = gsl_matrix_alloc(pred_prior_size, num_pars);
-
-        // INITIALIZE DATA STRUCTURES
-        for (size_t i = 0; i < pred_prior_size; ++i) {
-            for (size_t j = 0; j < num_pars; ++j) {
-                // copy values from pred prior into a gsl matrix
-                const size_t particle_idx = _predictive_prior[set_num-1][i];
-                gsl_matrix_set(posterior_par_vals, i, j, _particle_parameters[set_num-1](particle_idx, j));
-            }
-        }
-        // calculate maximum likelihood estimate of variance-covariance matrix sigma_hat
-        gsl_ran_multivariate_gaussian_vcov(posterior_par_vals, sigma_hat);
-
-        for (size_t j = 0; j < npar(); j++) {
-            // sampling is done using a kernel with a broader kernel than found in pred prior values
-            const double doubled_variance = 2 * gsl_matrix_get(sigma_hat, j, j);
-            gsl_matrix_set(sigma_hat, j, j, doubled_variance);
-        }
-
-        // not a nice interface, gsl.  sigma_hat is converted in place from a variance-covariance matrix
-        // to the same values in the upper triangle, and the diagonal and lower triangle equal to L,
-        // the Cholesky decomposition
-        gsl_linalg_cholesky_decomp1(sigma_hat);
-
-        gsl_matrix_free(posterior_par_vals);
+        Mat2D pp = _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all);
+        return ABC::setup_mvn_sampler(pp);
+    } else {
+        return gsl_matrix_alloc(npar(), npar());
     }
-
-    return sigma_hat;
 }
 
-
-Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L ) {
-    // container for sampled values
-    Row par_values = Row::Zero(npar());
-    // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
-    int r = gsl_rng_nonuniform_int(_weights[set_num-1], RNG);
-    gsl_vector* par_val_hat = gsl_vector_alloc(npar());
-    for (size_t j = 0; j < npar(); j++) {
-        const int particle_idx = _predictive_prior[set_num-1][r];
-        const double par_value = _particle_parameters[set_num-1](particle_idx, j);
-        gsl_vector_set(par_val_hat, j, par_value);
-    }
-    par_values = rand_trunc_mv_normal( _model_pars, par_val_hat, L, RNG );
-    gsl_vector_free(par_val_hat);
-
-    return par_values;
-}
+Row AbcSmc::sample_mvn_predictive_priors(const int set_num, const gsl_rng* RNG, const gsl_matrix* L) {
+    return ABC::noise_mv_parameters(
+        RNG, ABC::sample_predictive_prior(RNG, _weights[set_num-1], _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all)),
+        _model_pars, L
+    );
+ }
 
 Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
     Row par_values = Row::Zero(npar());
     // Select a particle index r to use from the predictive prior
-    int r = gsl_rng_nonuniform_int(_weights[set_num-1], RNG);
+    int r = ABC::gsl_rng_nonuniform_int(_weights[set_num-1], RNG);
     for (size_t j = 0; j < npar(); j++) {
         int particle_idx = _predictive_prior[set_num-1][r];
         double par_value = _particle_parameters[set_num-1](particle_idx, j);
         const Parameter* parameter = _model_pars[j];
-        double doubled_variance = parameter->get_doubled_variance(set_num-1);
+        double doubled_variance = _doubled_variance[set_num-1][j];
         double par_min = parameter->get_prior_min();
         double par_max = parameter->get_prior_max();
         par_values(j) = rand_trunc_normal( par_value, doubled_variance, par_min, par_max, RNG );

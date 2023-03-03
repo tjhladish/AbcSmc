@@ -76,8 +76,8 @@ class Parameter {
         }
 
         // doubled variance of particles
-        double get_doubled_variance(int t) const { return doubled_variance[t]; }
-        void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
+//        double get_doubled_variance(int t) const { return doubled_variance[t]; }
+//        void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
         void set_prior_limits(double min, double max) { fmin = min; fmax = max; }
         double get_prior_min() const { return fmin; }
         double get_prior_max() const { return fmax; }
@@ -110,7 +110,7 @@ class Parameter {
         PriorType ptype;
         NumericType ntype;
         double fmin, fmax, mean, stdev, state, step;
-        std::vector<double> doubled_variance;
+//        std::vector<double> doubled_variance;
         double (*untran_func) (const double);
         std::pair<double, double> rescale;
         std::map < std::string, std::vector<int> > par_modification_map; // how this par modifies others
@@ -214,10 +214,20 @@ class AbcSmc {
             use_pls_filtering = true;
         };
 
-        void parse(const std::string & config_file, const size_t verbose = 0);
-        void build(const gsl_rng* RNG, const size_t verbose = 0);
-        void process(const gsl_rng* RNG, const size_t verbose = 0);
-        void evaluate(const gsl_rng* RNG, const std::optional<size_t> num_sims, const size_t verbose = 0);
+        // Fundamental AbcSmc verbs
+        //  - parse: read in a configuration file
+        bool parse(const std::string & config_file, const size_t verbose = 0);
+        //  - build: initialize storage for simulation / evaluation
+        bool build(const bool overwrite, const size_t verbose);
+        // convenience polymorphs setting defaults
+        bool build(const bool overwrite) { return build(overwrite, 0); };
+        bool build(const size_t verbose) { return build(false, verbose); };
+        bool build() { return build(false, 0); };
+
+        //  - process: populate storage with next set of simulations to run: either from scratch or from fitting posterior
+        bool process(const gsl_rng* RNG, const size_t verbose = 0);
+        //  - evaluate: run simulations and record metrics
+        bool evaluate(const gsl_rng* RNG, const std::optional<size_t> num_sims, const size_t verbose = 0);
 
         [[deprecated("This configuration option is ignored; SMC iterates are performed on demand.")]]
         void set_smc_iterations(int n) { _num_smc_sets = n; }
@@ -297,6 +307,7 @@ class AbcSmc {
         void process_predictive_prior_arguments(Json::Value par);
         bool parse_config(std::string conf_filename);
 
+        [[deprecated("This public interface is going away; use build() (for initial setup) and process (for initial population).")]]        
         bool build_database(const gsl_rng* RNG);
         bool process_database(const gsl_rng* RNG);
 //        bool read_SMC_set_from_database (int t, Mat2D &X_orig, Mat2D &Y_orig);
@@ -371,7 +382,8 @@ class AbcSmc {
         std::vector< Mat2D > _particle_metrics;
         std::vector< Mat2D > _particle_parameters;
         std::vector< std::vector<size_t> > _predictive_prior; // vector of row indices for particle metrics and parameters
-        std::vector< std::vector<double> > _weights;
+        std::vector< Col > _weights;
+        std::vector< Col > _doubled_variance;
         bool use_mvn_noise;
         bool use_pls_filtering;
 
@@ -405,8 +417,6 @@ class AbcSmc {
 
         Mat2D slurp_posterior(const bool verbose = false);
 
-        Row sample_priors( const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank );
-
         bool _sample_priors(
             const gsl_rng* RNG, const size_t n, // number of samples
             vector<size_t> &seeds, // will be populated with seeds? will be pre-filled with seeds?
@@ -415,8 +425,16 @@ class AbcSmc {
             vector<int> &ranks // will be populated with ranks (if relevant)
         );
 
+        bool _resample_posterior(
+            const gsl_rng* RNG, const size_t n, // number of samples
+            vector<size_t> &seeds, // will be populated with seeds? will be pre-filled with seeds?
+            vector<Row> &pars, // will be populated with parameters
+            vector<Row> &upars // will be populated with upars (if relevant)
+        );
+
         Row do_complicated_untransformations( std::vector<Parameter*>& _model_pars, Row& pars );
 
+        [[deprecated("Use the ABC::calculate_doubled_variance and AbcSmc->doubled_variance[i].")]]
         void calculate_doubled_variances( int t );
 
         void normalize_weights( std::vector<double>& weights );
@@ -424,7 +442,9 @@ class AbcSmc {
         void calculate_predictive_prior_weights( int set_num );
 
         gsl_matrix* setup_mvn_sampler(const int);
-        Row sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L );
+
+        [[deprecated("Use the ABC::sample_mvn_predictive_priors.")]]
+        Row sample_mvn_predictive_priors(const int set_num, const gsl_rng* RNG, const gsl_matrix* L);
 
         Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
 
@@ -434,11 +454,5 @@ class AbcSmc {
 
 
 };
-
-bool _db_execute(sqdb::Db &db, const char * query, const bool verbose = false);
-bool _db_execute(sqdb::Db &db, const string &ss, const bool verbose = false);
-bool _db_execute(sqdb::Db &db, stringstream &ss, const bool verbose = false);
-bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
-bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
 
 #endif

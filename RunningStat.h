@@ -30,6 +30,9 @@ class RunningStat {
             }
         }
 
+        template<typename Iterable>
+        void Push(const Iterable & xs) { for(double x : xs) Push(x); }
+
         int NumDataValues() const {
             return m_n;
         }

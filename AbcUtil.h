@@ -97,10 +97,11 @@ namespace ABC {
 
   inline double uniform_pdf(double a, double b) { return 1.0 / fabs(b-a); }
 
-  int gsl_rng_nonuniform_int(std::vector<double>& weights, const gsl_rng* rng);
+  template<typename Iterable>
+  int gsl_rng_nonuniform_int(const Iterable & weights, const gsl_rng* rng);
 
   double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng);
-  Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng);
+  Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, const Row & mu, const gsl_matrix* L, const gsl_rng* rng);
 
   LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y);
 
@@ -124,6 +125,43 @@ namespace ABC {
     const Mat2D & posterior_mets,
     const Row & observed
   );
+
+  gsl_matrix* setup_mvn_sampler(
+    const Mat2D & particle_parameters // sliced to predictive prior
+  );
+
+  void normalize_weights( std::vector<float_type> & weights );
+  Col CDF_weights( const Col & weights );
+
+  Col weight_predictive_prior(
+    const Mat2D & current_parameters,
+    const Mat2D & prev_parameters,
+    const std::vector<float_type> & prev_weights,
+    const std::vector<Parameter*> & model_pars,
+    const Row & prev_doubled_variances
+  );
+
+  Row sample_predictive_prior(
+    const gsl_rng* RNG,
+    const Col & weights,
+    const Mat2D & particle_parameters // sliced to predictive prior, same order as weights
+  );
+
+  Row noise_mv_parameters(
+      const gsl_rng* RNG,
+      const Row & pred_prior_mu, // result of draw from sample_predictive_prior
+      const std::vector<Parameter*> & model_pars,
+      const gsl_matrix* L
+  );
+
+  Row noise_parameters(
+    const gsl_rng* RNG,
+    const Row & pred_prior_mu, // result of draw from sample_predictive_prior
+    const std::vector<Parameter*> & model_pars,
+    const std::vector<float_type> & doubled_variances
+  );
+
+  Row calculate_doubled_variances(const Mat2D & particle_parameters);
 
 }
 

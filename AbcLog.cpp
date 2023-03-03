@@ -31,27 +31,10 @@ void AbcLog::report_convergence_data(
              << "       This can happen if --process is called on a database that is not ready to be processed." << std::endl;
         exit(-214);
     }
-    vector<double> last_means( abc->npar(), 0 );
-    vector<double> current_means = last_means; // copy contructor
-    for (size_t j = 0; j < current_means.size(); j++) {
-    //cerr << "par " << j << endl;
-        size_t N = abc->_predictive_prior[set_t].size();
-        for (size_t i = 0; i < N; i++) {
-            int particle_idx = abc->_predictive_prior[set_t][i];
-            double par_value = abc->_particle_parameters[set_t](particle_idx, j);
-            current_means[j] += par_value;
-        }
-        current_means[j] /= N;
-
-        if (set_t > 0) {
-            const size_t N2 = abc->_predictive_prior[set_t-1].size();
-            for (size_t i = 0; i < N2; i++) {
-                int particle_idx = abc->_predictive_prior[set_t-1][i];
-                double par_value = abc->_particle_parameters[set_t-1](particle_idx, j);
-                last_means[j] += par_value;
-            }
-            last_means[j] /= N2;
-        }
+    Row last_means = Row::Zero( abc->npar() );
+    Row current_means = abc->_particle_parameters[set_t](abc->_predictive_prior[set_t], Eigen::placeholders::all).colwise().mean(); // copy contructor
+    if (set_t > 0) {
+        last_means = abc->_particle_parameters[set_t-1](abc->_predictive_prior[set_t-1], Eigen::placeholders::all).colwise().mean(); // copy contructor
     }
 
     os << double_bar << std::endl;
@@ -62,7 +45,7 @@ void AbcLog::report_convergence_data(
     }
     for (size_t i = 0; i < abc->_model_pars.size(); i++) {
         const Parameter* par = abc->_model_pars[i];
-        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
+        const double current_stdev = sqrt(abc->_doubled_variance[set_t][i]/2.0);
         const double prior_mean = par->get_prior_mean();
         const double prior_mean_delta = current_means[i] - prior_mean;
         const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
@@ -78,7 +61,7 @@ void AbcLog::report_convergence_data(
             os << "  Standard deviations:\n";
             print_stats("Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n", os);
         } else {
-            double last_stdev = sqrt(abc->_model_pars[i]->get_doubled_variance(set_t-1)/2.0);
+            double last_stdev = sqrt(bc->_doubled_variance[set_t-1][i]/2.0);
             double delta, pct_chg;
 
             os << "  Par " << i << ": \"" << abc->_model_pars[i]->get_name() << "\"" << std::endl;
