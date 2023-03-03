@@ -292,13 +292,13 @@ class AbcSmc {
 
         bool build_database(const gsl_rng* RNG);
         bool process_database(const gsl_rng* RNG);
-//        bool read_SMC_set_from_database (int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig);
+//        bool read_SMC_set_from_database (int t, Mat2D &X_orig, Mat2D &Y_orig);
         bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
         bool sql_particle_already_done(sqdb::Db &db, const string sql_job_tag, string &status);
         bool fetch_particle_parameters(
             sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
-            vector<int> &serial, vector<ABC::Row> &par_mat, vector<unsigned long int> &seeds,
+            vector<int> &serial, vector<Row> &par_mat, vector<unsigned long int> &seeds,
             const bool verbose = false
         );
         bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
@@ -317,14 +317,14 @@ class AbcSmc {
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
 
-        PLS_Model run_PLS(ABC::Mat2D&, ABC::Mat2D&, const int pls_training_set_size, const int ncomp);
+        PLS_Model& run_PLS(Mat2D&, Mat2D&, const size_t pls_training_set_size, const size_t ncomp);
         std::string get_database_filename()                 { return _database_filename; }
-        std::vector< ABC::Mat2D > get_particle_parameters() { return _particle_parameters; }
-        std::vector< ABC::Mat2D > get_particle_metrics()    { return _particle_metrics; }
+        std::vector< Mat2D > get_particle_parameters() { return _particle_parameters; }
+        std::vector< Mat2D > get_particle_metrics()    { return _particle_metrics; }
 
     private:
-        ABC::Mat2D X_orig;
-        ABC::Mat2D Y_orig;
+        Mat2D X_orig;
+        Mat2D Y_orig;
         std::vector<Parameter*> _model_pars;
         std::vector<Metric*> _model_mets;
         size_t _num_smc_sets;
@@ -343,8 +343,8 @@ class AbcSmc {
         std::string _database_filename;
         std::string _posterior_database_filename;
         bool _retain_posterior_rank;
-        std::vector< ABC::Mat2D > _particle_metrics;
-        std::vector< ABC::Mat2D > _particle_parameters;
+        std::vector< Mat2D > _particle_metrics;
+        std::vector< Mat2D > _particle_parameters;
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
         std::vector< std::vector<double> > _weights;
         bool use_mvn_noise;
@@ -353,24 +353,24 @@ class AbcSmc {
         //mpi specific variables
         ABC::MPI_par *_mp;
 
-        bool _run_simulator(ABC::Row &par, ABC::Row &met, const unsigned long int rng_seed, const unsigned long int serial);
+        bool _run_simulator(Row &par, Row &met, const unsigned long int rng_seed, const unsigned long int serial);
 
-        bool _populate_particles( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG );
+        bool _populate_particles( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG );
 
-        bool _populate_particles_mpi( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG );
-        void _particle_scheduler(int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, const gsl_rng* RNG);
+        bool _populate_particles_mpi( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG );
+        void _particle_scheduler(int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG);
         void _particle_worker();
 
-        void _fp_helper (const int t, const ABC::Mat2D &X_orig, const ABC::Mat2D &Y_orig, const int next_pred_prior_size, const ABC::Col& distances);
-        void _filter_particles_simple ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
-        PLS_Model _filter_particles ( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig, int pred_prior_size);
+        void _fp_helper(const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances);
+        void _filter_particles_simple(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size);
+        PLS_Model _filter_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size, const bool verbose = true);
         void _print_particle_table_header();
-        long double calculate_nrmse(vector<ABC::Col> posterior_mets);
+        long double calculate_nrmse(vector<Col> posterior_mets);
 
-        void set_resume( bool res ) { resume_flag = res; }
+        void set_resume(const bool res) { resume_flag = res; }
         bool resume() { return resume_flag; }
         void set_resume_directory( std::string res_dir ) { resume_directory = res_dir; }
-        bool read_particle_set( int t, ABC::Mat2D &X_orig, ABC::Mat2D &Y_orig );
+        bool read_particle_set( int t, Mat2D &X_orig, Mat2D &Y_orig );
         bool read_predictive_prior( int t );
 
         string _build_sql_select_par_string(string tag);
@@ -385,13 +385,13 @@ class AbcSmc {
         bool _update_sets_table(sqdb::Db &db, int t);
         //bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
-        ABC::Col euclidean( ABC::Row obs_met, ABC::Mat2D sim_met );
+        Col euclidean( Row obs_met, Mat2D sim_met );
 
-        ABC::Mat2D slurp_posterior();
+        Mat2D slurp_posterior();
 
-        ABC::Row sample_priors( const gsl_rng* RNG, ABC::Mat2D& posterior, int &posterior_rank );
+        Row sample_priors( const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank );
 
-        std::vector<double> do_complicated_untransformations( std::vector<Parameter*>& _model_pars, ABC::Row& pars );
+        std::vector<double> do_complicated_untransformations( std::vector<Parameter*>& _model_pars, Row& pars );
 
         void calculate_doubled_variances( int t );
 
@@ -400,11 +400,11 @@ class AbcSmc {
         void calculate_predictive_prior_weights( int set_num );
 
         gsl_matrix* setup_mvn_sampler(const int);
-        ABC::Row sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L );
+        Row sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L );
 
-        ABC::Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
+        Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
 
-        ABC::Row _z_transform_observed_metrics( ABC::Row& means, ABC::Row& stdevs );
+        Row _z_transform_observed_metrics( Row& means, Row& stdevs );
 };
 
 #endif

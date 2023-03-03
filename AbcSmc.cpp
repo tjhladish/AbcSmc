@@ -1120,11 +1120,9 @@ void AbcSmc::_print_particle_table_header() {
 }
 
 void AbcSmc::_fp_helper (const int t, const Mat2D &X_orig, const Mat2D &Y_orig, const int next_pred_prior_size, const Col& distances) {
-    vector<int> ranking = ordered(distances);
+    vector<size_t> ranking = ordered(distances);
 
-    vector<int>::iterator first = ranking.begin();
-    vector<int>::iterator last  = ranking.begin() + next_pred_prior_size;
-    vector<int> sample(first, last); // This is the predictive prior / posterior
+    vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
     _predictive_prior[t] = sample;
 
     cerr << "Observed:\n";
@@ -1178,55 +1176,55 @@ void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int 
     _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
 }
 
-PLS_Model AbcSmc::run_PLS(Mat2D &X, Mat2D &Y, const int pls_training_set_size, const int ncomp) {
-    // Run PLS
-    // Box-Cox transform data -- TODO?
-    //void test_bc( Mat2D );
-    //test_bc(Y_orig);
+// Run PLS
+// Box-Cox transform data -- TODO?
+//void test_bc( Mat2D );
+//test_bc(Y_orig);
+// @tjh TODO: obsolete? have updated the PLS constructor to just do the calculation if presented with X/Y/components/method
+// as that seems to be the most common use case
+PLS_Model& AbcSmc::run_PLS(
+    Mat2D &X, // predictors; rows = sample, cols = variables
+    Mat2D &Y, // responses; rows = sample, cols = variables
+    const size_t pls_training_set_size, // number of samples from X and Y to use
+    const size_t ncomp // number of PLS components to keep
+) {
 
-    const int npred = X.cols();      // number of predictor variables
-    const int nresp = Y.cols();      // number of response variables
-    PLS_Model plsm;
-    plsm.initialize(npred, nresp, ncomp);
-    assert(pls_training_set_size <= X.rows()); // can't train against more observations than we have
-    plsm.plsr(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), KERNEL_TYPE1);
-    return plsm;
+    // assert same rows to X and Y? or perhaps manage that in PLS?
+    assert(pls_training_set_size <= static_cast<size_t>(X.rows())); // can't train against more observations than we have
+    const size_t npred = X.cols();      // number of predictor variables
+    const size_t nresp = Y.cols();      // number of response variables
+    return PLS_Model(npred, nresp, ncomp).plsr(
+        X.topRows(pls_training_set_size),
+        Y.topRows(pls_training_set_size), KERNEL_TYPE1
+    );
+    
 }
 
-PLS_Model AbcSmc::_filter_particles (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
+PLS_Model AbcSmc::_filter_particles (
+    int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size,
+    const bool verbose
+) {
     Row X_sim_means, X_sim_stdev;
     Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
     Mat2D Y = colwise_z_scores( Y_orig );
     Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
 
-    const int pls_training_set_size = round(X.rows() * _pls_training_fraction);
-    // TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
-    int ncomp = npar();             // It doesn't make sense to consider more components than model parameters
-    PLS_Model plsm = run_PLS(X, Y, pls_training_set_size, ncomp);
+    const size_t pls_training_set_size = round(X.rows() * _pls_training_fraction);
+    // @tjh TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
+    size_t ncomp = npar();             // It doesn't make sense to consider more components than model parameters
 
-/*
-//P, W, R, Q, T
-cerr << "P:\n" << plsm.P << endl;
-cerr << "W:\n" << plsm.W << endl;
-cerr << "R:\n" << plsm.R << endl;
-cerr << "Q:\n" << plsm.Q << endl;
-cerr << "T:\n" << plsm.T << endl;
-cerr << "coefficients:\n" << plsm.coefficients() << endl;
-*/
+    PLS_Model plsm(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), ncomp);
+
     // A is number of components to use
-    for (int A = 1; A<=ncomp; A++) {
-        // How well did we do with this many components?
-        cerr << setw(2) << A << " components ";
-        cerr << "explained variance: " << plsm.explained_variance(X, Y, A);
-        //cerr << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
-        cerr << " SSE: " << plsm.SSE(X,Y,A) <<  endl;
-    }
+    if (verbose) { plsm.print_explained_variance(X, Y); }
 
     const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
-    Rowi num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
-    int num_components_used = num_components.maxCoeff();
-    cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
-    cerr << "Using " << num_components_used << " components." << endl;
+    auto num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
+    size_t num_components_used = num_components.maxCoeff();
+    if (verbose) {
+        cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
+        cerr << "Using " << num_components_used << " components." << endl;
+    }
 
     // Calculate new, orthogonal metrics (==scores) using the pls model
     // Is casting as real always safe?
@@ -1234,7 +1232,7 @@ cerr << "coefficients:\n" << plsm.coefficients() << endl;
     Mat2D sim_scores = plsm.scores(X, num_components_used).real();
     Col   distances  = euclidean(obs_scores, sim_scores);
 
-    _fp_helper (t, X_orig, Y_orig, next_pred_prior_size, distances);
+    _fp_helper(t, X_orig, Y_orig, next_pred_prior_size, distances);
     return plsm;
 }
 
