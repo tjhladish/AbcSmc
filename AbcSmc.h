@@ -363,8 +363,8 @@ class AbcSmc {
 
 //      TODO: undefined?
 //        bool _populate_particles_mpi( int t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG );
-        void _particle_scheduler(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG);
-        void _particle_worker(const size_t seed, const size_t serial);
+        void _particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG);
+        void _particle_worker_mpi(const size_t seed, const size_t serial);
 
         void _set_predictive_prior(const int t, const int next_pred_prior_size, const Col& distances);
         void _filter_particles_simple(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size);
