@@ -91,7 +91,7 @@ struct AbcExec : AbcSimFun {
     AbcExec(std::string _command) : command(_command) { }
 
     vector<float_type> operator()(
-      vector<float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
+      vector<float_type> pars, const unsigned long int /*seed*/, const unsigned long int /*serial*/, const ABC::MPI_par* /*_mp*/
     ) const {
         auto execcom = command;
         vector<float_type> mets;
