@@ -1112,17 +1112,6 @@ void AbcSmc::calculate_doubled_variances( int t ) {
     }
 }
 
-void AbcSmc::normalize_weights( vector<double>& weights ) {
-    double total = 0;
-    for (size_t i = 0; i < weights.size(); i++) {
-        total += weights[i];
-    }
-
-    for (size_t i = 0; i < weights.size(); i++) {
-        weights[i] /= total;
-    }
-}
-
 void AbcSmc::calculate_predictive_prior_weights(int set_num) {
     // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
     calculate_doubled_variances( set_num );

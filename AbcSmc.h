@@ -397,8 +397,6 @@ class AbcSmc {
 
         void calculate_doubled_variances( int t );
 
-        void normalize_weights( std::vector<double>& weights );
-
         void calculate_predictive_prior_weights( int set_num );
 
         gsl_matrix* setup_mvn_sampler(const int);
