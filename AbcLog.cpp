@@ -48,7 +48,7 @@ void AbcLog::report_convergence_data(
     }
     for (size_t parIdx = 0; parIdx < abc->_model_pars.size(); parIdx++) {
         const Parameter* par = abc->_model_pars[parIdx];
-        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
+        const double current_stdev = sqrt(abc->_doubled_variance[set_t][parIdx]/2.0);
         const double prior_mean = par->get_prior_mean();
         const double prior_mean_delta = current_means[parIdx] - prior_mean;
         const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
@@ -60,11 +60,21 @@ void AbcLog::report_convergence_data(
         os << "  Means:\n";
         print_stats("Prior", "current", prior_mean, current_means[parIdx], prior_mean_delta, prior_mean_pct_chg, "", os);
 
+<<<<<<< HEAD
         if (set_t != 0) {
             double delta = current_means[parIdx] - last_means[parIdx];
             double pct_chg = last_means[parIdx] != 0 ? 100 * delta / last_means[parIdx] : INFINITY;
             print_stats("Last", " current", last_means[parIdx], current_means[parIdx], delta, pct_chg, "\n", os);
         }
+=======
+            os << "  Means:\n";
+            print_stats("Prior", "current", prior_mean, current_means[i], prior_mean_delta, prior_mean_pct_chg, "", os);
+            os << "  Standard deviations:\n";
+            print_stats("Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n", os);
+        } else {
+            double last_stdev = sqrt(abc->_doubled_variance[set_t-1][i]/2.0);
+            double delta, pct_chg;
+>>>>>>> ab12f6f (fix doubled variance access in abclog)
 
         os << "  Standard deviations:\n";
         print_stats("Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n", os);
