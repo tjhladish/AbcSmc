@@ -29,12 +29,12 @@
 float_type dominant_eigenvalue(const EigenSolver<Mat2Dc> es) {
     const size_t idx = find_dominant_ev(es);
     return abs(es.eigenvalues()[idx].real());
-};
+}
 
 Colc dominant_eigenvector(const EigenSolver<Mat2D> es) {
     const size_t idx = find_dominant_ev(es);
     return es.eigenvectors().col(idx);
-};
+}
 
 //
 // Numerical Approximation to Normal Cumulative Distribution Function
@@ -61,7 +61,7 @@ float_type normalcdf(float_type z) {
     }
     float_type probn = 1.0 - p;
     return probn;
-};
+}
 
 //
 // WILCOXON SIGNED RANK TEST FOR EVALUATING RELATIVE QUALITY OF TWO
@@ -119,7 +119,7 @@ float_type wilcoxon(const Col err_1, const Col err_2) {
     float_type probw = 1.0 - normalcdf(z);
 
     return probw;
-};
+}
 
 // TODO: several of the loop constructs seem ripe for row/col-wise operations / broadcasting:
 // https://eigen.tuxfamily.org/dox/group__TutorialReductionsVisitorsBroadcasting.html
@@ -177,31 +177,31 @@ PLS_Model& PLS_Model::plsr(const Mat2D& X, const Mat2D& Y, const METHOD algorith
 
 
     return *this;
-};
+}
 
 const Mat2Dc PLS_Model::scores(const Mat2D& X_new, const size_t comp) const {
     assert (A >= comp);
     return X_new * R.leftCols(comp);
-};
+}
 
 const Mat2Dc PLS_Model::coefficients(const size_t comp) const {
     assert (A >= comp);
     return R.leftCols(comp)*Q.leftCols(comp).transpose();
-};
+}
 
 const Mat2D PLS_Model::fitted_values(const Mat2D& X, const size_t comp) const {
     assert (A >= comp);
     return X*coefficients(comp).real();
-};
+}
 
 const Mat2D PLS_Model::residuals(const Mat2D& X, const Mat2D& Y, const size_t comp) const {
     assert (A >= comp);
     return Y - fitted_values(X, comp);
-};
+}
 
 const Row PLS_Model::SSE(const Mat2D& X, const Mat2D& Y, const size_t comp) const {
     return residuals(X, Y, comp).colwise().squaredNorm();
-};
+}
 
 // Total sum of squares
 const Row PLS_Model::SST(const Mat2D& Y) const {
@@ -246,7 +246,7 @@ Mat2D PLS_Model::loo_validation(const Mat2D& X, const Mat2D& Y, const VALIDATION
         default:
             exit(1);
     }
-};
+}
 
 
 std::vector<Mat2D> PLS_Model::_loo_cv_error_matrix(const Mat2D& X, const Mat2D& Y) const {
@@ -270,7 +270,7 @@ std::vector<Mat2D> PLS_Model::_loo_cv_error_matrix(const Mat2D& X, const Mat2D& 
         }
     }
     return Ev;
-};
+}
 
 std::vector<Mat2D> PLS_Model::_new_data_cv_error_matrix(const Mat2D& X_new, const Mat2D& Y_new) const {
     // vector of error matrices(rows=Y.rows(), cols=Y.cols())
@@ -284,7 +284,7 @@ std::vector<Mat2D> PLS_Model::_new_data_cv_error_matrix(const Mat2D& X_new, cons
         }
     }
     return Ev;
-};
+}
 
 // if val_method is LOO, X and Y should be original data
 // if val_method is NEW_DATA, X and Y should be observations not included in the original model
@@ -340,7 +340,7 @@ const Rowsz PLS_Model::optimal_num_components(const Mat2D& X, const Mat2D& Y, co
     }
 
     return best_comp;
-};
+}
 
 void PLS_Model::print_explained_variance(const Mat2D& X, const Mat2D& Y, std::ostream& os) const {
     const size_t wd = ceil(std::log10(A));
@@ -351,7 +351,7 @@ void PLS_Model::print_explained_variance(const Mat2D& X, const Mat2D& Y, std::os
         //cerr << "root mean squared error of prediction (RMSEP):" << plsm.rmsep(X, Y, A) << endl;
         os << " SSE: " << SSE(X, Y, ncomp) <<  std::endl;
     }
-};
+}
 
 void PLS_Model::print_state(std::ostream& os) const {
     //P, W, R, Q, T
@@ -369,4 +369,4 @@ void PLS_Model::print_state(std::ostream& os) const {
         "coefficients:" << std::endl <<
         coefficients() << std::endl;
 
-};
+}

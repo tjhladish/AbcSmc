@@ -88,7 +88,7 @@ size_t find_dominant_ev(const EigenSolver<MATTYPE> es) {
     }
     return idx;
 
-};
+}
 
 struct PLS_Model {
 
