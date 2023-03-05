@@ -220,6 +220,8 @@ namespace ABC {
 
   gsl_matrix* to_gsl_m(const Mat2D & from);
 
+    Col euclidean(const Mat2D & sims, const Row & ref);
+
 }
 
 #endif
