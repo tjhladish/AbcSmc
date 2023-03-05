@@ -97,7 +97,7 @@ namespace ABC {
   inline double uniform_pdf(double a, double b) { return 1.0 / fabs(b-a); }
 
   template<typename Iterable>
-  int gsl_rng_nonuniform_int(const Iterable & weights, const gsl_rng* rng);
+  int gsl_rng_nonuniform_int(const gsl_rng* rng, const Iterable & weights);
 
   double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng);
   Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng);
@@ -126,9 +126,9 @@ namespace ABC {
   );
 
   Row sample_posterior(
+    const gsl_rng* RNG,
     const Col weights,
-    const Mat2D posterior,
-    const gsl_rng* RNG
+    const Mat2D posterior
   );
 
   template<typename RandomAccessible>
@@ -137,6 +137,13 @@ namespace ABC {
   gsl_matrix* to_gsl_m(const Mat2D & from);
 
     Col euclidean(const Mat2D & sims, const Row & ref);
+
+Row sample_predictive_priors(
+    const gsl_rng* RNG,
+    const Col & weights, const Mat2D & parameter_prior,
+    const std::vector<Parameter*> & pars,
+    const Row & doubled_variance
+);
 
 }
 
