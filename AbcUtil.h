@@ -229,6 +229,13 @@ Row sample_predictive_priors(
     const Row & doubled_variance
 );
 
+Row sample_mvn_predictive_priors(
+    const gsl_rng* RNG,
+    const Col & weights, const Mat2D & parameter_prior,
+    const std::vector<Parameter*> & pars,
+    const gsl_matrix* L
+);
+
 }
 
 #endif

@@ -764,16 +764,17 @@ Row ABC::sample_predictive_priors(
     const Row & doubled_variance
 ) {
     const Row par = ABC::sample_posterior(RNG, weights, parameter_prior);
-    Row new_par = Row::Zero(par.cols());
-    for (size_t parIdx = 0; parIdx < par.cols(); parIdx++) {
-        const Parameter* parameter = pars[parIdx];
-        double par_min = parameter->get_prior_min();
-        double par_max = parameter->get_prior_max();
-        new_par(parIdx) = ABC::rand_trunc_normal(par[parIdx], doubled_variance[parIdx], par_min, par_max, RNG );
+    return ABC::gsl_ran_trunc_normal(RNG, pars, par, doubled_variance);
+};
 
-        if (parameter->get_numeric_type() == INT) {
-            new_par(parIdx) = (double) ((int) (new_par(parIdx) + 0.5));
-        }
-    }
-    return new_par;
-}
+Row ABC::sample_mvn_predictive_priors(
+    const gsl_rng* RNG,
+    const Col & weights, const Mat2D & parameter_prior,
+    const std::vector<Parameter*> & pars,
+    const gsl_matrix* L
+) {
+    // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
+    const Row par = ABC::sample_posterior(RNG, weights, parameter_prior);
+    return gsl_ran_trunc_mv_normal(RNG, pars, par, L);
+    
+};
