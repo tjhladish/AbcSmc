@@ -350,7 +350,7 @@ class AbcSmc {
         std::vector< Mat2D > _particle_metrics;
         std::vector< Mat2D > _particle_parameters;
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
-        std::vector< std::vector<double> > _weights;
+        std::vector<Col> _weights;
         bool use_mvn_noise;
         bool use_pls_filtering;
 
@@ -408,7 +408,6 @@ class AbcSmc {
 
         Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
 
-        Row _z_transform_observed_metrics( Row& means, Row& stdevs );
 };
 
 #endif
