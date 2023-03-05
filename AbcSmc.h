@@ -321,7 +321,7 @@ class AbcSmc {
         std::vector< Mat2D > get_particle_metrics()    { return _particle_metrics; }
 
         Row get_doubled_variance(const size_t t) const { return _doubled_variance[t]; }
-        Row append_doubled_variance(const Row & v2) { _doubled_variance.push_back(v2); }
+        void append_doubled_variance(const Row & v2) { _doubled_variance.push_back(v2); }
 
 
     private:
@@ -395,16 +395,13 @@ class AbcSmc {
 
         Row sample_priors( const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank );
 
-        std::vector<double> do_complicated_untransformations( std::vector<Parameter*>& _model_pars, Row& pars );
+        std::vector<double> do_complicated_untransformations(const std::vector<Parameter*> & _model_pars, const Row & pars );
 
         void calculate_doubled_variances( int t );
 
         void calculate_predictive_prior_weights( int set_num );
 
         gsl_matrix* setup_mvn_sampler(const int);
-        Row sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L );
-
-        Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
 
 };
 

@@ -96,14 +96,16 @@ namespace ABC {
 
   inline double uniform_pdf(double a, double b) { return 1.0 / fabs(b-a); }
 
-  template<typename Iterable>
-  int gsl_rng_nonuniform_int(const gsl_rng* rng, const Iterable & weights);
+  std::vector<size_t> gsl_rng_nonuniform_int(const gsl_rng* RNG, const size_t num_samples, const Col & weights);
+
+  std::vector<size_t> gsl_ran_seeds();
 
   Row gsl_ran_trunc_normal(
     const gsl_rng* RNG,
     const std::vector<Parameter*> _model_pars,
     const Row & mu, const Row & sigma_squared
   );
+
   Row gsl_ran_trunc_mv_normal(
     const gsl_rng* RNG,
     const vector<Parameter*> _model_pars,
@@ -134,10 +136,10 @@ namespace ABC {
     const Row & observed
   );
 
-  Row sample_posterior(
-    const gsl_rng* RNG,
-    const Col weights,
-    const Mat2D posterior
+  Mat2D sample_posterior(
+    const gsl_rng* RNG, const size_t num_samples,
+    const Col & weights,
+    const Mat2D & posterior
   );
 
   template<typename RandomAccessible>
@@ -147,15 +149,15 @@ namespace ABC {
 
     Col euclidean(const Mat2D & sims, const Row & ref);
 
-Row sample_predictive_priors(
-    const gsl_rng* RNG,
+Mat2D sample_predictive_priors(
+    const gsl_rng* RNG, const size_t num_samples,
     const Col & weights, const Mat2D & parameter_prior,
     const std::vector<Parameter*> & pars,
     const Row & doubled_variance
 );
 
-Row sample_mvn_predictive_priors(
-    const gsl_rng* RNG,
+Mat2D sample_mvn_predictive_priors(
+    const gsl_rng* RNG, const size_t num_samples,
     const Col & weights, const Mat2D & parameter_prior,
     const std::vector<Parameter*> & pars,
     const gsl_matrix* L
