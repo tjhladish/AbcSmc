@@ -288,7 +288,7 @@ bool AbcSmc::parse_config(string conf_filename) {
 }
 
 
-vector<double> AbcSmc::do_complicated_untransformations(vector<Parameter*>& _model_pars, Row& pars) {
+vector<double> AbcSmc::do_complicated_untransformations(const vector<Parameter*>& _model_pars, const Row & pars) {
     assert( _model_pars.size() == npar() );
     assert( static_cast<size_t>(pars.size()) == npar() );
     const vector<double> identities = {0.0, 1.0, 0.0, 1.0};
@@ -336,26 +336,43 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
 
     if (_num_smc_sets > next_set) {
 
-        db.Query("BEGIN EXCLUSIVE;").Next();
         //ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
         //_db_execute_stringstream(db, ss);
 
         stringstream ss;
-        Row pars;
+        const size_t num_particles = get_num_particles(next_set);
+
+        Mat2D noised_pars;
         const int last_serial = serials.back().back();
-        gsl_matrix* L = setup_mvn_sampler(next_set);
+        if (use_mvn_noise) {
+            gsl_matrix* L = setup_mvn_sampler(next_set);
+            noised_pars = ABC::sample_mvn_predictive_priors(
+                RNG, num_particles, 
+                _weights[next_set-1],
+                _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                _model_pars,
+                L
+            );
+            gsl_matrix_free(L);
+        } else {
+            noised_pars = ABC::sample_predictive_priors(
+                RNG, num_particles, 
+                _weights[next_set-1],
+                _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                _model_pars,
+                _doubled_variance[next_set-1]
+            );
+        }
+        
 
         string noise_type = use_mvn_noise ? "MULTIVARIATE" : "INDEPENDENT";
         cerr << "Populating next set using " << noise_type << " noising of parameters.\n";
-        const size_t num_particles = get_num_particles(next_set);
-        for (size_t i = 0; i < num_particles; i++) {
+
+        db.Query("BEGIN EXCLUSIVE;").Next();
+
+        for (size_t i = 0; i < noised_pars.rows(); i++) {
             const int serial = last_serial + 1 + i;
 
-            if (use_mvn_noise) {
-                pars = sample_mvn_predictive_priors(next_set, RNG, L);
-            } else {
-                pars = sample_predictive_priors(next_set, RNG);
-            }
             QueryStr qstr;
 
             ss << "insert into " << JOB_TABLE << " values ( " << serial << ", "
@@ -366,13 +383,14 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
-            const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-            ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
+            const size_t seed = gsl_rng_get(RNG);
+
+            ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << noised_pars(i, j); ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
             if (use_transformed_pars) {
-                vector<double> upars = do_complicated_untransformations(_model_pars, pars);
+                vector<double> upars = do_complicated_untransformations(_model_pars, noised_pars.row(i));
                 ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
                 //cerr << "attempting: " << ss.str() << endl;
                 _db_execute_stringstream(db, ss);
@@ -383,7 +401,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             _db_execute_stringstream(db, ss);
         }
         db.CommitTransaction();
-        gsl_matrix_free(L);
+        
     } else {
         cerr << "Database already contains " << _num_smc_sets << " complete sets.\n";
     }
@@ -514,14 +532,20 @@ void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_ori
 
     // sample parameter distributions; copy values into Y matrix and into send_data buffer
     Row par_row;
-    for (size_t i = 0; i < _num_particles; i++) {
-        if (t == 0) { // sample priors
+    if (t == 0) {
+        for (size_t i = 0; i < _num_particles; i++) {
             Mat2D posterior = slurp_posterior();
             int posterior_rank = -1;
             Y_orig.row(i) = sample_priors(RNG, posterior, posterior_rank);
-        } else {      // sample predictive priors
-            Y_orig.row(i) = sample_predictive_priors(t, RNG);
         }
+    } else {
+        Y_orig = ABC::sample_predictive_priors(
+            RNG, _num_particles, 
+            _weights[t-1],
+            _particle_parameters[t-1](_predictive_prior[t-1], Eigen::placeholders::all),
+            _model_pars,
+            _doubled_variance[t-1]
+        );
     }
 
     X_orig.resize(_num_particles, nmet());
@@ -1202,28 +1226,5 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
     }
 
     return sigma_hat;
-}
-
-
-Row AbcSmc::sample_mvn_predictive_priors(
-    int set_num, const gsl_rng* RNG, gsl_matrix* L
-) {
-    return ABC::sample_mvn_predictive_priors(
-        RNG, _weights[set_num-1],
-        _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
-        _model_pars,
-        L
-    );
-}
-
-Row AbcSmc::sample_predictive_priors(
-    int set_num, const gsl_rng* RNG
-) {
-    return ABC::sample_predictive_priors(
-        RNG, _weights[set_num-1],
-        _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
-        _model_pars,
-        _doubled_variance[set_num-1]
-    );
 }
 
