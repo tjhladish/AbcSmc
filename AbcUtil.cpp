@@ -729,3 +729,30 @@ namespace ABC {
     }
 
 }
+
+template<typename RandomAccessible>
+gsl_vector* ABC::to_gsl_v(const RandomAccessible & from) {
+    gsl_vector* res = gsl_vector_alloc(from.size());
+    for (size_t i = 0; i < from.size(); i++) {
+        gsl_vector_set(res, i, from[i]);
+    }
+    return res;
+};
+
+gsl_matrix* ABC::to_gsl_m(const Mat2D & from){
+    gsl_matrix* res = gsl_matrix_alloc(from.rows(), from.cols());
+    for (size_t i = 0; i < from.rows(); i++) {
+        for (size_t j = 0; j < from.cols(); j++) {
+            gsl_matrix_set(res, i, j, from(i,j));
+        }
+    }
+    return res;
+};
+
+Row ABC::sample_posterior(
+    const Col weights,
+    const Mat2D posterior,
+    const gsl_rng* RNG
+) {
+    return posterior(gsl_rng_nonuniform_int(weights, RNG), Eigen::placeholders::all);
+};

@@ -209,6 +209,17 @@ namespace ABC {
     const Row & observed
   );
 
+  Row sample_posterior(
+    const Col weights,
+    const Mat2D posterior,
+    const gsl_rng* RNG
+  );
+
+  template<typename RandomAccessible>
+  gsl_vector* to_gsl_v(const RandomAccessible & from);
+
+  gsl_matrix* to_gsl_m(const Mat2D & from);
+
 }
 
 #endif
