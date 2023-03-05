@@ -520,49 +520,6 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
     return true;
 }
 
-
-/*void AbcSmc::set_next_predictive_prior_size(int set_idx, int set_size) {
-    _next_predictive_prior_size = round(set_size * _predictive_prior_fraction);
-}*/
-
-
-void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
-
-    auto _num_particles = get_num_particles(t);
-
-    // sample parameter distributions; copy values into Y matrix and into send_data buffer
-    Row par_row;
-    if (t == 0) {
-        for (size_t i = 0; i < _num_particles; i++) {
-            Mat2D posterior = slurp_posterior();
-            int posterior_rank = -1;
-            Y_orig.row(i) = sample_priors(RNG, posterior, posterior_rank);
-        }
-    } else {
-        Y_orig = ABC::sample_predictive_priors(
-            RNG, _num_particles, 
-            _weights[t-1],
-            _particle_parameters[t-1](_predictive_prior[t-1], Eigen::placeholders::all),
-            _model_pars,
-            _doubled_variance[t-1]
-        );
-    }
-
-    X_orig.resize(_num_particles, nmet());
-
-    ABC::particle_scheduler(X_orig, Y_orig, _mp);
-
-}
-
-
-void AbcSmc::_particle_worker_mpi(
-    const size_t seed,
-    const size_t serial
-) {
-    ABC::particle_worker(npar(), nmet(), _simulator, seed, serial, _mp);
-}
-
-
 bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed, const unsigned long int serial) {
     vector<float_type> met_vec = (*_simulator)( as_vector(par), rng_seed, serial, _mp );
     bool particle_success = (met_vec.size() == nmet());
@@ -950,7 +907,7 @@ void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int 
     Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
 //    Mat2D Y = colwise_z_scores( Y_orig );
 
-    Col distances  = euclidean(obs_met, X);
+    Col distances  = euclidean(X, obs_met);
     _set_predictive_prior (t, next_pred_prior_size, distances);
 }
 
@@ -1009,7 +966,9 @@ PLS_Model AbcSmc::_filter_particles (
     // Is casting as real always safe?
     Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
     Mat2D sim_scores = plsm.scores(X, num_components_used).real();
-    Col   distances  = ABC::euclidean(obs_scores, sim_scores);
+    Col   distances  = ABC::euclidean(sim_scores, obs_scores);
+
+
 
     _set_predictive_prior(t, next_pred_prior_size, distances);
 
@@ -1124,27 +1083,28 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_r
     return par_sample;
 }
 
-void AbcSmc::calculate_doubled_variances( int t ) {
+void AbcSmc::calculate_doubled_variances( const size_t smcSet ) {
     vector<RunningStat> stats(npar());
     Row v2 = Row::Zero(npar());
-    Mat2D pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
+    Mat2D pars = _particle_parameters[smcSet](_predictive_prior[smcSet], Eigen::placeholders::all);
     // TODO: turn this into Eigen column-wise operation?
     for (size_t i = 0; i < pars.cols(); i++) {
         stats[i].Push(pars.col(i));
         v2[i] = 2 * stats[i].Variance();
     }
-    assert(_doubled_variance.size() == t-1);
+    assert(_doubled_variance.size() == smcSet); // current length of doubled variance == index of previous set
     append_doubled_variance(v2);
 }
 
 void AbcSmc::calculate_predictive_prior_weights(int set_num) {
     // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
-    calculate_doubled_variances( set_num );
+    calculate_doubled_variances(set_num);
     if (set_num == 0) {
         // uniform weights for set 0 predictive prior
         const double uniform_wt = 1.0/(double) _predictive_prior[set_num].size();
         _weights.push_back( Col::Constant(_predictive_prior[set_num].size(), uniform_wt) );
     } else if ( set_num > 0 ) {
+
         // weights from set - 1 are needed to calculate weights for current set
         Col weight = Col::Zero(_predictive_prior[set_num].size());
 
@@ -1228,3 +1188,37 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
     return sigma_hat;
 }
 
+void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
+
+    auto _num_particles = get_num_particles(t);
+
+    // sample parameter distributions; copy values into Y matrix and into send_data buffer
+    Row par_row;
+    if (t == 0) {
+        for (size_t i = 0; i < _num_particles; i++) {
+            Mat2D posterior = slurp_posterior();
+            int posterior_rank = -1;
+            Y_orig.row(i) = sample_priors(RNG, posterior, posterior_rank);
+        }
+    } else {
+        Y_orig = ABC::sample_predictive_priors(
+            RNG, _num_particles, 
+            _weights[t-1],
+            _particle_parameters[t-1](_predictive_prior[t-1], Eigen::placeholders::all),
+            _model_pars,
+            _doubled_variance[t-1]
+        );
+    }
+
+    X_orig.resize(_num_particles, nmet());
+
+    ABC::particle_scheduler(X_orig, Y_orig, _mp);
+
+}
+
+void AbcSmc::_particle_worker_mpi(
+    const size_t seed,
+    const size_t serial
+) {
+    ABC::particle_worker(npar(), nmet(), _simulator, seed, serial, _mp);
+}

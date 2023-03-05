@@ -397,7 +397,7 @@ class AbcSmc {
 
         std::vector<double> do_complicated_untransformations(const std::vector<Parameter*> & _model_pars, const Row & pars );
 
-        void calculate_doubled_variances( int t );
+        void calculate_doubled_variances( const size_t previous_set );
 
         void calculate_predictive_prior_weights( int set_num );
 
