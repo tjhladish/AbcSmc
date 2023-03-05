@@ -281,36 +281,56 @@ Mat2D colwise_z_scores(const Mat2D & mat) {
       exit(100);
   }
 
-  Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng) {
+  Row gsl_ran_trunc_mv_normal(
+    const gsl_rng* RNG,
+    const vector<Parameter*> _model_pars,
+    const Row & mu, const gsl_matrix* L
+  ) {
       const size_t npar = _model_pars.size();
       Row par_values = Row::Zero(npar);
       gsl_vector* result = gsl_vector_alloc(npar);
       bool success = false;
+      gsl_vector * gslmu = to_gsl_v(mu);
       while (not success) {
           success = true;
-          gsl_ran_multivariate_gaussian(rng, mu, L, result);
+          gsl_ran_multivariate_gaussian(RNG, gslmu, L, result);
           for (size_t j = 0; j < npar; j++) {
               par_values[j] = gsl_vector_get(result, j);
               if (_model_pars[j]->get_numeric_type() == INT) par_values(j) = (double) ((int) (par_values(j) + 0.5));
               if (par_values[j] < _model_pars[j]->get_prior_min() or par_values[j] > _model_pars[j]->get_prior_max()) success = false;
           }
       }
+      gsl_vector_free(gslmu);
       gsl_vector_free(result);
       return par_values;
   }
 
-  double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng) {
-      assert(min < max);
-      double sigma = sqrt(sigma_squared);
-      // Don't like this, but it will work
-      // as long as min and max are reasonable
-      // (relative to the pdf)
-      while (1) {
-          double dev = gsl_ran_gaussian(rng, sigma) + mu;
-          if (dev >= min and dev <= max) {
-              return dev;
-          }
+  Row gsl_ran_trunc_normal(
+    const gsl_rng* RNG,
+    const std::vector<Parameter*> _model_pars,
+    const Row & mu, const Row & sigma_squared
+  ) {
+      Row sigma = sigma_squared.array().sqrt();
+      Row res = Row::Zero(sigma.cols());
+      for (size_t j = 0; j < sigma.cols(); j++) {
+        // Don't like this, but it will work
+        // as long as min and max are reasonable
+        // (relative to the pdf)
+        bool success = false;
+        auto mpar = _model_pars[j];
+        while (!success) {
+            double dev = gsl_ran_gaussian(RNG, sigma[j]) + mu[j];
+            success = dev >= mpar->get_prior_min() and dev <= mpar->get_prior_max();
+            if (success) {
+                if (mpar->get_numeric_type() == INT) {
+                    res[j] = (double) ((int) (dev + 0.5));
+                } else {
+                    res[j] = dev;
+                }
+            }
+        }
       }
+      return res;      
   }
 
   LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y) {
@@ -524,16 +544,17 @@ Row ABC::sample_predictive_priors(
     const Row & doubled_variance
 ) {
     const Row par = ABC::sample_posterior(RNG, weights, parameter_prior);
-    Row new_par = Row::Zero(par.cols());
-    for (size_t parIdx = 0; parIdx < par.cols(); parIdx++) {
-        const Parameter* parameter = pars[parIdx];
-        double par_min = parameter->get_prior_min();
-        double par_max = parameter->get_prior_max();
-        new_par(parIdx) = ABC::rand_trunc_normal(par[parIdx], doubled_variance[parIdx], par_min, par_max, RNG );
+    return ABC::gsl_ran_trunc_normal(RNG, pars, par, doubled_variance);
+};
 
-        if (parameter->get_numeric_type() == INT) {
-            new_par(parIdx) = (double) ((int) (new_par(parIdx) + 0.5));
-        }
-    }
-    return new_par;
-}
+Row ABC::sample_mvn_predictive_priors(
+    const gsl_rng* RNG,
+    const Col & weights, const Mat2D & parameter_prior,
+    const std::vector<Parameter*> & pars,
+    const gsl_matrix* L
+) {
+    // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
+    const Row par = ABC::sample_posterior(RNG, weights, parameter_prior);
+    return gsl_ran_trunc_mv_normal(RNG, pars, par, L);
+    
+};

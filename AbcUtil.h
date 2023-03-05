@@ -99,8 +99,17 @@ namespace ABC {
   template<typename Iterable>
   int gsl_rng_nonuniform_int(const gsl_rng* rng, const Iterable & weights);
 
-  double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng);
-  Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng);
+  Row gsl_ran_trunc_normal(
+    const gsl_rng* RNG,
+    const std::vector<Parameter*> _model_pars,
+    const Row & mu, const Row & sigma_squared
+  );
+  Row gsl_ran_trunc_mv_normal(
+    const gsl_rng* RNG,
+    const vector<Parameter*> _model_pars,
+    const Row & mu,
+    const gsl_matrix* L
+  );
 
   LinearFit* lin_reg(const std::vector<double> &x, const std::vector<double> &y);
 
@@ -143,6 +152,13 @@ Row sample_predictive_priors(
     const Col & weights, const Mat2D & parameter_prior,
     const std::vector<Parameter*> & pars,
     const Row & doubled_variance
+);
+
+Row sample_mvn_predictive_priors(
+    const gsl_rng* RNG,
+    const Col & weights, const Mat2D & parameter_prior,
+    const std::vector<Parameter*> & pars,
+    const gsl_matrix* L
 );
 
 }
