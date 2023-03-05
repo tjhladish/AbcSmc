@@ -985,22 +985,11 @@ PLS_Model AbcSmc::_filter_particles (
     // Is casting as real always safe?
     Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
     Mat2D sim_scores = plsm.scores(X, num_components_used).real();
-    Col   distances  = euclidean(obs_scores, sim_scores);
+    Col   distances  = ABC::euclidean(obs_scores, sim_scores);
 
     _set_predictive_prior(t, next_pred_prior_size, distances);
 
     return plsm;
-}
-
-Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
-    Col distances = Col::Zero(sim_met.rows());
-    for (int r = 0; r<sim_met.rows(); r++) {
-        for (int c = 0; c<sim_met.cols(); c++) {
-            distances(r) += pow(obs_met(c) - sim_met(r,c), 2);
-        }
-        distances(r) = sqrt( distances(r) );
-    }
-    return distances;
 }
 
 Mat2D AbcSmc::slurp_posterior() {

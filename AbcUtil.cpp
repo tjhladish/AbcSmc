@@ -461,6 +461,12 @@ Mat2D colwise_z_scores(const Mat2D & mat) {
       return logistic_reg(data);
   }
 
+  Col euclidean(const Mat2D & sims, const Row & ref) {
+    // for each row in sims, subtract the reference row
+    // norm = sqrt(sum_i xi^2)
+    return (sims.rowwise() - ref).rowwise().norm();
+  }
+
 }
 
 double ABC::calculate_nrmse(
