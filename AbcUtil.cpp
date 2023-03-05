@@ -749,32 +749,42 @@ gsl_matrix* ABC::to_gsl_m(const Mat2D & from){
     return res;
 };
 
-Row ABC::sample_posterior(
-    const gsl_rng* RNG,
-    const Col weights,
-    const Mat2D posterior
+Mat2D ABC::sample_posterior(
+    const gsl_rng* RNG, const size_t num_samples,
+    const Col & weights,
+    const Mat2D & posterior
 ) {
-    return posterior(gsl_rng_nonuniform_int(RNG, weights), Eigen::placeholders::all);
+    return posterior( // from the posterior
+        gsl_rng_nonuniform_int(RNG, num_samples, weights), // get a weighted-random draw of rows
+        Eigen::placeholders::all
+    );
 };
 
-Row ABC::sample_predictive_priors(
-    const gsl_rng* RNG,
+Mat2D ABC::sample_predictive_priors(
+    const gsl_rng* RNG, const size_t num_samples,
     const Col & weights, const Mat2D & parameter_prior,
     const std::vector<Parameter*> & pars,
     const Row & doubled_variance
 ) {
-    const Row par = ABC::sample_posterior(RNG, weights, parameter_prior);
-    return ABC::gsl_ran_trunc_normal(RNG, pars, par, doubled_variance);
+    const Mat2D sampled_pars = ABC::sample_posterior(RNG, num_samples, weights, parameter_prior);
+    Mat2D noised_pars = Mat2D(sampled_pars.rows(), sampled_pars.cols());
+    for (size_t i = 0; i < noised_pars.rows(); i++) {
+        noised_pars.row(i) = gsl_ran_trunc_normal(RNG, pars, sampled_pars.row(i), doubled_variance);
+    }
+    return noised_pars;
 };
 
-Row ABC::sample_mvn_predictive_priors(
-    const gsl_rng* RNG,
+Mat2D ABC::sample_mvn_predictive_priors(
+    const gsl_rng* RNG, const size_t num_samples,
     const Col & weights, const Mat2D & parameter_prior,
     const std::vector<Parameter*> & pars,
     const gsl_matrix* L
 ) {
     // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
-    const Row par = ABC::sample_posterior(RNG, weights, parameter_prior);
-    return gsl_ran_trunc_mv_normal(RNG, pars, par, L);
-    
+    const Mat2D sampled_pars = ABC::sample_posterior(RNG, num_samples, weights, parameter_prior);
+    Mat2D noised_pars = Mat2D(sampled_pars.rows(), sampled_pars.cols());
+    for (size_t i = 0; i < noised_pars.rows(); i++) {
+        noised_pars.row(i) = gsl_ran_trunc_mv_normal(RNG, pars, sampled_pars.row(i), L);
+    }
+    return noised_pars;
 };
