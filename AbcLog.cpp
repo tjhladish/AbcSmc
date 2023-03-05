@@ -48,7 +48,7 @@ void AbcLog::report_convergence_data(
     }
     for (size_t i = 0; i < abc->_model_pars.size(); i++) {
         const Parameter* par = abc->_model_pars[i];
-        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
+        const double current_stdev = sqrt(abc->_doubled_variance[set_t][i]/2.0);
         const double prior_mean = par->get_prior_mean();
         const double prior_mean_delta = current_means[i] - prior_mean;
         const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
@@ -64,7 +64,7 @@ void AbcLog::report_convergence_data(
             os << "  Standard deviations:\n";
             print_stats("Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n", os);
         } else {
-            double last_stdev = sqrt(abc->_model_pars[i]->get_doubled_variance(set_t-1)/2.0);
+            double last_stdev = sqrt(abc->_doubled_variance[set_t-1][i]/2.0);
             double delta, pct_chg;
 
             os << "  Par " << i << ": \"" << abc->_model_pars[i]->get_name() << "\"" << std::endl;
