@@ -919,10 +919,12 @@ void AbcSmc::_set_predictive_prior (
 
 void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
     // x is metrics, y is parameters
-    Row X_sim_means, X_sim_stdev;
+    Row X_sim_means = X_orig.colwise().mean();
+    Row X_sim_stdev = ABC::colwise_stdev(X_orig, X_sim_means);
+    Row obs_met = z_scores(_met_vals, X_sim_means, X_sim_stdev);
+
     Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
-    Mat2D Y = colwise_z_scores( Y_orig );
-    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
+//    Mat2D Y = colwise_z_scores( Y_orig );
 
     Col distances  = euclidean(obs_met, X);
     _set_predictive_prior (t, next_pred_prior_size, distances);
@@ -956,10 +958,11 @@ PLS_Model AbcSmc::_filter_particles (
     int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size,
     const bool verbose
 ) {
-    Row X_sim_means, X_sim_stdev;
+    Row X_sim_means = X_orig.colwise().mean();
+    Row X_sim_stdev = colwise_stdev(X_orig, X_sim_means);
     Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
     Mat2D Y = colwise_z_scores( Y_orig );
-    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
+    Row obs_met = z_scores(_met_vals, X_sim_means, X_sim_stdev);
 
     const size_t pls_training_set_size = round(X.rows() * _pls_training_fraction);
     // @tjh TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
@@ -1136,13 +1139,11 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
     calculate_doubled_variances( set_num );
     if (set_num == 0) {
         // uniform weights for set 0 predictive prior
-        //_weights[set_num].resize(_predictive_prior[set_num].size(), 1.0/(double) _predictive_prior[set_num].size());
         const double uniform_wt = 1.0/(double) _predictive_prior[set_num].size();
-        _weights.push_back( vector<double>(_predictive_prior[set_num].size(), uniform_wt) );
+        _weights.push_back( Col::Constant(_predictive_prior[set_num].size(), uniform_wt) );
     } else if ( set_num > 0 ) {
         // weights from set - 1 are needed to calculate weights for current set
-        _weights.push_back( vector<double>( _predictive_prior[set_num].size(), 0.0 ) );
-        //_weights[set_num].resize( _predictive_prior[set_num].size() );
+        Col weight = Col::Zero(_predictive_prior[set_num].size());
 
         Mat2D par_values = _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all);
         Mat2D prev_par_values = _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all);
@@ -1179,9 +1180,12 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
                 denominator += running_product;
             }
 
-            _weights[set_num][post_rank] = numerator / denominator;
+            weight[post_rank] = numerator / denominator;
         }
-        normalize_weights( _weights[set_num] );
+
+        weight.normalize();
+
+        _weights.push_back(weight);
     }
 }
 
@@ -1194,18 +1198,12 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
     gsl_matrix* sigma_hat = gsl_matrix_alloc(num_pars, num_pars);
 
     if (use_mvn_noise) {
+
         // INITIALIZE DATA STRUCTURES
         Mat2D par_values = _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all);
         // container for predictive prior aka posterior from last set
-        gsl_matrix* posterior_par_vals = gsl_matrix_alloc(par_values.rows(), par_values.cols());
+        gsl_matrix* posterior_par_vals = ABC::to_gsl_m(par_values);
 
-
-        for (size_t post_rank = 0; post_rank < par_values.rows(); ++post_rank) {
-            for (size_t parIdx = 0; parIdx < par_values.cols(); ++parIdx) {
-                // copy values from pred prior into a gsl matrix
-                gsl_matrix_set(posterior_par_vals, post_rank, parIdx, par_values(post_rank, parIdx));
-            }
-        }
         // calculate maximum likelihood estimate of variance-covariance matrix sigma_hat
         gsl_ran_multivariate_gaussian_vcov(posterior_par_vals, sigma_hat);
 
@@ -1228,43 +1226,37 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
 
 
 Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L ) {
-    // container for sampled values
-    Row par_values = Row::Zero(npar());
     // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
-    const int r = _predictive_prior[set_num-1][gsl_rng_nonuniform_int(_weights[set_num-1], RNG)];
-    const Row par = _particle_parameters[set_num-1](r, Eigen::placeholders::all);
-    gsl_vector* par_val_hat = gsl_vector_alloc(par.cols());
-    for (size_t parIdx = 0; parIdx < par.cols(); parIdx++) {
-        gsl_vector_set(par_val_hat, parIdx, par[parIdx]);
-    }
-    par_values = rand_trunc_mv_normal( _model_pars, par_val_hat, L, RNG );
+    const Row par = sample_posterior(
+        _weights[set_num-1],
+        _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
+        RNG
+    );
+    gsl_vector* par_val_hat = to_gsl_v(par);
+    Row par_values = rand_trunc_mv_normal( _model_pars, par_val_hat, L, RNG );
     gsl_vector_free(par_val_hat);
 
     return par_values;
 }
 
 Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
-    Row par_values = Row::Zero(npar());
-    // Select a particle index r to use from the predictive prior
-    int r = _predictive_prior[set_num-1][gsl_rng_nonuniform_int(_weights[set_num-1], RNG)];
-    const Row par = _particle_parameters[set_num-1](r, Eigen::placeholders::all);
+    const Row par = sample_posterior(
+        _weights[set_num-1],
+        _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
+        RNG
+    );
+    Row new_par = Row::Zero(npar());
     for (size_t parIdx = 0; parIdx < par.cols(); parIdx++) {
         const Parameter* parameter = _model_pars[parIdx];
         double doubled_variance = parameter->get_doubled_variance(set_num-1);
         double par_min = parameter->get_prior_min();
         double par_max = parameter->get_prior_max();
-        par_values(parIdx) = rand_trunc_normal(par[parIdx], doubled_variance, par_min, par_max, RNG );
+        new_par(parIdx) = rand_trunc_normal(par[parIdx], doubled_variance, par_min, par_max, RNG );
 
         if (parameter->get_numeric_type() == INT) {
-            par_values(parIdx) = (double) ((int) (par_values(parIdx) + 0.5));
+            new_par(parIdx) = (double) ((int) (new_par(parIdx) + 0.5));
         }
     }
-    return par_values;
-}
-
-Row AbcSmc::_z_transform_observed_metrics(Row& means, Row& stdevs) {
-    Row zmat = Row::Zero(nmet());
-    for (size_t i = 0; i < nmet(); i++) { zmat(i) = (_model_mets[i]->get_obs_val() - means(i)) / stdevs(i); }
-    return zmat;
+    return new_par;
 }
 

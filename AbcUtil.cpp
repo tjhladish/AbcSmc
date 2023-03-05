@@ -82,39 +82,40 @@ namespace ABC {
   }
 
 
-  Row col_stdev( Mat2D mat, Row means ) {
-      Row stdevs = Row::Zero(mat.cols());
+  Row colwise_stdev(const Mat2D & mat, const Row & means ) {
       const float_type N = mat.rows();
-      if ( N < 2 ) return stdevs;
-
-      const float_type N_inv = 1.0/(N-1); // N-1 for unbiased sample variance
-      for (int i=0; i<mat.cols(); i++) {
-          stdevs[i] = sqrt( (mat.col(i).array()-means[i]).square().sum() * N_inv );
-      }
-      return stdevs;
+      if ( N < 2 ) return Row::Zero(mat.cols());
+      // N-1 for unbiased sample variance
+      return ((mat.rowwise() - means).array().square().colwise().sum()/(N-1)).sqrt();
   }
 
-  Mat2D colwise_z_scores( const Mat2D& mat) {
-      Row means, stdev;
-      return colwise_z_scores(mat, means, stdev);
+  Row z_scores(
+    const Row & vals, const Row & means, const Row & stdev
+  ) {
+    return (vals - means).cwiseQuotient(stdev);
   }
 
-  Mat2D colwise_z_scores( const Mat2D& mat, Row& means, Row& stdev ) {
-      // Standardize values by column, i.e. convert to Z-scores
-      means = col_means( mat );
-      stdev = col_stdev( mat, means );
+Mat2D colwise_z_scores(const Mat2D & mat, const Row & mean, const Row & stdev) {
 
-      // This is not technically correct, since z scores are undefined if the stdev is 0.
-      // In our case, however, the resulting scores cannot be nan, or downstream calculations
-      // are fouled up, so we basically set them to 0 as a stop-gap solution.  A better solution
-      // would be to not pass this parameter in to the PLS regression.  This should be possible
-      // but needs to be implemented with care.
-      for (int c = 0; c<stdev.size(); c++) if (stdev[c] == 0) stdev[c] = 1;
+    Row local_sd = stdev;
+    // sd == 0 => implies all values the same => x_i - mean == 0
+    // Technically: z scores are undefined if the stdev is 0 => this should yield nan.
+    // However, scores == nan => borks downstream calculations
+    // This makes the scores == 0 instead.
+    // TODO: change algorithm to not pass this parameter to PLS.
+    for (int c = 0; c < local_sd.size(); c++) if (local_sd[c] == 0) local_sd[c] = 1;
+    Mat2D mmeans = mat.rowwise() - mean;
 
-      Mat2D zmat = Mat2D::Zero(mat.rows(), mat.cols());
-      for (int r = 0; r<mat.rows(); r++) { zmat.row(r) = (mat.row(r) - means).cwiseQuotient(stdev); }
-      return zmat;
-  }
+    Mat2D zs = mmeans.array().rowwise() / stdev.array();
+    return zs;
+};
+
+Mat2D colwise_z_scores(const Mat2D & mat) {
+    Row means = mat.colwise().mean();
+    Row stdev = colwise_stdev(mat, means);
+    return colwise_z_scores(mat, means, stdev);
+};
+
 
   /*
   template <typename T> int sgn(T val) {
@@ -267,13 +268,14 @@ namespace ABC {
       return optimize_box_cox(data, -5, 5, 0.1);
   }
 
-  int gsl_rng_nonuniform_int(vector<double>& weights, const gsl_rng* rng) {
+  template<typename Iterable>
+  int gsl_rng_nonuniform_int(const Iterable & weights, const gsl_rng* rng) {
       // Weights must sum to 1!!
       double running_sum = 0;
       double r = gsl_rng_uniform(rng);
-      for (size_t i = 0; i<weights.size(); i++) {
+      for (size_t i = 0; i < weights.size(); i++) {
           running_sum += weights[i];
-          if (r<=running_sum) return i;
+          if (r <= running_sum) return i;
       }
       cerr << "ERROR: Weights may not be normalized\n\t Weights summed to: " << running_sum << endl;
       exit(100);
@@ -481,3 +483,30 @@ double ABC::calculate_nrmse(
     return sqrt(res);
 
 }
+
+template<typename RandomAccessible>
+gsl_vector* ABC::to_gsl_v(const RandomAccessible & from) {
+    gsl_vector* res = gsl_vector_alloc(from.size());
+    for (size_t i = 0; i < from.size(); i++) {
+        gsl_vector_set(res, i, from[i]);
+    }
+    return res;
+};
+
+gsl_matrix* ABC::to_gsl_m(const Mat2D & from){
+    gsl_matrix* res = gsl_matrix_alloc(from.rows(), from.cols());
+    for (size_t i = 0; i < from.rows(); i++) {
+        for (size_t j = 0; j < from.cols(); j++) {
+            gsl_matrix_set(res, i, j, from(i,j));
+        }
+    }
+    return res;
+};
+
+Row ABC::sample_posterior(
+    const Col weights,
+    const Mat2D posterior,
+    const gsl_rng* RNG
+) {
+    return posterior(gsl_rng_nonuniform_int(weights, RNG), Eigen::placeholders::all);
+};

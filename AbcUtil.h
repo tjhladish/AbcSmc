@@ -52,16 +52,15 @@ namespace ABC {
   inline float_type logit(const float_type p) { assert(p <= 1.0); assert (p >= 0.0); return log( p / (1.0 - p) ); }
   inline float_type logistic(const float_type l) { return 1.0 / (1.0 + exp(-l)); }
 
-  inline Row col_means( Mat2D mat ) { return mat.colwise().sum() / mat.rows(); }
-
   //int _sgn(float_type val) { return (0 < val) - (val < 0); }
 
   Mat2D read_matrix_file(std::string filename, char sep);
 
-  Row col_stdev( Mat2D mat, Row means );
+  Row colwise_stdev(const Mat2D & mat, const Row & means);
 
-  Mat2D colwise_z_scores( const Mat2D& mat );
-  Mat2D colwise_z_scores( const Mat2D& mat, Row& means, Row& stdev );
+  Mat2D colwise_z_scores( const Mat2D & mat, const Row & mean, const Row & stdev);
+  Mat2D colwise_z_scores( const Mat2D & mat );
+  Row z_scores(const Row & metobs, const Row & means, const Row & stdevs);
 
   float_type mean(const Col data);
 
@@ -97,7 +96,8 @@ namespace ABC {
 
   inline double uniform_pdf(double a, double b) { return 1.0 / fabs(b-a); }
 
-  int gsl_rng_nonuniform_int(std::vector<double>& weights, const gsl_rng* rng);
+  template<typename Iterable>
+  int gsl_rng_nonuniform_int(const Iterable & weights, const gsl_rng* rng);
 
   double rand_trunc_normal(double mu, double sigma_squared, double min, double max, const gsl_rng* rng);
   Row rand_trunc_mv_normal(const vector<Parameter*> _model_pars, gsl_vector* mu, gsl_matrix* L, const gsl_rng* rng);
@@ -124,6 +124,17 @@ namespace ABC {
     const Mat2D & posterior_mets,
     const Row & observed
   );
+
+  Row sample_posterior(
+    const Col weights,
+    const Mat2D posterior,
+    const gsl_rng* RNG
+  );
+
+  template<typename RandomAccessible>
+  gsl_vector* to_gsl_v(const RandomAccessible & from);
+
+  gsl_matrix* to_gsl_m(const Mat2D & from);
 
 }
 
