@@ -74,9 +74,6 @@ class Parameter {
             }
         }
 
-        // doubled variance of particles
-        double get_doubled_variance(int t) const { return doubled_variance[t]; }
-        void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
         void set_prior_limits(double min, double max) { fmin = min; fmax = max; }
         double get_prior_min() const { return fmin; }
         double get_prior_max() const { return fmax; }
@@ -109,7 +106,6 @@ class Parameter {
         PriorType ptype;
         NumericType ntype;
         double fmin, fmax, mean, stdev, state, step;
-        std::vector<double> doubled_variance;
         double (*untran_func) (const double);
         std::pair<double, double> rescale;
         std::map < std::string, std::vector<int> > par_modification_map; // how this par modifies others
@@ -324,6 +320,10 @@ class AbcSmc {
         std::vector< Mat2D > get_particle_parameters() { return _particle_parameters; }
         std::vector< Mat2D > get_particle_metrics()    { return _particle_metrics; }
 
+        Row get_doubled_variance(const size_t t) const { return _doubled_variance[t]; }
+        Row append_doubled_variance(const Row & v2) { _doubled_variance.push_back(v2); }
+
+
     private:
         friend AbcLog;
         Mat2D X_orig;
@@ -351,6 +351,8 @@ class AbcSmc {
         std::vector< Mat2D > _particle_parameters;
         std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
         std::vector<Col> _weights;
+        std::vector<Row> _doubled_variance;
+
         bool use_mvn_noise;
         bool use_pls_filtering;
 

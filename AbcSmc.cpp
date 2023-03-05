@@ -1102,14 +1102,15 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_r
 
 void AbcSmc::calculate_doubled_variances( int t ) {
     vector<RunningStat> stats(npar());
+    Row v2 = Row::Zero(npar());
     Mat2D pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
     // TODO: turn this into Eigen column-wise operation?
     for (size_t i = 0; i < pars.cols(); i++) {
         stats[i].Push(pars.col(i));
+        v2[i] = 2 * stats[i].Variance();
     }
-    for (size_t j = 0; j < npar(); j++) {
-        _model_pars[j]->append_doubled_variance( 2 * stats[j].Variance() );
-    }
+    assert(_doubled_variance.size() == t-1);
+    append_doubled_variance(v2);
 }
 
 void AbcSmc::calculate_predictive_prior_weights(int set_num) {
@@ -1143,16 +1144,17 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
 
             for (size_t k = 0; k < prev_pars.rows(); k++) {
                 double running_product = _weights[set_num - 1][k]; // TODO: rowwise op?
+                Row old_doubled_variance = _doubled_variance[set_num -1];
                 for (size_t j = 0; j < prev_pars.cols(); j++) {
                     double par_value = pars(i,j);
                     double old_par_value = prev_pars(k, j);
-                    double old_doubled_variance = _model_pars[j]->get_doubled_variance(set_num-1);
+                    double old_dv = old_doubled_variance[j];
 
                     // This conditional handles the (often improbable) case where a parameter has completely converged.
                     // It allows ABC to continue exploring other parameters, rather than causing the math
                     // to fall apart because the density at the converged value is infinite.
-                    if (old_doubled_variance != 0 or par_value != old_par_value) {
-                        running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_doubled_variance) );
+                    if (old_dv != 0 or par_value != old_par_value) {
+                        running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_dv) );
                     }
                 }
                 denominator += running_product;
@@ -1205,10 +1207,9 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
 
 Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L ) {
     // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
-    const Row par = sample_posterior(
+    const Row par = sample_posterior(RNG,
         _weights[set_num-1],
-        _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
-        RNG
+        _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all)
     );
     gsl_vector* par_val_hat = to_gsl_v(par);
     Row par_values = rand_trunc_mv_normal( _model_pars, par_val_hat, L, RNG );
@@ -1218,23 +1219,11 @@ Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_m
 }
 
 Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
-    const Row par = sample_posterior(
-        _weights[set_num-1],
+    ABC::sample_predictive_priors(
+        RNG, _weights[set_num-1],
         _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
-        RNG
+        _model_pars,
+        _doubled_variance[set_num-1]
     );
-    Row new_par = Row::Zero(npar());
-    for (size_t j = 0; j < par.cols(); j++) {
-        const Parameter* parameter = _model_pars[j];
-        double doubled_variance = parameter->get_doubled_variance(set_num-1);
-        double par_min = parameter->get_prior_min();
-        double par_max = parameter->get_prior_max();
-        new_par(j) = rand_trunc_normal(par[j], doubled_variance, par_min, par_max, RNG );
-
-        if (parameter->get_numeric_type() == INT) {
-            new_par(j) = (double) ((int) (new_par(j) + 0.5));
-        }
-    }
-    return new_par;
 }
 
