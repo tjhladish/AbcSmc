@@ -389,8 +389,6 @@ class AbcSmc {
         bool _update_sets_table(sqdb::Db &db, int t);
         //bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
-        Col euclidean( Row obs_met, Mat2D sim_met );
-
         Mat2D slurp_posterior();
 
         Row sample_priors( const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank );
