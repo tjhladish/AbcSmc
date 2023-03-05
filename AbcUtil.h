@@ -210,9 +210,9 @@ namespace ABC {
   );
 
   Row sample_posterior(
+    const gsl_rng* RNG,
     const Col weights,
-    const Mat2D posterior,
-    const gsl_rng* RNG
+    const Mat2D posterior
   );
 
   template<typename RandomAccessible>
@@ -221,6 +221,13 @@ namespace ABC {
   gsl_matrix* to_gsl_m(const Mat2D & from);
 
     Col euclidean(const Mat2D & sims, const Row & ref);
+
+Row sample_predictive_priors(
+    const gsl_rng* RNG,
+    const Col & weights, const Mat2D & parameter_prior,
+    const std::vector<Parameter*> & pars,
+    const Row & doubled_variance
+);
 
 }
 

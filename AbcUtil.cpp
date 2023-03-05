@@ -750,9 +750,30 @@ gsl_matrix* ABC::to_gsl_m(const Mat2D & from){
 };
 
 Row ABC::sample_posterior(
+    const gsl_rng* RNG,
     const Col weights,
-    const Mat2D posterior,
-    const gsl_rng* RNG
+    const Mat2D posterior
 ) {
-    return posterior(gsl_rng_nonuniform_int(weights, RNG), Eigen::placeholders::all);
+    return posterior(gsl_rng_nonuniform_int(RNG, weights), Eigen::placeholders::all);
 };
+
+Row ABC::sample_predictive_priors(
+    const gsl_rng* RNG,
+    const Col & weights, const Mat2D & parameter_prior,
+    const std::vector<Parameter*> & pars,
+    const Row & doubled_variance
+) {
+    const Row par = ABC::sample_posterior(RNG, weights, parameter_prior);
+    Row new_par = Row::Zero(par.cols());
+    for (size_t parIdx = 0; parIdx < par.cols(); parIdx++) {
+        const Parameter* parameter = pars[parIdx];
+        double par_min = parameter->get_prior_min();
+        double par_max = parameter->get_prior_max();
+        new_par(parIdx) = ABC::rand_trunc_normal(par[parIdx], doubled_variance[parIdx], par_min, par_max, RNG );
+
+        if (parameter->get_numeric_type() == INT) {
+            new_par(parIdx) = (double) ((int) (new_par(parIdx) + 0.5));
+        }
+    }
+    return new_par;
+}
