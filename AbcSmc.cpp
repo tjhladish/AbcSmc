@@ -1205,21 +1205,21 @@ gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
 }
 
 
-Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L ) {
-    // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
-    const Row par = sample_posterior(RNG,
-        _weights[set_num-1],
-        _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all)
+Row AbcSmc::sample_mvn_predictive_priors(
+    int set_num, const gsl_rng* RNG, gsl_matrix* L
+) {
+    return ABC::sample_mvn_predictive_priors(
+        RNG, _weights[set_num-1],
+        _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
+        _model_pars,
+        L
     );
-    gsl_vector* par_val_hat = to_gsl_v(par);
-    Row par_values = rand_trunc_mv_normal( _model_pars, par_val_hat, L, RNG );
-    gsl_vector_free(par_val_hat);
-
-    return par_values;
 }
 
-Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
-    ABC::sample_predictive_priors(
+Row AbcSmc::sample_predictive_priors(
+    int set_num, const gsl_rng* RNG
+) {
+    return ABC::sample_predictive_priors(
         RNG, _weights[set_num-1],
         _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
         _model_pars,
