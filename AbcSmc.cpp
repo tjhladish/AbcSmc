@@ -527,7 +527,6 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
     return true;
 }
 
-
 bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed, const unsigned long int serial) {
     vector<float_type> met_vec = (*_simulator)( as_vector(par), rng_seed, serial, _mp );
     bool particle_success = (met_vec.size() == nmet());
