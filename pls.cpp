@@ -309,12 +309,12 @@ const Rowsz PLS_Model::optimal_num_components(const Mat2D& X, const Mat2D& Y, co
     // different from the min PRESS at alpha = 0.1 for each Y category
     const float_type ALPHA = 0.1;
     for (size_t i = 0; i < errors.size(); i++) {             // for each Y category
-        Col err1 = errors[i].col(min_press_idx(i));
-        for (size_t j = 0; j < min_press_idx(i); j++) {      // for each smaller number of components
-            Col err2 = errors[i].col(j);
-            float_type p = wilcoxon(err1, err2);
+        Col err1 = errors[i].col(min_press_idx(i));          // get errors for the min press # of components
+        for (size_t j = 0; j < min_press_idx(i); j++) {      // for fewer # of components
+            Col err2 = errors[i].col(j);                     // ... get their errors
+            float_type p = wilcoxon(err1, err2);             // determine if error-with-fewer-components is good enough
             if (p > ALPHA) {
-                best_comp[i] = j + 1; // +1 to convert from index to component number
+                best_comp[i] = j + 1;                        // +1 to convert from index to # of components
                 break;
             }
         }
