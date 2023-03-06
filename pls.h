@@ -39,6 +39,8 @@ using std::complex;
 
 typedef Matrix<float_type, Dynamic, Dynamic> Mat2D;
 typedef Matrix<float_type, Dynamic, 1>  Col;
+typedef Matrix<int, Dynamic, 1>  Coli;
+typedef Matrix<size_t, Dynamic, 1>  Colsz;
 typedef Matrix<float_type, 1, Dynamic>  Row;
 typedef Matrix<int, 1, Dynamic>  Rowi;
 typedef Matrix<size_t, 1, Dynamic>  Rowsz;
