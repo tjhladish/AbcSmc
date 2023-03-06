@@ -688,13 +688,15 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 
     db.Query("BEGIN EXCLUSIVE;").Next();
 
-    Row pars;
+    Mat2D pars;
     const size_t set_num = 0;
     const size_t num_particles = get_num_particles(set_num);
+    std::vector<int> posterior_ranks = {};
+    pars = sample_priors(RNG, num_particles, posterior, posterior_ranks);
     for (size_t i = 0; i < num_particles; i++) {
-        int posterior_rank = -1;
-        pars = sample_priors(RNG, posterior, posterior_rank);
-        if (not _retain_posterior_rank) posterior_rank = -1;
+        auto parrow = pars.row(i);      
+        auto posterior_rank = _retain_posterior_rank ? posterior_ranks[i] : -1;  
+
         QueryStr qstr;
 
         db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, %d, %d, %d, NULL, 'Q', %d, 0 );"), JOB_TABLE.c_str(), i, set_num, i, time(NULL), posterior_rank)).Next();
@@ -704,11 +706,11 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         const int rowid = ((int) s.GetField(0)) - 1; // indexing should start at 0
 
         const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-        ss << "insert into " << PAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
+        ss << "insert into " << PAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << parrow[j]; ss << " );";
         _db_execute_stringstream(db, ss);
 
         if (use_transformed_pars) {
-            vector<double> upars = do_complicated_untransformations(_model_pars, pars);
+            vector<double> upars = do_complicated_untransformations(_model_pars, parrow);
             ss << "insert into " << UPAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
             _db_execute_stringstream(db, ss);
         }
@@ -1016,70 +1018,73 @@ Mat2D AbcSmc::slurp_posterior() {
 }
 
 
-Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank) {
-    Row par_sample = Row::Zero(_model_pars.size());
-    bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
-    bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
-    vector<int> posterior_indices;
-    // for each parameter
-    for (size_t i = 0; i < _model_pars.size(); i++) {
-        Parameter* p = _model_pars[i];
-        float_type val;
-        // if it's a non-random, PSEUDO parameter
-        if (p->get_prior_type() == PSEUDO) {
-            // get the state now, so that the first time it will have the initialized value
-            val = (float_type) p->get_state();
-            // We need to imitate the way nested loops work, but in a single loop.
-            // PSEUDO parameters only get incremented when any and all previous PSEUDO parameters
-            // have reached their max values and are being reset
-            if (increment_nonrandom_par) {
-                // This parameter has reached it's max value and gets reset to minimum
-                // Because of possible floating point errors, we check whether the state is within step/10,000 from the max
-                const float_type PSEUDO_EPSILON = 0.0001 * p->get_step();
-                if (p->get_state() + PSEUDO_EPSILON >= p->get_prior_max()) {
-                    p->reset_state();
-                // otherwise, increment this one and prevent others from being incremented
-                } else {
-                    p->increment_state();
-                    increment_nonrandom_par = false;
-                    increment_posterior     = false;
+Mat2D AbcSmc::sample_priors(
+    const gsl_rng* RNG, const size_t num_samples,
+    const Mat2D & posterior, // look up table for POSTERIOR type Parameters
+    std::vector<int> & posterior_ranks // filled in by this
+) {
+    Mat2D par_samples = Mat2D::Zero(num_samples, _model_pars.size());
+    for (size_t r = 0; r < par_samples.rows(); r++) {
+        bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
+        bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
+        vector<int> posterior_indices;
+        // for each parameter
+        for (size_t i = 0; i < _model_pars.size(); i++) {
+            Parameter* p = _model_pars[i];
+            float_type val;
+            // if it's a non-random, PSEUDO parameter
+            if (p->get_prior_type() == PSEUDO) {
+                // get the state now, so that the first time it will have the initialized value
+                val = (float_type) p->get_state();
+                // We need to imitate the way nested loops work, but in a single loop.
+                // PSEUDO parameters only get incremented when any and all previous PSEUDO parameters
+                // have reached their max values and are being reset
+                if (increment_nonrandom_par) {
+                    // This parameter has reached it's max value and gets reset to minimum
+                    // Because of possible floating point errors, we check whether the state is within step/10,000 from the max
+                    const float_type PSEUDO_EPSILON = 0.0001 * p->get_step();
+                    if (p->get_state() + PSEUDO_EPSILON >= p->get_prior_max()) {
+                        p->reset_state();
+                    // otherwise, increment this one and prevent others from being incremented
+                    } else {
+                        p->increment_state();
+                        increment_nonrandom_par = false;
+                        increment_posterior     = false;
+                    }
                 }
-            }
-        } else if (p->get_prior_type() == POSTERIOR) {
-            val = 0; // will be replaced later in function
-            if (posterior_indices.size() == 0) {
-                posterior_rank = (int) p->get_state();
+            } else if (p->get_prior_type() == POSTERIOR) {
+                val = 0; // will be replaced later in function
+                if (posterior_indices.size() == 0) {
+                    posterior_ranks[r] = (int) p->get_state();
+                } else {
+                    // require that posterior pars be synchronized
+                    assert(posterior_ranks[r] == (int) p->get_state());
+                }
+                posterior_indices.push_back(i);
             } else {
-                // require that posterior pars be synchronized
-                assert(posterior_rank == (int) p->get_state());
+                // Random parameters get sampled independently from each other, and are therefore easy
+                val = p->sample(RNG);
             }
-            posterior_indices.push_back(i);
-        } else {
-            // Random parameters get sampled independently from each other, and are therefore easy
-            val = p->sample(RNG);
+
+            par_samples(r, i) = val;
         }
-
-        par_sample(i) = val;
-    }
-    if (_posterior_database_filename != "") {
-
-        for (unsigned int c = 0; c < posterior_indices.size(); ++c) {
-            par_sample(posterior_indices[c]) = posterior(posterior_rank, c);
-            Parameter* p = _model_pars[posterior_indices[c]];
-
-            if (increment_posterior) {
-                if (p->get_state() >= p->get_prior_max()) {
-                    p->reset_state();
-                } else {
-                    p->increment_state();
+        if (_posterior_database_filename != "") {
+            for (size_t c = 0; c < posterior_indices.size(); ++c) {
+                par_samples(r, posterior_indices[c]) = posterior(posterior_ranks[r], c);
+                Parameter* p = _model_pars[posterior_indices[c]];
+                if (increment_posterior) {
+                    if (p->get_state() >= p->get_prior_max()) {
+                        p->reset_state();
+                    } else {
+                        p->increment_state();
+                    }
                 }
+
             }
-
         }
-
-//cerr << "sample: " << par_sample << endl;
     }
-    return par_sample;
+    return par_samples;
+
 }
 
 void AbcSmc::calculate_doubled_variances( const size_t smcSet ) {
@@ -1194,11 +1199,9 @@ void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_ori
     // sample parameter distributions; copy values into Y matrix and into send_data buffer
     Row par_row;
     if (t == 0) {
-        for (size_t i = 0; i < _num_particles; i++) {
-            Mat2D posterior = slurp_posterior();
-            int posterior_rank = -1;
-            Y_orig.row(i) = sample_priors(RNG, posterior, posterior_rank);
-        }
+        Mat2D posterior = slurp_posterior();
+        std::vector<int> dump(_num_particles);
+        Y_orig = sample_priors(RNG, _num_particles, posterior, dump);
     } else {
         Y_orig = ABC::sample_predictive_priors(
             RNG, _num_particles, 
