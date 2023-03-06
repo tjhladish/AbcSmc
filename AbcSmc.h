@@ -398,7 +398,11 @@ class AbcSmc {
 
         Mat2D slurp_posterior();
 
-        Row sample_priors( const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank );
+        Mat2D sample_priors(
+            const gsl_rng* RNG, const size_t num_samples,
+            const Mat2D & posterior,
+            std::vector<int> & posterior_ranks
+        );
 
         std::vector<double> do_complicated_untransformations(const std::vector<Parameter*> & _model_pars, const Row & pars );
 
