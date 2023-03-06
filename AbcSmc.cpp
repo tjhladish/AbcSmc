@@ -935,8 +935,10 @@ PLS_Model& AbcSmc::run_PLS(
     
 }
 
-PLS_Model AbcSmc::_filter_particles (
-    int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size,
+PLS_Model AbcSmc::_filter_particles(
+    const size_t t,
+    const Mat2D & X_orig, const Mat2D & Y_orig,
+    const size_t next_pred_prior_size,
     const bool verbose
 ) {
     Row X_sim_means = X_orig.colwise().mean();
@@ -967,8 +969,6 @@ PLS_Model AbcSmc::_filter_particles (
     Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
     Mat2D sim_scores = plsm.scores(X, num_components_used).real();
     Col   distances  = ABC::euclidean(sim_scores, obs_scores);
-
-
 
     _set_predictive_prior(t, next_pred_prior_size, distances);
 

@@ -15,7 +15,7 @@ GSL_LIB ?= -lm -lgsl -lgslcblas -pthread
 
 ABC_INC := -I$(ABCDIR) -I$(SQLDIR) -I$(JSNDIR) -L$(ABCDIR) -labc $(GSL_LIB) -ldl
 
-TESTS := abcutil
+TESTS := abcutil pls
 
 all: ../libabc.a $(TESTS)
 
