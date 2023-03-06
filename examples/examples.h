@@ -62,7 +62,7 @@ inline void abc_inner(
 ) {
 
     if (args.process_db) {
-        gsl_rng_set(RNG, time(NULL) * getpid()); // seed the rng using sys time and the process id
+        gsl_rng_set(RNG, smcset); // seed the rng using smcset
         abc->process_database(RNG);
     } 
 
