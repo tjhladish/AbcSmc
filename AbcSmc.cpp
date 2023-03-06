@@ -952,14 +952,13 @@ PLS_Model AbcSmc::_filter_particles(
     size_t ncomp = npar();             // It doesn't make sense to consider more components than model parameters
 
     PLS_Model plsm(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), ncomp);
-
-    // A is number of components to use
-    if (verbose) { plsm.print_explained_variance(X, Y); }
-
     const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
     auto num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
+
     size_t num_components_used = num_components.maxCoeff();
     if (verbose) {
+        cerr << "Trained on: " << pls_training_set_size << " - Validation Set size: " << test_set_size << std::endl;
+        plsm.print_explained_variance(X, Y);
         cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
         cerr << "Using " << num_components_used << " components." << endl;
     }
