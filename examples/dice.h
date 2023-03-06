@@ -19,7 +19,7 @@ extern "C" std::vector<double> simulator(
     const ABC::MPI_par* /* mp */
 ) {
     
-    gsl_rng_set(RNG, rng_seed); // seed the rng using sys time and the process id
+    gsl_rng_set(RNG, serial); // seed the rng using sys time and the process id
     const size_t par1 = static_cast<size_t>(args[0]); // number of dice
     const size_t par2 = static_cast<size_t>(args[1]); // number of sides on dice
 
