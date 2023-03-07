@@ -948,3 +948,71 @@ Mat2D ABC::sample_priors(
     return par_samples;
 
 }
+
+Row ABC::calculate_doubled_variance(const Mat2D & params) {
+    vector<RunningStat> stats(params.cols());
+    Row v2 = Row::Zero(params.cols());
+    // TODO: turn this into Eigen column-wise operation?
+    for (size_t i = 0; i < params.cols(); i++) {
+        stats[i].Push(params.col(i));
+        v2[i] = 2 * stats[i].Variance();
+    }
+    return v2;
+}
+
+Row ABC::weight_predictive_prior(
+    const std::vector<Parameter*> & mpars,
+    const Mat2D & params
+) {
+    const float_type uniform_wt = 1.0/static_cast<double>(params.rows());
+    return Col::Constant(params.rows(), uniform_wt);
+}
+
+Row ABC::weight_predictive_prior(
+    const std::vector<Parameter*> & mpars,
+    const Mat2D & params,
+    const Mat2D & prev_params,
+    const Row & prev_weights,
+    const Row & prev_doubled_variance
+) {
+    Col weight = Col::Zero(params.rows());
+
+    for (size_t i = 0; i < params.rows(); i++) {
+        double numerator = 1;
+        double denominator = 0.0;
+        for (size_t j = 0; j < params.cols(); j++) {
+            Parameter* par = mpars[j];
+            const double par_value = params(i, j);
+            if (par->get_prior_type() == NORMAL) {
+                numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
+            } else if (par->get_prior_type() == UNIFORM) {
+                // The RHS here will be 1 under normal circumstances.  If the prior has been revised during a fit,
+                // this should throw out values outside of the prior's range
+                numerator *= (int) (par_value >= par->get_prior_min() and par_value <= par->get_prior_max());
+            }
+        }
+
+        for (size_t k = 0; k < prev_params.rows(); k++) {
+            double running_product = prev_weights[k]; // TODO: rowwise op?
+            for (size_t j = 0; j < prev_params.cols(); j++) {
+                double par_value = params(i,j);
+                double old_par_value = prev_params(k, j);
+                double old_dv = prev_doubled_variance[j];
+
+                // This conditional handles the (often improbable) case where a parameter has completely converged.
+                // It allows ABC to continue exploring other parameters, rather than causing the math
+                // to fall apart because the density at the converged value is infinite.
+                if (old_dv != 0 or par_value != old_par_value) {
+                    running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_dv) );
+                }
+            }
+            denominator += running_product;
+        }
+
+        weight[i] = numerator / denominator;
+    }
+
+    weight.normalize();
+
+    return weight;
+}

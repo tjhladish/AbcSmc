@@ -204,6 +204,23 @@ namespace ABC {
         const Mat2D & params
     );
 
+Row weight_predictive_prior(
+    const std::vector<Parameter*> & mpars,
+    const Mat2D & params
+);
+
+Row weight_predictive_prior(
+    const std::vector<Parameter*> & mpars,
+    const Mat2D & params,
+    const Mat2D & prev_params,
+    const Row & prev_weights,
+    const Row & prev_doubled_variance
+);
+
+Row calculate_doubled_variance(
+    const Mat2D & params
+);
+
 }
 
 #endif
