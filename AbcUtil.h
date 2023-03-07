@@ -204,38 +204,6 @@ namespace ABC {
         const Mat2D & params
     );
 
-  double calculate_nrmse(
-    const Mat2D & posterior_mets,
-    const Row & observed
-  );
-
-  Mat2D sample_posterior(
-    const gsl_rng* RNG, const size_t num_samples,
-    const Col & weights,
-    const Mat2D & posterior
-  );
-
-  template<typename RandomAccessible>
-  gsl_vector* to_gsl_v(const RandomAccessible & from);
-
-  gsl_matrix* to_gsl_m(const Mat2D & from);
-
-    Col euclidean(const Mat2D & sims, const Row & ref);
-
-Mat2D sample_predictive_priors(
-    const gsl_rng* RNG, const size_t num_samples,
-    const Col & weights, const Mat2D & parameter_prior,
-    const std::vector<Parameter*> & pars,
-    const Row & doubled_variance
-);
-
-Mat2D sample_mvn_predictive_priors(
-    const gsl_rng* RNG, const size_t num_samples,
-    const Col & weights, const Mat2D & parameter_prior,
-    const std::vector<Parameter*> & pars,
-    const gsl_matrix* L
-);
-
 }
 
 #endif
