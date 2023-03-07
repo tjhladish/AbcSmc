@@ -820,10 +820,6 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
     return db_success;
 }
 
-bool AbcSmc::simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
-
-bool AbcSmc::simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
-
 bool AbcSmc::simulate_next_particles(
     const int n, const int serial_req, const int posterior_req
 ) { // defaults are 1, -1, -1
@@ -939,73 +935,35 @@ Mat2D AbcSmc::slurp_posterior() {
     return posterior;
 }
 
+// used entirely for side effect?
 void AbcSmc::calculate_doubled_variances( const size_t smcSet ) {
-    vector<RunningStat> stats(npar());
-    Row v2 = Row::Zero(npar());
-    Mat2D pars = _particle_parameters[smcSet](_predictive_prior[smcSet], Eigen::placeholders::all);
-    // TODO: turn this into Eigen column-wise operation?
-    for (size_t i = 0; i < pars.cols(); i++) {
-        stats[i].Push(pars.col(i));
-        v2[i] = 2 * stats[i].Variance();
-    }
     assert(_doubled_variance.size() == smcSet); // current length of doubled variance == index of previous set
-    append_doubled_variance(v2);
+    append_doubled_variance(
+        ABC::calculate_doubled_variance(
+            _particle_parameters[smcSet](_predictive_prior[smcSet], Eigen::placeholders::all)
+        )
+    );
 }
 
 void AbcSmc::calculate_predictive_prior_weights(int set_num) {
     // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
     calculate_doubled_variances(set_num);
     if (set_num == 0) {
-        // uniform weights for set 0 predictive prior
-        const double uniform_wt = 1.0/(double) _predictive_prior[set_num].size();
-        _weights.push_back( Col::Constant(_predictive_prior[set_num].size(), uniform_wt) );
+        _weights.push_back(
+            ABC::weight_predictive_prior(
+                _model_pars, _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all)
+            )
+        );
     } else if ( set_num > 0 ) {
-
-        // weights from set - 1 are needed to calculate weights for current set
-        Col weight = Col::Zero(_predictive_prior[set_num].size());
-
-        Mat2D pars = _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all);
-        Mat2D prev_pars = _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all);
-
-        for (size_t i = 0; i < pars.rows(); i++) {
-            double numerator = 1;
-            double denominator = 0.0;
-            for (size_t j = 0; j < pars.cols(); j++) {
-                Parameter* par = _model_pars[j];
-                const double par_value = pars(i, j);
-                if (par->get_prior_type() == NORMAL) {
-                    numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
-                } else if (par->get_prior_type() == UNIFORM) {
-                    // The RHS here will be 1 under normal circumstances.  If the prior has been revised during a fit,
-                    // this should throw out values outside of the prior's range
-                    numerator *= (int) (par_value >= par->get_prior_min() and par_value <= par->get_prior_max());
-                }
-            }
-
-            for (size_t k = 0; k < prev_pars.rows(); k++) {
-                double running_product = _weights[set_num - 1][k]; // TODO: rowwise op?
-                Row old_doubled_variance = _doubled_variance[set_num -1];
-                for (size_t j = 0; j < prev_pars.cols(); j++) {
-                    double par_value = pars(i,j);
-                    double old_par_value = prev_pars(k, j);
-                    double old_dv = old_doubled_variance[j];
-
-                    // This conditional handles the (often improbable) case where a parameter has completely converged.
-                    // It allows ABC to continue exploring other parameters, rather than causing the math
-                    // to fall apart because the density at the converged value is infinite.
-                    if (old_dv != 0 or par_value != old_par_value) {
-                        running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_dv) );
-                    }
-                }
-                denominator += running_product;
-            }
-
-            weight[i] = numerator / denominator;
-        }
-
-        weight.normalize();
-
-        _weights.push_back(weight);
+        _weights.push_back(
+            ABC::weight_predictive_prior(
+                _model_pars,
+                _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all),
+                _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
+                _weights[set_num - 1],
+                _doubled_variance[set_num -1]
+            )
+        );
     }
 }
 

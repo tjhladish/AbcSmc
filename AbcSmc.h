@@ -301,9 +301,9 @@ class AbcSmc {
         );
         bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
 
-        bool simulate_particle_by_serial(const int serial_req);
-        bool simulate_particle_by_posterior_idx(const int posterior_req);
         bool simulate_next_particles(const int n = 1, const int serial_req = -1, const int posterior_req = -1); // defaults to running next particle
+        bool simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
+        bool simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
 
         Parameter* get_parameter_by_name(string name) {
             Parameter* p = nullptr;
@@ -396,13 +396,6 @@ class AbcSmc {
         //bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
         Mat2D slurp_posterior();
-
-        Mat2D sample_priors(
-            const gsl_rng* RNG, const size_t num_samples,
-            const Mat2D & posterior,
-            const std::vector<Parameter*> & mpars,
-            std::vector<size_t> & posterior_ranks
-        );
 
         std::vector<double> do_complicated_untransformations(const std::vector<Parameter*> & _model_pars, const Row & pars );
 
