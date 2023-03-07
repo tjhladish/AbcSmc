@@ -350,3 +350,15 @@ void PLS_Model::print_state(std::ostream& os) const {
         coefficients() << std::endl;
 
 };
+
+void PLS_Model::print_model_assessment(
+    const Mat2D & X, const Mat2D & Y,
+    const size_t training_size, const size_t testing_size,
+    const size_t optimal_components, const size_t used_components,
+    std::ostream& os
+) const {
+    os << "Train / Test split: " << training_size << " / " << testing_size << std::endl;
+    print_explained_variance(X, Y, os);
+    os << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << optimal_components << std::endl;
+    os << "Using " << used_components << " components." << std::endl;
+};

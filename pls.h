@@ -156,6 +156,12 @@ struct PLS_Model {
     // output methods
     void print_explained_variance(const Mat2D& X, const Mat2D& Y, std::ostream& os = std::cerr) const;
     void print_state(std::ostream& os) const;
+    void print_model_assessment(
+        const Mat2D & X, const Mat2D & Y,
+        const size_t training_size, const size_t testing_size,
+        const size_t optimal_components, const size_t used_components,
+        std::ostream& os = std::cerr
+    ) const;
 
     private:
         size_t A; // number of components
