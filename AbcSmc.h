@@ -315,7 +315,6 @@ class AbcSmc {
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
 
-        PLS_Model& run_PLS(Mat2D&, Mat2D&, const size_t pls_training_set_size, const size_t ncomp);
         std::string get_database_filename()                 { return _database_filename; }
         std::vector< Mat2D > get_particle_parameters() { return _particle_parameters; }
         std::vector< Mat2D > get_particle_metrics()    { return _particle_metrics; }
@@ -349,7 +348,7 @@ class AbcSmc {
         bool _retain_posterior_rank;
         std::vector< Mat2D > _particle_metrics;
         std::vector< Mat2D > _particle_parameters;
-        std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
+        std::vector< std::vector<size_t> > _predictive_prior; // vector of row indices for particle metrics and parameters
         std::vector<Col> _weights;
         std::vector<Row> _doubled_variance;
 
@@ -401,7 +400,8 @@ class AbcSmc {
         Mat2D sample_priors(
             const gsl_rng* RNG, const size_t num_samples,
             const Mat2D & posterior,
-            std::vector<int> & posterior_ranks
+            const std::vector<Parameter*> & mpars,
+            std::vector<size_t> & posterior_ranks
         );
 
         std::vector<double> do_complicated_untransformations(const std::vector<Parameter*> & _model_pars, const Row & pars );
@@ -409,8 +409,6 @@ class AbcSmc {
         void calculate_doubled_variances( const size_t previous_set );
 
         void calculate_predictive_prior_weights( int set_num );
-
-        gsl_matrix* setup_mvn_sampler(const int);
 
 };
 

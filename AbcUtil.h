@@ -42,10 +42,6 @@ namespace ABC {
 
   vector<string> split(const std::string& s, char c);
 
-  inline int string2int(const std::string& s){ std::istringstream i(s); int x = 0; i >> x; return x; }
-  inline double string2double(const std::string& s){ std::istringstream i(s); double x = 0; i >> x; return x; }
-  inline float_type string2float_type(const std::string& s){ std::istringstream i(s); float_type x = 0; i >> x; return x; }
-
   std::string slurp(std::string filename);
   std::string get_nth_line(const std::string& filename, int N);
 
@@ -98,8 +94,6 @@ namespace ABC {
 
   std::vector<size_t> gsl_rng_nonuniform_int(const gsl_rng* RNG, const size_t num_samples, const Col & weights);
 
-  std::vector<size_t> gsl_ran_seeds();
-
   Row gsl_ran_trunc_normal(
     const gsl_rng* RNG,
     const std::vector<Parameter*> _model_pars,
@@ -125,7 +119,7 @@ namespace ABC {
       return vec;
   }
 
-  inline Row as_row(const vector<float_type> data) {
+  inline Row as_row(const vector<float_type> & data) {
       Row row(data.size());
       for (size_t i = 0; i < data.size(); i++) row[i] = data[i];
       return row;
@@ -156,11 +150,33 @@ Mat2D sample_predictive_priors(
     const Row & doubled_variance
 );
 
+gsl_matrix* setup_mvn_sampler(
+    const Mat2D & params
+);
+
 Mat2D sample_mvn_predictive_priors(
     const gsl_rng* RNG, const size_t num_samples,
     const Col & weights, const Mat2D & parameter_prior,
     const std::vector<Parameter*> & pars,
     const gsl_matrix* L
+);
+
+Mat2D sample_priors(
+    const gsl_rng* RNG, const size_t num_samples,
+    const Mat2D & posterior, // look up table for POSTERIOR type Parameters
+    const std::vector<Parameter*> & mpars,
+    std::vector<size_t> & posterior_ranks // filled in by this
+);
+
+std::vector<size_t> particle_ranking_simple (
+    const Mat2D &X_orig, const Mat2D &Y_orig,
+    const Row & target_values
+);
+
+std::vector<size_t> particle_ranking_PLS(
+    const Mat2D & X_orig, const Mat2D & Y_orig,
+    const Row & target_values,
+    const float_type training_fraction
 );
 
 }
