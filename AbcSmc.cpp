@@ -1110,10 +1110,10 @@ Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_r
 
 void AbcSmc::calculate_doubled_variances( int t ) {
     vector<RunningStat> stats(npar());
-    Mat2D pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
+    Mat2D par_values = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
     // TODO: turn this into Eigen column-wise operation?
-    for (size_t parIdx = 0; parIdx < pars.cols(); parIdx++) {
-        stats[parIdx].Push(pars.col(parIdx));
+    for (size_t parIdx = 0; parIdx < par_values.cols(); parIdx++) {
+        stats[parIdx].Push(par_values.col(parIdx));
     }
     for (size_t parIdx = 0; parIdx < npar(); parIdx++) {
         _model_pars[parIdx]->append_doubled_variance( 2 * stats[parIdx].Variance() );
@@ -1248,15 +1248,15 @@ Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
     // Select a particle index r to use from the predictive prior
     int r = _predictive_prior[set_num-1][gsl_rng_nonuniform_int(_weights[set_num-1], RNG)];
     const Row par = _particle_parameters[set_num-1](r, Eigen::placeholders::all);
-    for (size_t j = 0; j < par.cols(); j++) {
-        const Parameter* parameter = _model_pars[j];
+    for (size_t parIdx = 0; parIdx < par.cols(); parIdx++) {
+        const Parameter* parameter = _model_pars[parIdx];
         double doubled_variance = parameter->get_doubled_variance(set_num-1);
         double par_min = parameter->get_prior_min();
         double par_max = parameter->get_prior_max();
-        par_values(j) = rand_trunc_normal(par[j], doubled_variance, par_min, par_max, RNG );
+        par_values(parIdx) = rand_trunc_normal(par[parIdx], doubled_variance, par_min, par_max, RNG );
 
         if (parameter->get_numeric_type() == INT) {
-            par_values(j) = (double) ((int) (par_values(j) + 0.5));
+            par_values(parIdx) = (double) ((int) (par_values(parIdx) + 0.5));
         }
     }
     return par_values;
