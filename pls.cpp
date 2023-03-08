@@ -349,9 +349,6 @@ void PLS_Model::print_state(std::ostream& os) const {
         "coefficients:" << std::endl <<
         coefficients() << std::endl;
 
-<<<<<<< HEAD
-}
-=======
 };
 
 void PLS_Model::print_model_assessment(
@@ -365,4 +362,3 @@ void PLS_Model::print_model_assessment(
     os << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << optimal_components << std::endl;
     os << "Using " << used_components << " components." << std::endl;
 };
->>>>>>> be4b035 (move more pls status reporting to pls lib)
