@@ -291,10 +291,10 @@ Mat2D colwise_z_scores(const Mat2D & mat) {
       while (not success) {
           success = true;
           gsl_ran_multivariate_gaussian(RNG, gslmu, L, result);
-          for (size_t j = 0; j < npar; j++) {
-              par_values[j] = gsl_vector_get(result, j);
-              if (_model_pars[j]->get_numeric_type() == INT) par_values(j) = (double) ((int) (par_values(j) + 0.5));
-              if (par_values[j] < _model_pars[j]->get_prior_min() or par_values[j] > _model_pars[j]->get_prior_max()) success = false;
+          for (size_t parIdx = 0; parIdx < npar; parIdx++) {
+              par_values[parIdx] = gsl_vector_get(result, parIdx);
+              if (_model_pars[parIdx]->get_numeric_type() == INT) par_values(parIdx) = (double) ((int) (par_values(parIdx) + 0.5));
+              if (par_values[parIdx] < _model_pars[parIdx]->get_prior_min() or par_values[parIdx] > _model_pars[parIdx]->get_prior_max()) success = false;
           }
       }
       gsl_vector_free(gslmu);
@@ -545,8 +545,8 @@ Mat2D ABC::sample_predictive_priors(
 ) {
     const Mat2D sampled_pars = ABC::sample_posterior(RNG, num_samples, weights, parameter_prior);
     Mat2D noised_pars = Mat2D(sampled_pars.rows(), sampled_pars.cols());
-    for (size_t i = 0; i < noised_pars.rows(); i++) {
-        noised_pars.row(i) = gsl_ran_trunc_normal(RNG, pars, sampled_pars.row(i), doubled_variance);
+    for (size_t sampIdx = 0; sampIdx < noised_pars.rows(); sampIdx++) {
+        noised_pars.row(sampIdx) = gsl_ran_trunc_normal(RNG, pars, sampled_pars.row(sampIdx), doubled_variance);
     }
     return noised_pars;
 };
@@ -560,8 +560,8 @@ Mat2D ABC::sample_mvn_predictive_priors(
     // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
     const Mat2D sampled_pars = ABC::sample_posterior(RNG, num_samples, weights, parameter_prior);
     Mat2D noised_pars = Mat2D(sampled_pars.rows(), sampled_pars.cols());
-    for (size_t i = 0; i < noised_pars.rows(); i++) {
-        noised_pars.row(i) = gsl_ran_trunc_mv_normal(RNG, pars, sampled_pars.row(i), L);
+    for (size_t sampIdx = 0; sampIdx < noised_pars.rows(); sampIdx++) {
+        noised_pars.row(sampIdx) = gsl_ran_trunc_mv_normal(RNG, pars, sampled_pars.row(sampIdx), L);
     }
     return noised_pars;
 };
@@ -634,10 +634,10 @@ gsl_matrix* ABC::setup_mvn_sampler(
     // calculate maximum likelihood estimate of variance-covariance matrix sigma_hat
     gsl_ran_multivariate_gaussian_vcov(posterior_par_vals, sigma_hat);
 
-    for (size_t j = 0; j < params.cols(); j++) {
+    for (size_t parIdx = 0; parIdx < params.cols(); parIdx++) {
         // sampling is done using a kernel with a broader kernel than found in pred prior values
-        const double doubled_variance = 2 * gsl_matrix_get(sigma_hat, j, j);
-        gsl_matrix_set(sigma_hat, j, j, doubled_variance);
+        const double doubled_variance = 2 * gsl_matrix_get(sigma_hat, parIdx, parIdx);
+        gsl_matrix_set(sigma_hat, parIdx, parIdx, doubled_variance);
     }
 
     // not a nice interface, gsl.  sigma_hat is converted in place from a variance-covariance matrix
@@ -663,13 +663,13 @@ Mat2D ABC::sample_priors(
     std::vector<size_t> & posterior_ranks // filled in by this
 ) {
     Mat2D par_samples = Mat2D::Zero(num_samples, mpars.size());
-    for (size_t r = 0; r < par_samples.rows(); r++) {
+    for (size_t sampIdx = 0; sampIdx < par_samples.rows(); sampIdx++) {
         bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
         bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
         vector<size_t> posterior_indices;
         // for each parameter
-        for (size_t i = 0; i < mpars.size(); i++) {
-            Parameter* p = mpars[i];
+        for (size_t parIdx = 0; parIdx < mpars.size(); parIdx++) {
+            Parameter* p = mpars[parIdx];
             float_type val;
             // if it's a non-random, PSEUDO parameter
             if (p->get_prior_type() == PSEUDO) {
@@ -694,24 +694,24 @@ Mat2D ABC::sample_priors(
             } else if (p->get_prior_type() == POSTERIOR) {
                 val = 0; // will be replaced later in function
                 if (posterior_indices.size() == 0) {
-                    posterior_ranks[r] = static_cast<size_t>(p->get_state());
+                    posterior_ranks[sampIdx] = static_cast<size_t>(p->get_state());
                 } else {
                     // require that posterior pars be synchronized
-                    assert(posterior_ranks[r] == static_cast<size_t>(p->get_state()));
+                    assert(posterior_ranks[sampIdx] == static_cast<size_t>(p->get_state()));
                 }
-                posterior_indices.push_back(i);
+                posterior_indices.push_back(parIdx);
             } else {
                 // Random parameters get sampled independently from each other, and are therefore easy
                 val = p->sample(RNG);
             }
 
-            par_samples(r, i) = val;
+            par_samples(sampIdx, parIdx) = val;
         }
         assert(posterior_indices.size() == posterior.cols());
 
-        for (size_t c = 0; c < posterior_indices.size(); ++c) {
-            par_samples(r, posterior_indices[c]) = posterior(posterior_ranks[r], c);
-            Parameter* p = mpars[posterior_indices[c]];
+        for (size_t postParIdx = 0; postParIdx < posterior_indices.size(); ++postParIdx) {
+            par_samples(sampIdx, posterior_indices[postParIdx]) = posterior(posterior_ranks[sampIdx], postParIdx);
+            Parameter* p = mpars[posterior_indices[postParIdx]];
             if (increment_posterior) {
                 if (p->get_state() >= p->get_prior_max()) {
                     p->reset_state();
@@ -730,9 +730,9 @@ Row ABC::calculate_doubled_variance(const Mat2D & params) {
     vector<RunningStat> stats(params.cols());
     Row v2 = Row::Zero(params.cols());
     // TODO: turn this into Eigen column-wise operation?
-    for (size_t i = 0; i < params.cols(); i++) {
-        stats[i].Push(params.col(i));
-        v2[i] = 2 * stats[i].Variance();
+    for (size_t parIdx = 0; parIdx < params.cols(); parIdx++) {
+        stats[parIdx].Push(params.col(parIdx));
+        v2[parIdx] = 2 * stats[parIdx].Variance();
     }
     return v2;
 }
@@ -754,12 +754,12 @@ Row ABC::weight_predictive_prior(
 ) {
     Col weight = Col::Zero(params.rows());
 
-    for (size_t i = 0; i < params.rows(); i++) {
+    for (size_t post_rank = 0; post_rank < params.rows(); post_rank++) {
         double numerator = 1;
         double denominator = 0.0;
-        for (size_t j = 0; j < params.cols(); j++) {
-            Parameter* par = mpars[j];
-            const double par_value = params(i, j);
+        for (size_t parIdx = 0; parIdx < params.cols(); parIdx++) {
+            Parameter* par = mpars[parIdx];
+            const double par_value = params(post_rank, parIdx);
             if (par->get_prior_type() == NORMAL) {
                 numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
             } else if (par->get_prior_type() == UNIFORM) {
@@ -769,12 +769,12 @@ Row ABC::weight_predictive_prior(
             }
         }
 
-        for (size_t k = 0; k < prev_params.rows(); k++) {
-            double running_product = prev_weights[k]; // TODO: rowwise op?
-            for (size_t j = 0; j < prev_params.cols(); j++) {
-                double par_value = params(i,j);
-                double old_par_value = prev_params(k, j);
-                double old_dv = prev_doubled_variance[j];
+        for (size_t prev_post_rank = 0; prev_post_rank < prev_params.rows(); prev_post_rank++) {
+            double running_product = prev_weights[prev_post_rank]; // TODO: rowwise op?
+            for (size_t parIdx = 0; parIdx < prev_params.cols(); parIdx++) {
+                double par_value = params(post_rank, parIdx);
+                double old_par_value = prev_params(prev_post_rank, parIdx);
+                double old_dv = prev_doubled_variance[parIdx];
 
                 // This conditional handles the (often improbable) case where a parameter has completely converged.
                 // It allows ABC to continue exploring other parameters, rather than causing the math
@@ -786,7 +786,7 @@ Row ABC::weight_predictive_prior(
             denominator += running_product;
         }
 
-        weight[i] = numerator / denominator;
+        weight[post_rank] = numerator / denominator;
     }
 
     weight.normalize();
