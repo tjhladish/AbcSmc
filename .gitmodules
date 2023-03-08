@@ -1,0 +1,3 @@
+[submodule "pls"]
+	path = pls
+	url = https://github.com/tjhladish/pls.git

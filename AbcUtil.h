@@ -15,7 +15,7 @@
 #include "ranker.h"
 #include <math.h>
 
-#include "pls.h"
+#include "pls/pls.h"
 
 using namespace std;
 
@@ -52,10 +52,6 @@ namespace ABC {
 
   Mat2D read_matrix_file(std::string filename, char sep);
 
-  Row colwise_stdev(const Mat2D & mat, const Row & means);
-
-  Mat2D colwise_z_scores( const Mat2D & mat, const Row & mean, const Row & stdev);
-  Mat2D colwise_z_scores( const Mat2D & mat );
   Row z_scores(const Row & metobs, const Row & means, const Row & stdevs);
 
   float_type mean(const Col data);
