@@ -40,12 +40,16 @@ $(SQLDIR)/%.o:
 $(JSONDIR)/%.o: $(JSONDIR)/%.cpp
 	$(CPP) $(CFLAGS) -c $< -o $@
 
-pls.o: pls.cpp pls.h
-	$(CPP) $(CFLAGS) -c -I. $< -o $@
-
 %.o: %.cpp $(ABC_HEADER)
 	$(CPP) $(LIBS) $(CFLAGS) -c $(INCLUDE) $< -o $@
 
 clean:
 	rm -f *.o *.a
 	$(MAKE) -C $(SQLDIR) clean
+
+.SUBMODS:
+	git submodule update --init --recursive
+
+# make the pls library submodule directory
+pls:
+	git submodule add https://github.com/tjhladish/pls.git

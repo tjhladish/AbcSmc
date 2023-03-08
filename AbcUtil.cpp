@@ -16,6 +16,8 @@ using std::pow;
 using std::pair;
 using std::make_pair;
 
+using namespace PLS;
+
 namespace ABC {
 
     vector<string> split(const string &s, char delim) {
