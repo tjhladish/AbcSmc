@@ -8,7 +8,7 @@
 #include "sqdb.h"
 #include <json/json.h>
 #include "AbcSim.h"
-#include "pls.h"
+#include "pls/pls.h"
 
 class AbcLog; // forward declaration of AbcLog; see AbcLog.h
 
