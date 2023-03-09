@@ -7,7 +7,6 @@
 #include <fstream>
 #include <chrono>
 
-#include "pls.h"
 #include "RunningStat.h"
 #include "AbcSmc.h"
 #include "AbcMPI.h"
