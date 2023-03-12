@@ -798,7 +798,7 @@ std::vector<size_t> ABC::particle_ranking_simple (
     const Row & target_values
 ) {
     Row X_sim_means = X_orig.colwise().mean();
-    Row X_sim_stdev = ABC::colwise_stdev(X_orig, X_sim_means);
+    Row X_sim_stdev = PLS::colwise_stdev(X_orig, X_sim_means);
     Row obs_met = z_scores(target_values, X_sim_means, X_sim_stdev);
 
     Mat2D X = colwise_z_scores(X_orig, X_sim_means, X_sim_stdev);
@@ -831,7 +831,8 @@ std::vector<size_t> ABC::particle_ranking_PLS(
     PLS_Model plsm(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), ncomp);
 
     const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
-    auto num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
+    PLSError pe = plsm.error<NEW_DATA>(X.bottomRows(test_set_size), Y.bottomRows(test_set_size));
+    auto num_components = PLS::optimal_num_components(pe);
 
     size_t num_components_used = num_components.maxCoeff();
 
