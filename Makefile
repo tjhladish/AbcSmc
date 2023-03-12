@@ -32,8 +32,15 @@ default: libabc.a
 
 ARCHIVE ?= $(AR) -rv
 
-libabc.a: $(filter-out CCRC32.o,$(ABCOBJECTS)) $(SQLOBJECTS) $(JSONOBJECTS) $(PLSDIR)/libpls.a
-	$(ARCHIVE) $@ $^
+libabc.a: $(filter-out CCRC32.o,$(ABCOBJECTS)) $(SQLOBJECTS) $(JSONOBJECTS) | $(PLSDIR)/libpls.a
+	$(ARCHIVE) tmp-$@ $^
+	echo "create $@\n\
+addlib tmp-$@\n\
+addlib $|\n\
+save\n\
+end" > libabc.mri
+	$(AR) -M < libabc.mri
+	rm tmp-$@ libabc.mri
 
 $(SQLDIR)/%.o:
 	$(MAKE) -C $(@D) $(@F)
