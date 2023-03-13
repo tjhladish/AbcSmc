@@ -12,6 +12,8 @@
 
 class AbcLog; // forward declaration of AbcLog; see AbcLog.h
 
+class AbcLog; // forward declaration of AbcLog; see AbcLog.h
+
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
 enum VerboseType {QUIET, VERBOSE};

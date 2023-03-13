@@ -67,7 +67,7 @@ inline AbcSimF * loadSO(const char * target) {
         exit(102);
     }
     return simf;
-};
+}
 
 // an AbcSimFun built around an AbcSimF pointer. That pointer can come from code compiled along with this library,
 // i.e. a executable that combines a simulator and the AbcSmc code, or be loaded from a shared object file.
