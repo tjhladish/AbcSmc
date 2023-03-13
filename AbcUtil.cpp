@@ -1,4 +1,5 @@
 #include <limits>
+#include <compare>
 #include "AbcUtil.h"
 #include "AbcSmc.h"
 #include "gsl/gsl_multimin.h"
@@ -15,6 +16,7 @@ using std::ifstream;
 using std::pow;
 using std::pair;
 using std::make_pair;
+using std::partial_ordering;
 
 using namespace PLS;
 
@@ -152,21 +154,30 @@ namespace ABC {
         return data.maxCoeff();
     }
 
-  float_type skewness(const Col & data) {
-      float_type _x = mean(data);
-      float_type _v = variance(data, _x);
-      if (_v == 0) return 0; // Avoids nans.  If variance is 0, define skewness as 0
-      return ((data.array() - _x).pow(3).sum() / data.size() ) / pow(_v, 1.5);
-  }
+    float_type skewness(const Col & data) {
+        float_type _x = data.mean();
+        float_type _v = variance(data, _x);
+        if (_v == 0) return 0; // Avoids nans.  If variance is 0, define skewness as 0
+        return ((data.array() - _x).pow(3).sum() / data.size() ) / pow(_v, 1.5);
+    }
 
-  int _mc_pos(const float_type v, const float_type m) {
-      enum Position {ABOVE, BELOW, AT};
-      Position p;
-      if (v > m) { p = ABOVE; }
-      else if (v < m) { p = BELOW; }
-      else { p = AT; }
-      return (int) p;
-  }
+    // Calculates the number of times the data series crosses the median
+    float_type median_crossings(const Col & data, const float_type m) {
+        if (data.size() < 2) return 0.0;
+        
+        size_t mc = 0;
+ 
+        // current and next are like cursors that trace the data series
+        // this uses the <=> operator: (a <=> b) returns (some value) < 0 if a < b, 0 if a == b, (some value) > 0 if a > b
+        partial_ordering current = data[0] <=> m;
+        if (current == partial_ordering::equivalent) mc++; // increment if we're starting at the median
+        for (auto pos : data) { // for each data point (n.b. the first pass here is a no-op: next == current)
+            partial_ordering next = pos <=> m;
+            if ((next != current) and (current != partial_ordering::equivalent)) mc++; // just crossed or touched the median
+            current = next;
+        }
+        return (static_cast<float_type>(mc)/(data.size() - 1.0));
+    }
 
     float_type median_crossings(const Col & data) {
         if (data.size() < 2) {
@@ -174,24 +185,6 @@ namespace ABC {
         } else {
             return median_crossings(data, median(data));
         }
-    }
-
-    // Calculates the number of times the data series crosses the median
-    float_type median_crossings(const Col & data, const float_type m) {
-        int mc = 0;
-        if (data.size() < 2) return mc;
-
-        enum Position {ABOVE, BELOW, AT};
-        // current and next are like cursors that trace the data series
-        Position current, next;
-        current = (Position) _mc_pos(data[0], m);
-        if (current == AT) mc++; // increment if we're starting at the median
-        for (size_t i = 1; i < static_cast<size_t>(data.size()); ++i) {
-            next = (Position) _mc_pos(data[i], m);
-            if (next != current and current != AT) mc++; // just crossed or touched the median
-            current = next;
-        }
-        return ((float_type) mc)/(data.size()-1);
     }
 
     float_type optimize_box_cox(const Col & data, const float lambda_min, const float lambda_max, const float step) {
@@ -210,6 +203,10 @@ namespace ABC {
             }
         }
         return best_lambda;
+    }
+
+    float_type optimize_box_cox(const Col & data) {
+        return optimize_box_cox(data, -5, 5, 0.1);
     }
 
     std::vector<size_t> gsl_rng_nonuniform_int(
@@ -444,7 +441,7 @@ namespace ABC {
         for (size_t i = 0; i < expected.size(); ++i) { if (sim[i] == observed[i]) expected[i] = 1; }
 
         // delta = (sim - obs) / expected => each squared => collapse to mean => sqrt
-        double res = mean(((sim - observed).array() / expected.array()).square());
+        double res = ((sim - observed).array() / expected.array()).square().mean();
 
         return sqrt(res);
 
@@ -549,7 +546,8 @@ namespace ABC {
         PLS_Model plsm(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), ncomp);
 
         const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
-        auto num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
+        auto em = plsm.error<PLS::NEW_DATA>(X.bottomRows(test_set_size), Y.bottomRows(test_set_size));
+        auto num_components = PLS::optimal_num_components(em);
 
         size_t num_components_used = num_components.maxCoeff();
 

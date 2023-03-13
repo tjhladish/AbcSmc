@@ -54,22 +54,6 @@ namespace ABC {
 
     Mat2D read_matrix_file(std::string filename, char sep);
 
-<<<<<<< HEAD
-    Row colwise_stdev(const Mat2D & mat, const Row & means);
-
-    Mat2D colwise_z_scores( const Mat2D & mat, const Row & mean, const Row & stdev);
-    Mat2D colwise_z_scores(const Mat2D & mat) {
-        Row means = mat.colwise().mean();
-        Row stdev = colwise_stdev(mat, means);
-        return colwise_z_scores(mat, means, stdev);
-    };
-    Row z_scores(const Row & metobs, const Row & means, const Row & stdevs);
-=======
-  Row z_scores(const Row & metobs, const Row & means, const Row & stdevs);
->>>>>>> 403ec83 (WIP moving to pls submodule)
-
-    float_type mean(const Col & data);
-
     float_type median(const Col & data);
 
     float_type quantile(const Col & data, double q);
@@ -86,9 +70,7 @@ namespace ABC {
 
     float_type optimize_box_cox(const Col & data, const float lambda_min, const float lambda_max, const float step);
 
-    float_type optimize_box_cox(const Col & data)  {
-        return optimize_box_cox(data, -5, 5, 0.1);
-    }
+    float_type optimize_box_cox(const Col & data);
 
     template <typename T>
     inline void cerr_vector(std::vector<T> & my_vector, std::string sep = " ") {
