@@ -168,7 +168,7 @@ namespace ABC {
         size_t mc = 0;
  
         // current and next are like cursors that trace the data series
-        // this uses the <=> operator: (a <=> b) returns (some value) < 0 if a < b, 0 if a == b, (some value) > 0 if a > b
+        // this uses the <=> operator: (a <=> b) returns equivalent if a == b, less if a < b, and greater if a > b
         partial_ordering current = data[0] <=> m;
         if (current == partial_ordering::equivalent) mc++; // increment if we're starting at the median
         for (auto pos : data) { // for each data point (n.b. the first pass here is a no-op: next == current)
