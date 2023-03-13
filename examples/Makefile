@@ -26,9 +26,10 @@ MKFILE_PATH = $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 ABCDIR := $(MKFILE_PATH)/..
 SQLDIR := $(ABCDIR)/sqdb
 JSNDIR := $(ABCDIR)/jsoncpp/include
+EIGDIR := $(ABCDIR)/pls/eigen
 GSL_LIB ?= -lm -lgsl -lgslcblas -pthread
 
-ABC_INC := -I$(ABCDIR) -I$(SQLDIR) -I$(JSNDIR) -L$(ABCDIR) -labc $(GSL_LIB) -ldl
+ABC_INC := -I$(ABCDIR) -I$(SQLDIR) -I$(JSNDIR) -I$(EIGDIR) -L$(ABCDIR) -labc $(GSL_LIB) -ldl
 
 #ifdef TACC_GSL_INC
 #GSL_INC = -I$$TACC_GSL_INC
