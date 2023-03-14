@@ -1,10 +1,10 @@
 #include <limits>
 #include <compare>
-#include "AbcUtil.h"
-#include "AbcSmc.h"
-#include "gsl/gsl_multimin.h"
-#include "gsl/gsl_sf_gamma.h"
-#include "RunningStat.h"
+#include <AbcSmc/AbcUtil.h>
+#include <AbcSmc/AbcSmc.h>
+#include <gsl/gsl_multimin.h>
+#include <gsl/gsl_sf_gamma.h>
+#include <AbcSmc/RunningStat.h>
 
 using std::string;
 using std::vector;

@@ -7,10 +7,10 @@
 #include <fstream>
 #include <chrono>
 
-#include "RunningStat.h"
-#include "AbcSmc.h"
-#include "AbcMPI.h"
-#include "AbcLog.h"
+#include <AbcSmc/RunningStat.h>
+#include <AbcSmc/AbcSmc.h>
+#include <AbcSmc/AbcMPI.h>
+#include <AbcSmc/AbcLog.h>
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
