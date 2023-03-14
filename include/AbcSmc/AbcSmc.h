@@ -4,11 +4,11 @@
 #define mpi_root 0
 
 #include <map>
-#include "AbcUtil.h"
+#include <AbcSmc/AbcUtil.h>
 #include "sqdb.h"
 #include <json/json.h>
-#include "AbcSim.h"
-#include "pls/pls.h"
+#include <AbcSmc/AbcSim.h>
+#include <PLS/pls.h>
 
 class AbcLog; // forward declaration of AbcLog; see AbcLog.h
 

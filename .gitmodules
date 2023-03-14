@@ -1,5 +1,5 @@
 [submodule "pls"]
-	path = lib/pls
+	path = lib/PLS
 	url = git@github.com:tjhladish/PLS.git
 [submodule "lib/jsoncpp"]
 	path = lib/jsoncpp

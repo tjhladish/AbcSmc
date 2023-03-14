@@ -2,9 +2,9 @@
 #ifndef ABC_MPI_H
 #define ABC_MPI_H
 
-#include "pls/pls.h" // for data types
-#include "AbcSim.h" // for AbcSimFun type
-#include "AbcMPIPar.h" // for the MPI_par struct
+#include <PLS/pls.h> // for data types
+#include <AbcSmc/AbcSim.h> // for AbcSimFun type
+#include <AbcSmc/AbcMPIPar.h> // for the MPI_par struct
 
 // add MPI management to the ABC namespace
 namespace ABC {
