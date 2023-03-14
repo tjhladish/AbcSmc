@@ -1,5 +1,5 @@
 
-#include "AbcMPI.h" // pre declarations for MPI functions / types
+#include <AbcSmc/AbcMPI.h> // pre declarations for MPI functions / types
 
 // TODO is there a way to capture this approach in AbcSim?
 // As with those functors, this is largely a wrapper around a function pointer
