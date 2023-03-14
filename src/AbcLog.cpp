@@ -1,4 +1,4 @@
-#include "AbcLog.h"
+#include <AbcSmc/AbcLog.h>
 
 // TODO: longer term goal is to have these *not* have an AbcSmc argument
 // and instead have the specific elements they need passed in as arguments

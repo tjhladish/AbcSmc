@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-#include "AbcSmc.h"
+#include <AbcSmc/AbcSmc.h>
 
 struct AbcLog {
 
