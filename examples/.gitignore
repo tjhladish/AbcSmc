@@ -3,3 +3,4 @@ abc_*
 !abc_*.json
 dice_game
 *.so
+demo

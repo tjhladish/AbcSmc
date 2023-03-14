@@ -6,7 +6,7 @@
 #include <gsl/gsl_rng.h>
 #include <cstring>
 #include <unistd.h>
-#include "AbcSmc.h"
+#include <AbcSmc/AbcSmc.h>
 
 const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 
