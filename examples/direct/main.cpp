@@ -1,11 +1,11 @@
-#include "AbcSmc.h"
+#include <AbcSmc/AbcSmc.h>
 
 using namespace std;
 
 int main(int argc, char* argv[]) {
 
     if (argc != 2) {
-        cerr << "\n\tUsage: ./abc metric1_val metric2_val ...\n\n";
+        cerr << "\n\tUsage: ./demo_direct metric1_val metric2_val ...\n\n";
         return 100;
     }
 

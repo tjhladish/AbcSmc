@@ -1,14 +1,12 @@
 
-default: all
-
 # This Makefile demonstrates different options for using the AbcSmc library
-# with different approaches to the simulator, as well as a toy simulator for use with AbcSmc.
+# with different approaches to the simulator, illustrated with a toy simulator.
 #
 # The toy simulator represents rolling a number dice, all of the same face count, then returns their
 # sum and standard deviation. The simulator is defined in dice.h, and follows the function signature
 # required by AbcSmc.
 #
-# AbcSmc supports three different ways to use a simulator:
+# AbcSmc supports several ways to use a simulator:
 #
 # 1. The simulator is compiled into an executable along with the library (main_sql.cpp --> abc_sql).
 # 2. The simulator is compiled into a shared library (dice.cpp / dice.so) and loaded dynamically (main_dynamic.cpp --> abc_dynamic).
@@ -16,27 +14,40 @@ default: all
 #
 # This Makefile demonstrates how to compile and run each of these options.
 
-# make variable definitions
 CPP := g++
 
 CFLAGS := -O2 -Wall -std=c++17 --pedantic
 SHAREDFLAGS := $(CFLAGS) -fPIC -shared -rdynamic -Wl,--no-as-needed
+LIBS := -lm -lgsl -lgslcblas -ldl
 
-MKFILE_PATH = $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-ABCDIR := $(MKFILE_PATH)/..
-SQLDIR := $(ABCDIR)/sqdb
-JSNDIR := $(ABCDIR)/jsoncpp/include
-EIGDIR := $(ABCDIR)/pls/eigen
-GSL_LIB ?= -lm -lgsl -lgslcblas -pthread
+default: run_shared
 
-ABC_INC := -I$(ABCDIR) -I$(SQLDIR) -I$(JSNDIR) -I$(EIGDIR) -L$(ABCDIR) -labc $(GSL_LIB) -ldl
+demo:
+	cmake -S . -B demo
 
-#ifdef TACC_GSL_INC
-#GSL_INC = -I$$TACC_GSL_INC
-#endif
-#ifdef HPC_GSL_INC
-#GSL_INC = -I$$HPC_GSL_INC
-#endif
+demo/%: demo
+	cd $^ && $(MAKE) $*
+
+%/config.json: reference.json %/partial.json
+	gojq -s add $^ > $@
+
+# this defines how to make the dice.so shared library for use in the `shared` demo
+dice.so: src/dice.cpp include/dice.h
+	$(CPP) $(SHAREDFLAGS) $< -o $@ $(LIBS)
+	nm -gD $@ | grep simulator # check that the simulator is exported
+
+# this defines how to make the dice_game executable for use in the `direct` and `executable` demos 
+dice_game: src/dice_game.cpp include/dice.h
+	$(CPP) $(CFLAGS) $< -o $@ $(LIBS)
+
+
+# for the dynamic version, need to make the shared object
+run_shared: | dice.so
+
+run_%: demo/% %/config.json
+	./$^ --process --simulate -n 1000
+
+# make variable definitions
 
 DEMOS := sql dynamic exec
 

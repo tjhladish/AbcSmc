@@ -1,13 +1,13 @@
-#include "AbcSmc.h"
+#include <AbcSmc/AbcSmc.h>
 #include "examples.h"
 
 int main(int argc, char* argv[]) {
 
     // convenience method for checking arguments / alerting usage; from examples.h
-    check_args("abc_dynamic", argc);
+    check_args("shared", argc);
 
     // convenience method for parsing arguments; from examples.h
-    CLIArgs args = parse_args("abc_dynamic", argc, argv);
+    CLIArgs args = parse_args("shared", argc, argv);
 
     AbcSmc* abc = new AbcSmc();
     abc->parse_config(args.config_file);
