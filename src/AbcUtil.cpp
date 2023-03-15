@@ -133,7 +133,7 @@ namespace ABC {
             gsl_ran_multivariate_gaussian(RNG, gslmu, L, result);
             for (size_t parIdx = 0; parIdx < npar; parIdx++) {
                 par_values[parIdx] = gsl_vector_get(result, parIdx);
-                if (_model_pars[parIdx]->get_numeric_type() == INT) par_values(parIdx) = (double) ((int) (par_values(parIdx) + 0.5));
+                if (_model_pars[parIdx]->is_integral()) par_values(parIdx) = (double) ((int) (par_values(parIdx) + 0.5));
                 if (par_values[parIdx] < _model_pars[parIdx]->get_prior_min() or par_values[parIdx] > _model_pars[parIdx]->get_prior_max()) success = false;
             }
         }
@@ -159,7 +159,7 @@ namespace ABC {
                 double dev = gsl_ran_gaussian(RNG, sigma[j]) + mu[j];
                 success = dev >= mpar->get_prior_min() and dev <= mpar->get_prior_max();
                 if (success) {
-                    if (mpar->get_numeric_type() == INT) {
+                    if (mpar->is_integral()) {
                         res[j] = (double) ((int) (dev + 0.5));
                     } else {
                         res[j] = dev;

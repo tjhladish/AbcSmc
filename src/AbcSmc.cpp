@@ -176,16 +176,16 @@ bool AbcSmc::parse_config(string conf_filename) {
         string name = mpar["name"].asString();
         string short_name = mpar.get("short_name", "").asString();
 
-        PriorType ptype = UNIFORM;
+        ABC::PriorType ptype = ABC::UNIFORM;
         string ptype_str = mpar["dist_type"].asString();
         if (ptype_str == "UNIFORM") {
-            ptype = UNIFORM;
+            ptype = ABC::UNIFORM;
         } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
-            ptype = NORMAL;
+            ptype = ABC::NORMAL;
         } else if (ptype_str == "PSEUDO") {
-            ptype = PSEUDO;
+            ptype = ABC::PSEUDO;
         } else if (ptype_str == "POSTERIOR") {
-            ptype = POSTERIOR;
+            ptype = ABC::POSTERIOR;
             if (_posterior_database_filename == "") {
                 cerr << "Parameter specfied as type POSTERIOR, without previously specifying a posterior_database_filename.  Aborting." << endl;
                 exit(-204);
@@ -257,8 +257,11 @@ bool AbcSmc::parse_config(string conf_filename) {
         double par1 = mpar["par1"].asDouble();
         double par2 = mpar["par2"].asDouble();
         double step = mpar.get("step", 1.0).asDouble(); // default increment is 1
-
-        add_next_parameter(name, short_name, ptype, ntype, par1, par2, step, _untransform_func, par_rescale, mod_map);
+        if (ntype == INT) {
+            add_next_parameter<int>(name, short_name, ptype, par1, par2, step, _untransform_func, par_rescale, mod_map);
+        } else {
+            add_next_parameter<float_type>(name, short_name, ptype, par1, par2, step, _untransform_func, par_rescale, mod_map);
+        }
     }
 
     // Parse model metrics
@@ -287,14 +290,13 @@ bool AbcSmc::parse_config(string conf_filename) {
 }
 
 
-vector<double> AbcSmc::do_complicated_untransformations(const vector<Parameter*>& _model_pars, const Row & pars) {
+vector<double> AbcSmc::do_complicated_untransformations(const vector<ABC::Parameter*>& _model_pars, const Row & pars) {
     assert( _model_pars.size() == npar() );
     assert( static_cast<size_t>(pars.size()) == npar() );
     const vector<double> identities = {0.0, 1.0, 0.0, 1.0};
     vector<double> upars(npar());
     for (size_t i = 0; i < npar(); ++i) {
-//cerr << "Parameter " << i << ": " << _model_pars[i]->get_name() << endl;
-        const Parameter* mpar = _model_pars[i];
+        const ABC::Parameter* mpar = _model_pars[i];
         vector<double> modifiers(identities); // TODO -- double check that this is a legit copy constructor
         map<string, vector<int> > mod_map = mpar->get_par_modification_map();
         for (size_t j = 0; j < mod_map["transformed_addend"].size(); ++j)   modifiers[0] += pars[mod_map["transformed_addend"][j]];
@@ -905,7 +907,7 @@ Mat2D AbcSmc::slurp_posterior() {
 
     int num_posterior_pars = 0; // num of cols
     string posterior_strings = "";
-    for (Parameter* p: _model_pars) {
+    for (ABC::Parameter* p: _model_pars) {
         if (p->get_prior_type() == POSTERIOR) {
             ++num_posterior_pars;
             if (posterior_strings != "") {

@@ -16,12 +16,9 @@
 #include <math.h>
 
 #include <PLS/pls.h>
+#include <AbcSmc/Parameter.h>
 
 using namespace std;
-
-// forward declare to avoid cyclic AbcUtil <=> AbcSmc dependency
-// TODO: move Parameter into own class
-class Parameter;
 
 namespace ABC {
 
