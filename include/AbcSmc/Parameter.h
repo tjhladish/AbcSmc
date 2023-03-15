@@ -24,20 +24,29 @@ namespace ABC {
             std::string get_name() const { return name; };
             std::string get_short_name() const { return short_name; };
 
-            virtual double sample(const gsl_rng* RNG) = 0;
-            virtual void set_prior_limits(double min, double max) = 0;
-            virtual double get_prior_min() const = 0;
-            virtual double get_prior_max() const = 0;
-            virtual double get_prior_mean() const = 0;
-            virtual double get_prior_stdev() const = 0;
-            virtual double get_state() const = 0;
-            virtual double get_step() const = 0;
-            virtual double increment_state() = 0;
-            virtual double reset_state() = 0;
-            virtual PriorType get_prior_type() const = 0;
-            virtual bool is_integral() const = 0;
-            virtual map < std::string, vector<int> > get_par_modification_map() const = 0;
-            virtual double untransform(const double t, vector<double> pars) const = 0;
+            virtual double gsl_sample(const gsl_rng* /* RNG */) const = 0;
+            virtual double likelihood(const double /* pval */) const = 0;
+
+            // can ignore defining `noise`, `get_mean`, `get_sd`, etc, if that kind of parameter never uses it
+            virtual double gsl_noise(
+                const gsl_rng* /* RNG */, const double /* mu */, const double /* sigma_squared */,
+                const size_t MAX_ATTEMPTS = 1000
+            ) const {
+                return std::numeric_limits<double>::signaling_NaN();
+            };
+            virtual double get_mean() const { return std::numeric_limits<double>::signaling_NaN(); };
+            virtual double get_sd() const { return std::numeric_limits<double>::signaling_NaN(); };
+
+            // some methods, there is a typical, real default, but we might wish to override it
+            virtual bool isPosterior() const { return false; };
+            virtual bool increment_state() { return false; };
+            // if *not* a transforming parameter, no-op
+            virtual double untransform(const double pval) const { return pval; }
+            // if *not* an integer type parameter, no-op
+            virtual double recast(const double pval) const { return pval; };
+    
+            // some computations can be done in terms of the properly defined methods
+            bool valid(const double pval) const { return likelihood(pval) != 0.0; };
 
         private:
             std::string name;
