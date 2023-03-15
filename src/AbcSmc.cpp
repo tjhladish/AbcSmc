@@ -230,7 +230,6 @@ bool AbcSmc::parse_config(string conf_filename) {
                 cerr << "Unknown parameter transformation type: " << ttype_str << ".  Aborting." << endl;
                 exit(-206);
             }
-
         } else if (mpar["untransform"].type() == Json::ValueType::objectValue) {
             Json::Value untransform = mpar["untransform"];
             string ttype_str = untransform["type"].asString();
@@ -238,7 +237,7 @@ bool AbcSmc::parse_config(string conf_filename) {
                 cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
                 exit(-207);
             }
-            par_rescale = {untransform["min"].asDouble(), untransform["max"].asDouble()};
+            par_rescale = { untransform["min"].asDouble(), untransform["max"].asDouble() };
             _untransform_func = [](const double t) { return ABC::logistic(t); };
             use_transformed_pars = true;
             //Json::ValueType mod_type = untransform["transformed_addend"].type();
@@ -253,13 +252,17 @@ bool AbcSmc::parse_config(string conf_filename) {
             exit(-208);
         }
 
+        add_modification_map(_model_pars.size(), mod_map);
+        add_par_rescale(_model_pars.size(), par_rescale);
+
         double par1 = mpar["par1"].asDouble();
         double par2 = mpar["par2"].asDouble();
         double step = mpar.get("step", 1.0).asDouble(); // default increment is 1
+
         if (ntype == INT) {
-            add_next_parameter<int>(name, short_name, ptype, par1, par2, step, _untransform_func, par_rescale, mod_map);
+            add_next_parameter<int>(name, short_name, ptype, par1, par2, step, _untransform_func);
         } else {
-            add_next_parameter<float_type>(name, short_name, ptype, par1, par2, step, _untransform_func, par_rescale, mod_map);
+            add_next_parameter<float_type>(name, short_name, ptype, par1, par2, step, _untransform_func);
         }
     }
 
@@ -292,21 +295,18 @@ bool AbcSmc::parse_config(string conf_filename) {
     return true;
 }
 
-
 vector<double> AbcSmc::do_complicated_untransformations(const vector<ABC::Parameter*>& _model_pars, const Row & pars) {
     assert( _model_pars.size() == npar() );
     assert( static_cast<size_t>(pars.size()) == npar() );
     const vector<double> identities = {0.0, 1.0, 0.0, 1.0};
     vector<double> upars(npar());
     for (size_t i = 0; i < npar(); ++i) {
+        ABC::ParXform xform;
         const ABC::Parameter* mpar = _model_pars[i];
-        vector<double> modifiers(identities); // TODO -- double check that this is a legit copy constructor
-        map<string, vector<int> > mod_map = mpar->get_par_modification_map();
-        for (size_t j = 0; j < mod_map["transformed_addend"].size(); ++j)   modifiers[0] += pars[mod_map["transformed_addend"][j]];
-        for (size_t j = 0; j < mod_map["transformed_factor"].size(); ++j)   modifiers[1] *= pars[mod_map["transformed_factor"][j]];
-        for (size_t j = 0; j < mod_map["untransformed_addend"].size(); ++j) modifiers[2] += pars[mod_map["untransformed_addend"][j]];
-        for (size_t j = 0; j < mod_map["untransformed_factor"].size(); ++j) modifiers[3] *= pars[mod_map["untransformed_factor"][j]];
-        upars[i] = mpar->untransform(pars[i], modifiers);
+        map<string, vector<size_t> > mod_map = get_par_modification_map(i);
+        xform.shift(pars(mod_map["transformed_addend"]), pars(mod_map["untransformed_addend"]));
+        xform.scale(pars(mod_map["transformed_factor"]), pars(mod_map["untransformed_factor"]));
+        upars[i] = mpar->untransform(pars[i], xform);
     }
     return upars;
 }

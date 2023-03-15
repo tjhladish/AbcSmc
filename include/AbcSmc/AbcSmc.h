@@ -105,15 +105,20 @@ class AbcSmc {
             return m;
         }
 
+        // TODO model_pars => map<string, Parameter*>, check for duplicate names
+        bool add_parameter(ABC::Parameter *const p) {
+            _model_pars.push_back(p);
+            return true;
+        }
+
         template <typename NT> // any concepts / constraints on NT will be propogated here by the compiler
-        ABC::Parameter* add_next_parameter(
+        bool add_next_parameter(
             std::string name, std::string short_name,
             ABC::PriorType ptype,
-            double val1, double val2, double step,double (*u)(const double), std::pair<double, double> r, std::map<std::string, std::vector<int> > mm
+            double val1, double val2, double step,double (*u)(const double),
+            std::pair<double, double> r, std::map<std::string, std::vector<int> > mm
         ) {
-            ABC::Parameter * p = new ABC::TParameter<NT>(name, short_name, ptype, val1, val2, step, u, r, mm);
-            _model_pars.push_back(p);
-            return p;
+            return add_parameter(ABC::create_parameter(name, short_name, ptype, val1, val2, step, u, r, mm));
         }
 
         void set_filtering_type(FilteringType ft) {
@@ -166,6 +171,16 @@ class AbcSmc {
         Row get_doubled_variance(const size_t t) const { return _doubled_variance[t]; }
         void append_doubled_variance(const Row & v2) { _doubled_variance.push_back(v2); }
 
+        void add_modification_map(
+            const size_t parIdx,
+            map<std::string, std::vector<size_t> > mod_map
+        ) { _par_modification_map[parIdx] = mod_map; };
+        void add_par_rescale(
+            const size_t parIdx, std::pair<float_type, float_type> par_rescale
+        ) { _par_rescale_map[parIdx] = par_rescale; };
+
+        map<std::string, std::vector<size_t> > get_par_modification_map(const size_t parIdx) const { return _par_modification_map.at(parIdx); }
+        std::pair<float_type,float_type> get_par_rescale(const size_t parIdx) const { return _par_rescale_map.at(parIdx); }
 
     private:
         friend AbcLog;
@@ -173,6 +188,9 @@ class AbcSmc {
         Mat2D Y_orig;
         std::vector<ABC::Parameter*> _model_pars;
         std::vector<ABC::Metric*> _model_mets;
+        map<size_t, map<std::string, std::vector<size_t> > > _par_modification_map;
+        map<size_t, map<std::string, std::vector<size_t> > > _par_rescale_map; 
+
         Row _met_vals;
         size_t _num_smc_sets;
         vector<int> _smc_set_sizes;
