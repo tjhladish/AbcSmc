@@ -100,7 +100,7 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
         }
         const size_t max_set = max(_predictive_prior_sizes.size(), _smc_set_sizes.size());
         for (size_t i = 0; i < max_set; ++i) {
-            if (get_pred_prior_size(i, QUIET) > get_num_particles(i, QUIET)) {
+            if (get_pred_prior_size(i, false) > get_num_particles(i, false)) {
                 cerr << "Error: requested predictive prior size is greater than requested SMC set size for at least one set in configuration file." << endl;
                 exit(1);
             }
@@ -433,7 +433,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             cerr << "ERROR: Failed to read SMC set from database because not all particles are complete in set " << t << "\n";
             return false;
         }
-        const int json_set_size = get_num_particles(t, QUIET);
+        const int json_set_size = get_num_particles(t, false);
         if (set_size != json_set_size) {
             cerr << "ERROR:\tSet size for one or more sets does not agree between configuration file and database:" << endl
                  << "\tSet " << t << " in configuration file has size " << json_set_size << " vs size " << set_size << " in database." << endl;
