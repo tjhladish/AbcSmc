@@ -10,28 +10,12 @@
 #include <AbcSmc/AbcSim.h>
 #include <PLS/pls.h>
 #include <AbcSmc/Parameter.h>
+#include <AbcSmc/Metric.h>
 
 class AbcLog; // forward declaration of AbcLog; see AbcLog.h
 
-enum NumericType {INT, FLOAT};
 enum FilteringType {PLS_FILTERING, SIMPLE_FILTERING};
-
-class Metric {
-    public:
-        Metric() {};
-        Metric(std::string s, std::string ss, NumericType n, double val) : name(s), short_name(ss), ntype(n), obs_val(val) {};
-
-        std::string get_name() const { return name; }
-        std::string get_short_name() const { if (short_name == "") { return name; } else { return short_name; } }
-        NumericType get_numeric_type() const { return ntype; }
-        double get_obs_val() const { return obs_val; }
-
-    private:
-        std::string name;
-        std::string short_name;
-        NumericType ntype;
-        double obs_val;
-};
+enum NumericType { INT, FLOAT };
 
 class AbcSmc {
     public:
@@ -111,15 +95,17 @@ class AbcSmc {
         void set_retain_posterior_rank( std::string retain_rank ) { _retain_posterior_rank = (retain_rank == "true"); }
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
-        Metric* add_next_metric(std::string name, std::string short_name, NumericType ntype, double obs_val) {
-            Metric* m = new Metric(name, short_name, ntype, obs_val);
-            _model_mets.push_back(new Metric(name, short_name, ntype, obs_val));
+
+        template <typename NT> // any concepts / constraints on NT will be propogated here by the compiler
+        ABC::Metric* add_next_metric(std::string name, std::string short_name, double obs_val) {
+            ABC::Metric* m = new ABC::TMetric<NT>(name, short_name, obs_val);
+            _model_mets.push_back(m);
             _met_vals.resize(_model_mets.size());
-            _met_vals[_model_mets.size()-1] = obs_val;
+            _met_vals[_model_mets.size()-1 ] = obs_val;
             return m;
         }
 
-        template <NumType NT>
+        template <typename NT> // any concepts / constraints on NT will be propogated here by the compiler
         ABC::Parameter* add_next_parameter(
             std::string name, std::string short_name,
             ABC::PriorType ptype,
@@ -186,7 +172,7 @@ class AbcSmc {
         Mat2D X_orig;
         Mat2D Y_orig;
         std::vector<ABC::Parameter*> _model_pars;
-        std::vector<Metric*> _model_mets;
+        std::vector<ABC::Metric*> _model_mets;
         Row _met_vals;
         size_t _num_smc_sets;
         vector<int> _smc_set_sizes;
