@@ -16,7 +16,6 @@ class AbcLog; // forward declaration of AbcLog; see AbcLog.h
 
 enum PriorType {UNIFORM, NORMAL, PSEUDO, POSTERIOR};
 enum NumericType {INT, FLOAT};
-enum VerboseType {QUIET, VERBOSE};
 enum FilteringType {PLS_FILTERING, SIMPLE_FILTERING};
 
 class Parameter {
@@ -215,24 +214,24 @@ class AbcSmc {
         size_t get_smc_iterations() { return _num_smc_sets; }
         //void set_smc_set_sizes(vector<int> n) { _smc_set_sizes = n; }
 
-        size_t get_num_particles(const size_t set_num, const VerboseType vt = VERBOSE) {
+        size_t get_num_particles(const size_t set_num, const bool verbose = true) {
             int set_size = 0;
             if (set_num < _smc_set_sizes.size()) {
                 set_size = _smc_set_sizes[set_num];
             } else {
                 set_size = _smc_set_sizes.back();
-                if (vt == VERBOSE) cerr << "Assuming set size of " << set_size << endl;
+                if (verbose) cerr << "Assuming set size of " << set_size << endl;
             }
             return set_size;
         }
 
-        size_t get_pred_prior_size(size_t set_num, VerboseType vt = VERBOSE) {
+        size_t get_pred_prior_size(size_t set_num, const bool verbose = true) {
             int set_size = 0;
             if (set_num < _predictive_prior_sizes.size()) {
                 set_size = _predictive_prior_sizes[set_num];
             } else {
                 set_size = _predictive_prior_sizes.back();
-                if (vt == VERBOSE) cerr << "Assuming a predictive prior size of " << set_size << endl;
+                if (verbose) cerr << "Assuming a predictive prior size of " << set_size << endl;
             }
             return set_size;
         }

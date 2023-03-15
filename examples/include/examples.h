@@ -6,7 +6,6 @@
 #include <gsl/gsl_rng.h>
 #include <cstring>
 #include <unistd.h>
-#include <AbcSmc/AbcSmc.h>
 
 const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 
@@ -81,7 +80,7 @@ void abc_loop(
     if (args.do_all) {
         size_t set_count = abc->get_smc_iterations();
         for (size_t i = 0; i < set_count; ++i) {
-            abc_inner(abc, args, RNG, abc->get_num_particles(i, QUIET), i);
+            abc_inner(abc, args, RNG, abc->get_num_particles(i, false), i);
         }
     } else {
         abc_inner(abc, args, RNG, args.buffer_size, smcset);
