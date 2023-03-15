@@ -24,7 +24,7 @@ DEMOS := direct executable shared integral
 
 default: $(patsubst %,demo/%,$(DEMOS)) $(patsubst %,%/config.json,$(DEMOS)) dice.so
 
-bin:
+bin output:
 	mkdir -p $@
 
 demo:
@@ -55,7 +55,7 @@ run_executable: | bin/dice_game
 run_direct: | bin/dice_game
 
 # in general, run off config => sqlite approach
-run_%: demo/% %/config.json
+run_%: demo/% %/config.json | output
 	./$^ --process --simulate -n 1000
 
 # except for the direct version
