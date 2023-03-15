@@ -1,7 +1,4 @@
-*.sqlite
-abc_*
-!abc_*.json
-dice_game
-*.so
+*/config.json
 demo
 bin
+output
