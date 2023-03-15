@@ -205,25 +205,25 @@ bool AbcSmc::parse_config(string conf_filename) {
             exit(-206);
         }
 
-        double (*_untransform_func)(const double);
+        float_type (*_untransform_func)(const float_type &);
         // linear rescaling [min, max] not for par as sampled, but as input to sim
         // NB: if par is not on [0, 1] after untransforming, this is still a linear rescaling, but not onto [min, max]
-        pair<double, double> par_rescale = {0.0, 1.0};
-        map<string, vector<int> > mod_map { {"transformed_addend", {}}, {"transformed_factor", {}}, {"untransformed_addend", {}}, {"untransformed_factor", {}} };
+        pair<float_type, float_type> par_rescale = {0.0, 1.0};
+        map<string, vector<size_t> > mod_map { {"transformed_addend", {}}, {"transformed_factor", {}}, {"untransformed_addend", {}}, {"untransformed_factor", {}} };
         //auto _untransform = [](const double t) { return t; };
         if (not mpar.isMember("untransform")) {
-            _untransform_func = [](const double t) { return t; };
+            _untransform_func = [](const float_type & t) { return t; };
         } else if (mpar["untransform"].type() == Json::ValueType::stringValue) {
             string ttype_str = mpar.get("untransform", "NONE").asString();
             if (ttype_str == "NONE") { // TODO - it's possible this may not actually ever be called
-                _untransform_func = [](const double t) { return t; };
+                _untransform_func = [](const float_type & t) { return t; };
                 //ttype = UNTRANSFORMED;
             } else if (ttype_str == "POW_10") {
-                _untransform_func = [](const double t) { return pow(10.0, t); };
+                _untransform_func = [](const float_type & t) { return pow(10.0, t); };
                 //ttype = LOG_10;
                 use_transformed_pars = true;
             } else if (ttype_str == "LOGISTIC") {
-                _untransform_func = [](const double t) { return ABC::logistic(t); };
+                _untransform_func = [](const float_type & t) { return ABC::logistic(t); };
                 //ttype = LOGIT;
                 use_transformed_pars = true;
             } else {
@@ -238,7 +238,7 @@ bool AbcSmc::parse_config(string conf_filename) {
                 exit(-207);
             }
             par_rescale = { untransform["min"].asDouble(), untransform["max"].asDouble() };
-            _untransform_func = [](const double t) { return ABC::logistic(t); };
+            _untransform_func = [](const float_type & t) { return ABC::logistic(t); };
             use_transformed_pars = true;
             //Json::ValueType mod_type = untransform["transformed_addend"].type();
 
@@ -300,13 +300,14 @@ vector<double> AbcSmc::do_complicated_untransformations(const vector<ABC::Parame
     assert( static_cast<size_t>(pars.size()) == npar() );
     const vector<double> identities = {0.0, 1.0, 0.0, 1.0};
     vector<double> upars(npar());
-    for (size_t i = 0; i < npar(); ++i) {
-        ABC::ParXform xform;
-        const ABC::Parameter* mpar = _model_pars[i];
-        map<string, vector<size_t> > mod_map = get_par_modification_map(i);
-        xform.shift(pars(mod_map["transformed_addend"]), pars(mod_map["untransformed_addend"]));
-        xform.scale(pars(mod_map["transformed_factor"]), pars(mod_map["untransformed_factor"]));
-        upars[i] = mpar->untransform(pars[i], xform);
+    for (size_t parIdx = 0; parIdx < npar(); ++parIdx) {
+        const ABC::Parameter* mpar = _model_pars[parIdx];
+        map<string, vector<size_t> > mod_map = get_par_modification_map(parIdx);
+        ABC::ParXform xform(
+            pars(mod_map["transformed_addend"]), pars(mod_map["untransformed_addend"]),
+            pars(mod_map["transformed_factor"]), pars(mod_map["untransformed_factor"])
+        );
+        upars[parIdx] = mpar->untransform(pars[parIdx], get_par_rescale(parIdx), xform);
     }
     return upars;
 }
@@ -911,7 +912,7 @@ Mat2D AbcSmc::slurp_posterior() {
     int num_posterior_pars = 0; // num of cols
     string posterior_strings = "";
     for (ABC::Parameter* p: _model_pars) {
-        if (p->get_prior_type() == POSTERIOR) {
+        if (p->isPosterior()) {
             ++num_posterior_pars;
             if (posterior_strings != "") {
                 posterior_strings += ", ";

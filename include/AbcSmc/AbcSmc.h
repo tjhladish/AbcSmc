@@ -115,10 +115,9 @@ class AbcSmc {
         bool add_next_parameter(
             std::string name, std::string short_name,
             ABC::PriorType ptype,
-            double val1, double val2, double step,double (*u)(const double),
-            std::pair<double, double> r, std::map<std::string, std::vector<int> > mm
+            float_type val1, float_type val2, float_type step, float_type (*u)(const float_type &)
         ) {
-            return add_parameter(ABC::create_parameter(name, short_name, ptype, val1, val2, step, u, r, mm));
+            return add_parameter(ABC::create_parameter<NT>(name, short_name, ptype, val1, val2, step, u));
         }
 
         void set_filtering_type(FilteringType ft) {
@@ -175,6 +174,7 @@ class AbcSmc {
             const size_t parIdx,
             map<std::string, std::vector<size_t> > mod_map
         ) { _par_modification_map[parIdx] = mod_map; };
+
         void add_par_rescale(
             const size_t parIdx, std::pair<float_type, float_type> par_rescale
         ) { _par_rescale_map[parIdx] = par_rescale; };
@@ -189,7 +189,7 @@ class AbcSmc {
         std::vector<ABC::Parameter*> _model_pars;
         std::vector<ABC::Metric*> _model_mets;
         map<size_t, map<std::string, std::vector<size_t> > > _par_modification_map;
-        map<size_t, map<std::string, std::vector<size_t> > > _par_rescale_map; 
+        map<size_t, std::pair<float_type, float_type> > _par_rescale_map; 
 
         Row _met_vals;
         size_t _num_smc_sets;
