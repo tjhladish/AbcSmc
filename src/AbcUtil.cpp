@@ -131,10 +131,9 @@ namespace ABC {
         while (not success) {
             success = true;
             gsl_ran_multivariate_gaussian(RNG, gslmu, L, result);
-            for (size_t parIdx = 0; parIdx < npar; parIdx++) {
-                par_values[parIdx] = gsl_vector_get(result, parIdx);
-                if (_model_pars[parIdx]->is_integral()) par_values(parIdx) = (double) ((int) (par_values(parIdx) + 0.5));
-                if (par_values[parIdx] < _model_pars[parIdx]->get_prior_min() or par_values[parIdx] > _model_pars[parIdx]->get_prior_max()) success = false;
+            for (size_t parIdx = 0; success and (parIdx < npar); parIdx++) {
+                par_values[parIdx] = _model_pars[parIdx]->recast(gsl_vector_get(result, parIdx));
+                success = _model_pars[parIdx]->valid(par_values[parIdx]);
             }
         }
         gsl_vector_free(gslmu);
@@ -155,17 +154,11 @@ namespace ABC {
             // (relative to the pdf)
             bool success = false;
             auto mpar = _model_pars[j];
-            while (!success) {
-                double dev = gsl_ran_gaussian(RNG, sigma[j]) + mu[j];
-                success = dev >= mpar->get_prior_min() and dev <= mpar->get_prior_max();
-                if (success) {
-                    if (mpar->is_integral()) {
-                        res[j] = (double) ((int) (dev + 0.5));
-                    } else {
-                        res[j] = dev;
-                    }
-                }
+            double dev = mpar->recast(gsl_ran_gaussian(RNG, sigma[j]) + mu[j]);
+            while (!mpar->valid(dev)) {
+                dev = mpar->recast(gsl_ran_gaussian(RNG, sigma[j]) + mu[j]);
             }
+            res[j] = dev;
         }
         return res;      
     }
@@ -494,65 +487,41 @@ namespace ABC {
         const std::vector<Parameter*> & mpars,
         std::vector<size_t> & posterior_ranks // filled in by this
     ) {
+        assert(posterior_ranks.size() == 0); // should be empty, whether to be filled or not
+
+        ParRNG par_rng(RNG, mpars);
         Mat2D par_samples = Mat2D::Zero(num_samples, mpars.size());
+
+        std::vector<size_t> nonpost_indices;
+        std::vector<size_t> posterior_indices;
+        for (size_t parIdx = 0; parIdx < mpars.size(); parIdx++) {
+            if (mpars[parIdx]->isPosterior()) {
+                posterior_indices.push_back(parIdx);
+            } else {
+                nonpost_indices.push_back(parIdx);
+            }
+        }
+
+        assert(posterior_indices.size() == posterior.cols());
+
         for (size_t sampIdx = 0; sampIdx < par_samples.rows(); sampIdx++) {
-            bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
-            bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
-            vector<size_t> posterior_indices;
-            // for each parameter
-            for (size_t parIdx = 0; parIdx < mpars.size(); parIdx++) {
-                Parameter* p = mpars[parIdx];
-                float_type val;
-                // if it's a non-random, PSEUDO parameter
-                if (p->get_prior_type() == PSEUDO) {
-                    // get the state now, so that the first time it will have the initialized value
-                    val = (float_type) p->get_state();
-                    // We need to imitate the way nested loops work, but in a single loop.
-                    // PSEUDO parameters only get incremented when any and all previous PSEUDO parameters
-                    // have reached their max values and are being reset
-                    if (increment_nonrandom_par) {
-                        // This parameter has reached it's max value and gets reset to minimum
-                        // Because of possible floating point errors, we check whether the state is within step/10,000 from the max
-                        const float_type PSEUDO_EPSILON = 0.0001 * p->get_step();
-                        if (p->get_state() + PSEUDO_EPSILON >= p->get_prior_max()) {
-                            p->reset_state();
-                        // otherwise, increment this one and prevent others from being incremented
-                        } else {
-                            p->increment_state();
-                            increment_nonrandom_par = false;
-                            increment_posterior     = false;
-                        }
-                    }
-                } else if (p->get_prior_type() == POSTERIOR) {
-                    val = 0; // will be replaced later in function
-                    if (posterior_indices.size() == 0) {
-                        posterior_ranks[sampIdx] = static_cast<size_t>(p->get_state());
-                    } else {
-                        // require that posterior pars be synchronized
-                        assert(posterior_ranks[sampIdx] == static_cast<size_t>(p->get_state()));
-                    }
-                    posterior_indices.push_back(parIdx);
-                } else {
-                    // Random parameters get sampled independently from each other, and are therefore easy
-                    val = p->sample(RNG);
-                }
-
-                par_samples(sampIdx, parIdx) = val;
+            // for each non-posterior parameter
+            for (size_t parIdx : nonpost_indices) {
+                par_samples(sampIdx, parIdx) = mpars[parIdx]->sample(par_rng);
+                // if it's a prior, this will have hit the gsl RNG
+                // if it's a pseudo, it will have hit the incrementer:
+                //   1. get it's state par_rng[self] == index of the PSEUDO parameter for look-up
+                //   2. if the incrementer is unlocked AND the parameter isn't at max value,
+                //      yes: par_rng[self]++, and lock the incrementer
+                //      no: if the incrementer is unlocked, par_rng[self] == 0
             }
-            assert(posterior_indices.size() == posterior.cols());
 
-            for (size_t postParIdx = 0; postParIdx < posterior_indices.size(); ++postParIdx) {
-                par_samples(sampIdx, posterior_indices[postParIdx]) = posterior(posterior_ranks[sampIdx], postParIdx);
-                Parameter* p = mpars[posterior_indices[postParIdx]];
-                if (increment_posterior) {
-                    if (p->get_state() >= p->get_prior_max()) {
-                        p->reset_state();
-                    } else {
-                        p->increment_state();
-                    }
-                }
-
+            if (posterior_indices.size()) {
+                posterior_ranks.push_back(mpars[posterior_indices[0]]->sample(par_rng));
+                par_samples(sampIdx, posterior_indices) = posterior.row(posterior_ranks.back());
+                // if the incrementer is unlocked, the posterior will be incremented (or reset to 0 if it's at max value)
             }
+
         }
         return par_samples;
 
@@ -590,15 +559,7 @@ namespace ABC {
             double numerator = 1;
             double denominator = 0.0;
             for (size_t parIdx = 0; parIdx < params.cols(); parIdx++) {
-                Parameter* par = mpars[parIdx];
-                const double par_value = params(post_rank, parIdx);
-                if (par->get_prior_type() == NORMAL) {
-                    numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
-                } else if (par->get_prior_type() == UNIFORM) {
-                    // The RHS here will be 1 under normal circumstances.  If the prior has been revised during a fit,
-                    // this should throw out values outside of the prior's range
-                    numerator *= (int) (par_value >= par->get_prior_min() and par_value <= par->get_prior_max());
-                }
+                numerator *= mpars[parIdx]->likelihood( params(post_rank, parIdx) );
             }
 
             for (size_t prev_post_rank = 0; prev_post_rank < prev_params.rows(); prev_post_rank++) {
@@ -612,7 +573,7 @@ namespace ABC {
                     // It allows ABC to continue exploring other parameters, rather than causing the math
                     // to fall apart because the density at the converged value is infinite.
                     if (old_dv != 0 or par_value != old_par_value) {
-                        running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_dv) );
+                        running_product *= gsl_ran_gaussian_pdf(par_value - old_par_value, sqrt(old_dv) );
                     }
                 }
                 denominator += running_product;

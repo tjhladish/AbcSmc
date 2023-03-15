@@ -29,28 +29,8 @@ using std::is_floating_point_v;
 //  - have transformations managed by the ABCSMC object?
 
 namespace ABC {
+
     enum PriorType { UNIFORM, NORMAL, PSEUDO, POSTERIOR };
-
-    // this manages translating PriorTypes into particular instantiations
-    Parameter * create_parameter(
-        const std::string & s, const std::string & ss,
-        const PriorType p,
-        const double val1, const double val2, const double val_step,
-        double (*u)(const double), std::pair<double, double> r,
-        const map< std::string, vector<int> > & mm
-    ) {
-        return new ABC::TParameter<NT>(name, short_name, ptype, val1, val2, step, u, r, mm);
-    };
-
-    // this is a state-machine for use with both priors, posteriors, and pseudo parameters
-    // should be passed around by reference
-    // different parameter classes access this in different ways
-    struct ParRNG {
-        const gsl_rng* RNG;
-        map<std::string, size_t> pseudo;
-        bool lock_pseudo;
-        size_t posterior;
-    }
 
     // this defines shift/scale transformation.
     //
@@ -64,13 +44,14 @@ namespace ABC {
     // transform(x) = (u((x + a) * b) + c) * d (i.e. value on the model/natural scale)
     struct ParXform {
         template <typename T>
+        
         ParXform(
             const T & pre_shift, const T & post_shift,
             const T & pre_scale, const T & post_scale
-        ) : tplus(std::acumulate(pre_shift.begin(), pre_shift.end(), 0.0)),
-            uplus(std::acumulate(post_shift.begin(), post_shift.end(), 0.0)),
-            tplus(std::acumulate(pre_scale.begin(), pre_scale.end(), 1.0, std::multiplies<float_type>())),
-            ttimes(std::acumulate(post_scale.begin(), post_scale.end(), 1.0, std::multiplies<float_type>()))
+        ) : tplus(std::accumulate(pre_shift.begin(), pre_shift.end(), 0.0)),
+            uplus(std::accumulate(post_shift.begin(), post_shift.end(), 0.0)),
+            ttimes(std::accumulate(pre_scale.begin(), pre_scale.end(), 1.0, std::multiplies<float_type>())),
+            utimes(std::accumulate(post_scale.begin(), post_scale.end(), 1.0, std::multiplies<float_type>()))
         { }
 
         ParXform() : tplus(0.0), uplus(0.0), ttimes(1.0), utimes(1.0) {}
@@ -81,7 +62,9 @@ namespace ABC {
             return (u((pval + tplus)*ttimes) + uplus)*utimes;
         }
 
-    }
+    };
+
+    struct ParRNG; // forward declaration for Parameter
 
     class Parameter {
         public:
@@ -90,37 +73,57 @@ namespace ABC {
             std::string get_name() const { return name; };
             std::string get_short_name() const { return short_name; };
 
-            virtual double sample(const gsl_rng* /* RNG */) const = 0;
-            virtual double likelihood(const double /* pval */) const = 0;
+            virtual float_type sample(ParRNG & /* prng */) const = 0;
+            virtual float_type likelihood(const float_type /* pval */) const = 0;
 
             // can ignore defining `noise`, `get_mean`, `get_sd`, etc, if that kind of parameter never uses it
-            virtual double noise(
-                const gsl_rng* /* RNG */, const double /* mu */, const double /* sigma_squared */,
+            virtual float_type noise(
+                const gsl_rng* /* RNG */, const float_type /* mu */, const float_type /* sigma_squared */,
                 const size_t MAX_ATTEMPTS = 1000
             ) const {
                 return std::numeric_limits<double>::signaling_NaN();
             };
-            virtual double get_mean() const { return std::numeric_limits<double>::signaling_NaN(); };
-            virtual double get_sd() const { return std::numeric_limits<double>::signaling_NaN(); };
+            virtual float_type get_mean() const { return std::numeric_limits<float_type>::signaling_NaN(); };
+            virtual float_type get_sd() const { return std::numeric_limits<float_type>::signaling_NaN(); };
 
             // some methods, there is a typical, real default, but we might wish to override it
             virtual bool isPosterior() const { return false; };
             virtual bool increment_state() { return false; };
             // if *not* a transforming parameter, no-op
-            virtual double untransform(
-                const double pval, const std::pair<float_type, float_type> & /* rescale */, const ParXform & /* xform */
+            virtual float_type untransform(
+                const float_type pval, const std::pair<float_type, float_type> & /* rescale */, const ParXform & /* xform */
             ) const {
                 return pval;
             }
             // if *not* an integer type parameter, this is a no-op
-            virtual double recast(const double pval) const { return pval; };
+            virtual float_type recast(const double pval) const { return pval; };
     
             // some computations can be done in terms of the properly defined methods
-            bool valid(const double pval) const { return likelihood(pval) != 0.0; };
+            bool valid(const float_type pval) const { return likelihood(pval) != 0.0; };
+
+        friend ParRNG;
+        protected:
+            virtual void prng_register(std::map<Parameter*, size_t> & m) const { }
 
         private:
             std::string name;
             std::string short_name;
+    };
+
+    // this is a state-machine for use with both priors, posteriors, and pseudo parameters
+    // should be passed around by reference
+    // Priors will hit the RNG
+    // Pseudo parameters will hit the pseudo map + potentially increment it / lock the prng map / posterior
+    // Posterior parameters will use the posterior value + potentially increment it if prng is unlocked
+    struct ParRNG {
+        ParRNG(const gsl_rng* RNG, const std::vector<Parameter*> & mpars) : RNG(RNG) {
+            for (Parameter * p : mpars) { p->prng_register(pseudo); }
+        }
+
+        const gsl_rng* RNG;
+        map<Parameter*, size_t> pseudo;
+        bool lock = false;
+        size_t posterior;
     };
 
     template <typename NT> requires (std::is_integral_v<NT> or std::is_floating_point_v<NT>)
@@ -129,8 +132,8 @@ namespace ABC {
             TParameter(
                 const std::string & s, const std::string & ss,
                 const PriorType p,
-                const double val1, const double val2, const double val_step,
-                double (*u)(const double)
+                const float_type val1, const float_type val2, const float_type val_step,
+                float_type (*u)(const float_type &)
             ) : Parameter(s, ss), ptype(p), step(val_step), untran_func(u) {
                 if (ptype == UNIFORM) {
                     assert(val1 < val2);
@@ -162,20 +165,20 @@ namespace ABC {
                 }
             }
 
-            double sample(const gsl_rng* RNG) override {
+            float_type sample(ParRNG & prng) const override {
                 if (ptype == UNIFORM) {
                     if constexpr (std::integral<NT>) {
                         // + 1 makes it out of [fmin, fmax], instead of [fmin, fmax)
-                        return gsl_rng_uniform_int(RNG, fmax-fmin + 1) + fmin;
+                        return gsl_rng_uniform_int(prng.RNG, fmax-fmin + 1) + fmin;
                     } else {
-                        return gsl_rng_uniform(RNG)*(fmax-fmin) + fmin;
+                        return gsl_rng_uniform(prng.RNG)*(fmax-fmin) + fmin;
                     }
                 } else if (ptype == NORMAL) {
                     if constexpr (std::integral<NT>) {
                         cerr << "Integer type not supported for normal distributions.  Aborting." << endl;
                         exit(-199);
                     } else {
-                        return gsl_ran_gaussian(RNG, stdev) + mean;
+                        return gsl_ran_gaussian(prng.RNG, stdev) + mean;
                     }
                 } else {
                     std::cerr << "Prior type " << ptype << " not supported for random sampling.  Aborting." << std::endl;
@@ -183,27 +186,53 @@ namespace ABC {
                 }
             }
 
-            double get_mean() const override { return mean; }
-            double get_sd() const override { return stdev; }
+            float_type likelihood(const float_type pval) const override {
+                if (ptype == UNIFORM) {
+                    if ((fmin <= pval) and (pval <= fmax)) {
+                        return 1.0 / (fmax - fmin);
+                    } else {
+                        return 0.0;
+                    }
+                } else if (ptype == NORMAL) {
+                    if constexpr (std::integral<NT>) {
+                        cerr << "Integer type not supported for normal distributions.  Aborting." << endl;
+                        exit(-199);
+                    } else {
+                        return gsl_ran_gaussian_pdf(pval - mean, stdev);
+                    }
+                } else {
+                    std::cerr << "Prior type " << ptype << " not supported for random sampling.  Aborting." << std::endl;
+                    exit(-200);
+                }
+            };
 
-            double increment_state() override { return state += step; }
-            double reset_state() override { state = get_prior_min(); return state; }
-            PriorType get_prior_type() const override { return ptype; }
-            bool is_integral() const override { if constexpr (std::integral<NT>) { return true; } else { return false; } }
-            //double untransform(const double t) const { return (rescale.second - rescale.first) * untran_func(t) + rescale.first; }
-            map < std::string, vector<int> > get_par_modification_map() const override { return par_modification_map; }
+            float_type get_mean() const override { return mean; }
+            float_type get_sd() const override { return stdev; }
+
+            // bool is_integral() const override { if constexpr (std::integral<NT>) { return true; } else { return false; } }
+            
             float_type untransform(
                 const float_type pval, const std::pair<float_type, float_type> & rescale, const ParXform & xform = ParXform()
             ) const override {
                 return (rescale.second - rescale.first) * xform.transform(pval, untran_func) + rescale.first;
             }
-        }
 
         private:
             PriorType ptype;
-            double fmin, fmax, mean, stdev, state, step;
+            float_type fmin, fmax, mean, stdev, state, step;
             float_type (*untran_func) (const float_type &);
     };
+
+    // this manages translating PriorTypes into particular instantiations
+    template <typename NT>
+    Parameter * create_parameter(
+        const std::string & s, const std::string & ss,
+        const PriorType p,
+        const float_type val1, const float_type val2, const float_type val_step,
+        float_type (*u)(const float_type &)
+    ) {
+        return new ABC::TParameter<NT>(s, ss, p, val1, val2, val_step, u);
+    }
 }
 
 #endif // ABCSMC_PARAMETER_H
