@@ -283,7 +283,11 @@ bool AbcSmc::parse_config(string conf_filename) {
 
         double val = mmet["value"].asDouble();
 
-        add_next_metric(name, short_name, ntype, val);
+        if (ntype == INT) {
+            add_next_metric<int>(name, short_name, val);
+        } else {
+            add_next_metric<float_type>(name, short_name, val);
+        }
     }
 
     return true;

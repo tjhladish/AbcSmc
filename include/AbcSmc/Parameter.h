@@ -11,9 +11,8 @@ using std::cerr;
 using std::endl;
 using std::vector;
 using std::map;
-
-template<typename NT>
-concept NumType = std::is_integral_v<NT> or std::is_floating_point_v<NT>;
+using std::is_integral_v;
+using std::is_floating_point_v;
 
 namespace ABC {
     enum PriorType { UNIFORM, NORMAL, PSEUDO, POSTERIOR };
@@ -38,7 +37,7 @@ namespace ABC {
             virtual double untransform(const double t, vector<double> pars) const = 0;
     };
 
-    template <NumType NT>
+    template <typename NT> requires (std::is_integral_v<NT> or std::is_floating_point_v<NT>)
     class TParameter : public Parameter {
         public:
             TParameter() {};
