@@ -1,7 +1,7 @@
 
-#include "AbcSmc.h"
+#include <AbcSmc/AbcSmc.h>
 #include "examples.h"
-#include "dice.h"
+#include "dice.h" // simulator
 
 int main(int argc, char* argv[]) {
 
