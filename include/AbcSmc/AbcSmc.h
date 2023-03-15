@@ -252,8 +252,9 @@ class AbcSmc {
 
         void set_simulation(AbcSimFun * abcsf) { _simulator = abcsf; }
         void set_executable(std::string cmd) { set_simulation(new AbcExec(cmd)); }
-        void set_simulator(AbcSimF * simulator) { set_simulation(new AbcFPtr(simulator)); }
-        void set_simulator(std::string soname) { set_simulation(new AbcFPtr(soname.c_str())); }
+        void set_simulator(AbcSimMPI * simulator) { set_simulation(new AbcFPtrMPI(simulator)); }
+        void set_simulator(AbcSimBase * simulator) { set_simulation(new AbcFPtrBase(simulator)); }
+        void set_simulator(std::string soname) { set_simulation(new AbcFPtrBase(soname.c_str())); }
 
         void set_database_filename( std::string name ) { _database_filename = name; }
         void set_posterior_database_filename( std::string name ) { _posterior_database_filename = name; }
