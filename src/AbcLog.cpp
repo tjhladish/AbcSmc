@@ -47,7 +47,7 @@ void AbcLog::report_convergence_data(
         os << "Convergence data for predictive priors:\n";
     }
     for (size_t parIdx = 0; parIdx < abc->_model_pars.size(); parIdx++) {
-        const Parameter* par = abc->_model_pars[parIdx];
+        const ABC::Parameter* par = abc->_model_pars[parIdx];
         const double current_stdev = sqrt(abc->_doubled_variance[set_t][parIdx]/2.0);
         const double prior_mean = par->get_prior_mean();
         const double prior_mean_delta = current_means[parIdx] - prior_mean;
