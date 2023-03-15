@@ -12,8 +12,9 @@ include_directories(include)
 
 # the demos all depend on abc
 
-add_executable(direct direct/main.cpp)
-target_link_libraries(direct abc)
+# TODO: not yet working
+# add_executable(direct direct/main.cpp)
+# target_link_libraries(direct abc)
 
 add_executable(shared shared/main.cpp)
 target_link_libraries(shared abc)
@@ -24,4 +25,4 @@ target_link_libraries(integral abc)
 add_executable(executable executable/main.cpp)
 target_link_libraries(executable abc)
 
-# TODO this must be foreach-able
+# TODO this must be foreach-able?

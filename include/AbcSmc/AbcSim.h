@@ -15,6 +15,7 @@ using std::vector;
 // if compiling with MPI support, have to handle slightly complex MPI objects
 // this must be defined in a matching way between and AbcSmc executables *and*
 // other code using this header.
+
 namespace ABC {
 
   template <typename T>
@@ -33,16 +34,23 @@ namespace ABC {
 // is changed when they are used.
 struct AbcSimFun {
     virtual vector<float_type> operator()(
-      vector<float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
+        vector<float_type> pars, const unsigned long int seed, const unsigned long int serial
     ) const = 0;
+
+    // the default implementation is to ignore the MPI_par* argument.
+    virtual vector<float_type> operator()(
+        vector<float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* /* _mp */
+    ) const {
+        return (*this)(pars, seed, serial);
+    };
 };
 
 // an AbcSimFun which throws an error if used. This is intended to be used as a default, so that if *not* replaced, the error
 // will be thrown when the simulator is used.
 struct AbcSimUnset : AbcSimFun {
     vector<float_type> operator()(
-      vector<float_type> /*pars*/, const unsigned long int /*seed*/, const unsigned long int /*serial*/, const ABC::MPI_par* /*_mp*/
-    ) const {
+      vector<float_type> /*pars*/, const unsigned long int /*seed*/, const unsigned long int /*serial*/
+    ) const override {
         std::cerr << "ERROR: A pointer to a simulator function (prefered) or an external simulator executable must be defined." << std::endl;
         exit(100);
     }
@@ -51,16 +59,19 @@ struct AbcSimUnset : AbcSimFun {
 // This defines a function type, for cleaner typing when using a function pointer as a simulator
 // Using a function pointer is the typical approach for both compiling the abc library + simulator together AND
 // using a dynamic simulator object.
-typedef vector<float_type> AbcSimF(vector<float_type>, const unsigned long int, const unsigned long int, const ABC::MPI_par*);
+typedef vector<float_type> AbcSimMPI(vector<float_type>, const unsigned long int, const unsigned long int, const ABC::MPI_par*);
+typedef vector<float_type> AbcSimBase(vector<float_type>, const unsigned long int, const unsigned long int);
+
 
 // This function handles loading a shared object file -> extracting the function pointer to an AbcSimF
-inline AbcSimF * loadSO(const char * target) {
+template <typename AbcSimType>
+inline AbcSimType * loadSO(const char * target) {
     void* handle = dlopen(target, RTLD_LAZY);
     if (!handle) {
         std::cerr << "Failed to open simulator object: " << target << " ; " << dlerror() << std::endl;
         exit(101);
     }
-    auto simf = (AbcSimF*)dlsym(handle, "simulator");
+    auto simf = (AbcSimType*)dlsym(handle, "simulator");
     if(!simf) {
         std::cerr << "Failed to find 'simulator' function in " << target << " ; " << dlerror() << std::endl;
         dlclose(handle);
@@ -71,15 +82,40 @@ inline AbcSimF * loadSO(const char * target) {
 
 // an AbcSimFun built around an AbcSimF pointer. That pointer can come from code compiled along with this library,
 // i.e. a executable that combines a simulator and the AbcSmc code, or be loaded from a shared object file.
-struct AbcFPtr : AbcSimFun {
-    AbcSimF* fptr;
-    AbcFPtr(AbcSimF * _fptr) : fptr(_fptr) { } // constructor for a function pointer directly
-    AbcFPtr(const char * target) : AbcFPtr(loadSO(target)) { } // construct from a char*-style string (the file name for shared object)
-    AbcFPtr(const std::string target) : AbcFPtr(target.c_str()) { } // construct from a std::string (the file name for shared object)
+struct AbcFPtrMPI : AbcSimFun {
+    AbcSimMPI* fptr;
+    AbcFPtrMPI(AbcSimMPI * _fptr) : fptr(_fptr) { } // constructor for a function pointer directly
+    AbcFPtrMPI(const char * target) : AbcFPtrMPI(loadSO<AbcSimMPI>(target)) { } // construct from a char*-style string (the file name for shared object)
+    AbcFPtrMPI(const std::string target) : AbcFPtrMPI(target.c_str()) { } // construct from a std::string (the file name for shared object)
+    
+    // for this version, we override the MPI version of the operator()
+    // rather than just having it be an ignored parameter
     vector<float_type> operator()(
       vector<float_type> pars, const unsigned long int seed, const unsigned long int serial, const ABC::MPI_par* _mp
-    ) const {
+    ) const override {
         return fptr(pars, seed, serial, _mp);
+    }
+
+    // and we also override the non-MPI version, to throw an error, since we explicitly asked
+    // for MPI support
+    vector<float_type> operator()(
+        vector<float_type> pars, const unsigned long int seed, const unsigned long int serial
+    ) const override {
+        std::cerr << "ERROR: Explicitly constructed an MPI simulator, then called it without MPI arguments." << std::endl;
+        exit(100);
+    };
+};
+
+struct AbcFPtrBase : AbcSimFun {
+    AbcSimBase* fptr;
+    AbcFPtrBase(AbcSimBase * _fptr) : fptr(_fptr) { } // constructor for a function pointer directly
+    AbcFPtrBase(const char * target) : AbcFPtrBase(loadSO<AbcSimBase>(target)) { } // construct from a char*-style string (the file name for shared object)
+    AbcFPtrBase(const std::string target) : AbcFPtrBase(target.c_str()) { } // construct from a std::string (the file name for shared object)
+
+    vector<float_type> operator()(
+      vector<float_type> pars, const unsigned long int seed, const unsigned long int serial
+    ) const override {
+        return fptr(pars, seed, serial);
     }
 };
 
@@ -91,8 +127,8 @@ struct AbcExec : AbcSimFun {
     AbcExec(std::string _command) : command(_command) { }
 
     vector<float_type> operator()(
-      vector<float_type> pars, const unsigned long int /*seed*/, const unsigned long int /*serial*/, const ABC::MPI_par* /*_mp*/
-    ) const {
+      vector<float_type> pars, const unsigned long int /*seed*/, const unsigned long int /*serial*/
+    ) const override {
         auto execcom = command;
         vector<float_type> mets;
         for (auto par : pars) { execcom += " " + ABC::toString(par); }
