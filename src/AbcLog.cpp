@@ -49,11 +49,11 @@ void AbcLog::report_convergence_data(
     for (size_t parIdx = 0; parIdx < abc->_model_pars.size(); parIdx++) {
         const ABC::Parameter* par = abc->_model_pars[parIdx];
         const double current_stdev = sqrt(abc->_doubled_variance[set_t][parIdx]/2.0);
-        const double prior_mean = par->get_prior_mean();
+        const double prior_mean = par->get_mean();
         const double prior_mean_delta = current_means[parIdx] - prior_mean;
         const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
 
-        const double prior_stdev = par->get_prior_stdev();
+        const double prior_stdev = par->get_sd();
         const double prior_stdev_delta = current_stdev - prior_stdev;
         const double prior_stdev_pct_chg = prior_stdev != 0 ? 100 * prior_stdev_delta / prior_stdev : INFINITY;
         os << "  Par " << parIdx << ": \"" << par->get_name() << "\"\n";

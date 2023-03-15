@@ -14,8 +14,74 @@ using std::map;
 using std::is_integral_v;
 using std::is_floating_point_v;
 
+// Design goals `Parameter`s:
+//  - yields samples
+//  - has no state (i.e. any state managed by the ABCSMC object)
+//  - has no knowledge of the ABCSMC object
+//  - does not need to know about other parameters
+//
+//  challenges to accomplishing this:
+//  - need to transform parameters, sometimes in terms of each other
+//  - sampling "posterior" or "pseudo" parameters requires state
+//
+//  way forward:
+//  - have "sampling" a posterior / pseudo parameter increment an external state generator (analogous to the RNG for priors)?
+//  - have transformations managed by the ABCSMC object?
+
 namespace ABC {
     enum PriorType { UNIFORM, NORMAL, PSEUDO, POSTERIOR };
+
+    // this manages translating PriorTypes into particular instantiations
+    Parameter * create_parameter(
+        const std::string & s, const std::string & ss,
+        const PriorType p,
+        const double val1, const double val2, const double val_step,
+        double (*u)(const double), std::pair<double, double> r,
+        const map< std::string, vector<int> > & mm
+    ) {
+        return new ABC::TParameter<NT>(name, short_name, ptype, val1, val2, step, u, r, mm);
+    };
+
+    // this is a state-machine for use with both priors, posteriors, and pseudo parameters
+    // should be passed around by reference
+    // different parameter classes access this in different ways
+    struct ParRNG {
+        const gsl_rng* RNG;
+        map<std::string, size_t> pseudo;
+        bool lock_pseudo;
+        size_t posterior;
+    }
+
+    // this defines shift/scale transformation.
+    //
+    // a = sum of transformed scale addends
+    // b = prod of transformed scale factors
+    // c = sum of untransformed scale addends
+    // d = prod of untransformed scale factors
+    // u = arbitrary untransform function
+    // x = value on the transformed scale (i.e. the fitting scale)
+    //
+    // transform(x) = (u((x + a) * b) + c) * d (i.e. value on the model/natural scale)
+    struct ParXform {
+        template <typename T>
+        ParXform(
+            const T & pre_shift, const T & post_shift,
+            const T & pre_scale, const T & post_scale
+        ) : tplus(std::acumulate(pre_shift.begin(), pre_shift.end(), 0.0)),
+            uplus(std::acumulate(post_shift.begin(), post_shift.end(), 0.0)),
+            tplus(std::acumulate(pre_scale.begin(), pre_scale.end(), 1.0, std::multiplies<float_type>())),
+            ttimes(std::acumulate(post_scale.begin(), post_scale.end(), 1.0, std::multiplies<float_type>()))
+        { }
+
+        ParXform() : tplus(0.0), uplus(0.0), ttimes(1.0), utimes(1.0) {}
+
+        const float_type tplus, uplus, ttimes, utimes;
+
+        float_type transform(const float_type & pval, float_type (*u)(const float_type &)) const {
+            return (u((pval + tplus)*ttimes) + uplus)*utimes;
+        }
+
+    }
 
     class Parameter {
         public:
@@ -24,11 +90,11 @@ namespace ABC {
             std::string get_name() const { return name; };
             std::string get_short_name() const { return short_name; };
 
-            virtual double gsl_sample(const gsl_rng* /* RNG */) const = 0;
+            virtual double sample(const gsl_rng* /* RNG */) const = 0;
             virtual double likelihood(const double /* pval */) const = 0;
 
             // can ignore defining `noise`, `get_mean`, `get_sd`, etc, if that kind of parameter never uses it
-            virtual double gsl_noise(
+            virtual double noise(
                 const gsl_rng* /* RNG */, const double /* mu */, const double /* sigma_squared */,
                 const size_t MAX_ATTEMPTS = 1000
             ) const {
@@ -41,8 +107,12 @@ namespace ABC {
             virtual bool isPosterior() const { return false; };
             virtual bool increment_state() { return false; };
             // if *not* a transforming parameter, no-op
-            virtual double untransform(const double pval) const { return pval; }
-            // if *not* an integer type parameter, no-op
+            virtual double untransform(
+                const double pval, const std::pair<float_type, float_type> & /* rescale */, const ParXform & /* xform */
+            ) const {
+                return pval;
+            }
+            // if *not* an integer type parameter, this is a no-op
             virtual double recast(const double pval) const { return pval; };
     
             // some computations can be done in terms of the properly defined methods
@@ -57,12 +127,11 @@ namespace ABC {
     class TParameter : public Parameter {
         public:
             TParameter(
-                std::string s, std::string ss,
-                PriorType p,
-                double val1, double val2, double val_step,
-                double (*u)(const double), std::pair<double, double> r,
-                map< std::string, vector<int> > mm
-            ) : Parameter(s, ss), ptype(p), step(val_step), untran_func(u), rescale(r), par_modification_map(mm) {
+                const std::string & s, const std::string & ss,
+                const PriorType p,
+                const double val1, const double val2, const double val_step,
+                double (*u)(const double)
+            ) : Parameter(s, ss), ptype(p), step(val_step), untran_func(u) {
                 if (ptype == UNIFORM) {
                     assert(val1 < val2);
                     fmin = val1;
@@ -114,34 +183,26 @@ namespace ABC {
                 }
             }
 
-            void set_prior_limits(double min, double max) override { fmin = min; fmax = max; }
-            double get_prior_min() const override { return fmin; }
-            double get_prior_max() const override { return fmax; }
-            double get_prior_mean() const override { return mean; }
-            double get_prior_stdev() const override { return stdev; }
-            double get_state() const override { return state; }
-            double get_step() const override { return step; }
+            double get_mean() const override { return mean; }
+            double get_sd() const override { return stdev; }
+
             double increment_state() override { return state += step; }
             double reset_state() override { state = get_prior_min(); return state; }
             PriorType get_prior_type() const override { return ptype; }
             bool is_integral() const override { if constexpr (std::integral<NT>) { return true; } else { return false; } }
             //double untransform(const double t) const { return (rescale.second - rescale.first) * untran_func(t) + rescale.first; }
             map < std::string, vector<int> > get_par_modification_map() const override { return par_modification_map; }
-            double untransform(const double t, vector<double> pars) const override {
-                double new_t = t + pars[0];
-                new_t *= pars[1];
-                new_t = untran_func(new_t);
-                new_t += pars[2];
-                new_t *= pars[3];
-            return (rescale.second - rescale.first) * new_t + rescale.first;
+            float_type untransform(
+                const float_type pval, const std::pair<float_type, float_type> & rescale, const ParXform & xform = ParXform()
+            ) const override {
+                return (rescale.second - rescale.first) * xform.transform(pval, untran_func) + rescale.first;
+            }
         }
 
         private:
             PriorType ptype;
             double fmin, fmax, mean, stdev, state, step;
-            double (*untran_func) (const double);
-            std::pair<double, double> rescale;
-            map < std::string, vector<int> > par_modification_map; // how this par modifies others
+            float_type (*untran_func) (const float_type &);
     };
 }
 
