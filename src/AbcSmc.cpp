@@ -108,7 +108,6 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
     }
 }
 
-
 bool AbcSmc::parse_config(string conf_filename) {
     if (not file_exists(conf_filename.c_str())) {
         cerr << "File does not exist: " << conf_filename << endl;
