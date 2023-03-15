@@ -19,6 +19,11 @@ namespace ABC {
 
     class Parameter {
         public:
+            Parameter(std::string s, std::string ss) : name(s), short_name(ss) {}
+
+            std::string get_name() const { return name; };
+            std::string get_short_name() const { return short_name; };
+
             virtual double sample(const gsl_rng* RNG) = 0;
             virtual void set_prior_limits(double min, double max) = 0;
             virtual double get_prior_min() const = 0;
@@ -29,27 +34,26 @@ namespace ABC {
             virtual double get_step() const = 0;
             virtual double increment_state() = 0;
             virtual double reset_state() = 0;
-            virtual std::string get_name() const = 0;
-            virtual std::string get_short_name() const = 0;
             virtual PriorType get_prior_type() const = 0;
             virtual bool is_integral() const = 0;
             virtual map < std::string, vector<int> > get_par_modification_map() const = 0;
             virtual double untransform(const double t, vector<double> pars) const = 0;
+
+        private:
+            std::string name;
+            std::string short_name;
     };
 
     template <typename NT> requires (std::is_integral_v<NT> or std::is_floating_point_v<NT>)
     class TParameter : public Parameter {
         public:
-            TParameter() {};
-
             TParameter(
                 std::string s, std::string ss,
                 PriorType p,
                 double val1, double val2, double val_step,
                 double (*u)(const double), std::pair<double, double> r,
                 map< std::string, vector<int> > mm
-            )
-                : name(s), short_name(ss), ptype(p), step(val_step), untran_func(u), rescale(r), par_modification_map(mm) {
+            ) : Parameter(s, ss), ptype(p), step(val_step), untran_func(u), rescale(r), par_modification_map(mm) {
                 if (ptype == UNIFORM) {
                     assert(val1 < val2);
                     fmin = val1;
@@ -110,8 +114,6 @@ namespace ABC {
             double get_step() const override { return step; }
             double increment_state() override { return state += step; }
             double reset_state() override { state = get_prior_min(); return state; }
-            std::string get_name() const override { return name; }
-            std::string get_short_name() const override { if (short_name == "") { return name; } else { return short_name; } }
             PriorType get_prior_type() const override { return ptype; }
             bool is_integral() const override { if constexpr (std::integral<NT>) { return true; } else { return false; } }
             //double untransform(const double t) const { return (rescale.second - rescale.first) * untran_func(t) + rescale.first; }
@@ -126,8 +128,6 @@ namespace ABC {
         }
 
         private:
-            std::string name;
-            std::string short_name;
             PriorType ptype;
             double fmin, fmax, mean, stdev, state, step;
             double (*untran_func) (const double);

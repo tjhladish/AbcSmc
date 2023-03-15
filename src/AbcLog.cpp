@@ -89,7 +89,7 @@ void AbcLog::filtering_report(
 
     os << "Observed:" << std::endl;
     AbcLog::_print_particle_table_header(abc, os);
-    for (size_t i = 0; i < posterior_pars.cols(); i++) { os << setw(WIDTH) << "---"; } os << " | ";
+    for (size_t i = 0; i < static_cast<size_t>(posterior_pars.cols()); i++) { os << setw(WIDTH) << "---"; } os << " | ";
     for (auto modmet : abc->_model_mets) { os << setw(WIDTH) << modmet->get_obs_val(); } os << std::endl;
 
     os << "Normalized RMSE for metric means (lower is better):  " << ABC::calculate_nrmse(posterior_mets, abc->_met_vals) << std::endl;
