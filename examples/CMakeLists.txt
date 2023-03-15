@@ -10,8 +10,18 @@ add_subdirectory(.. ${CMAKE_SOURCE_DIR}/../build)
 # the example specific includes
 include_directories(include)
 
+# the demos all depend on abc
+
 add_executable(direct direct/main.cpp)
-target_link_libraries(direct abc) # the demos depends on abc
+target_link_libraries(direct abc)
 
 add_executable(shared shared/main.cpp)
-target_link_libraries(shared abc) # the demos depends on abc
+target_link_libraries(shared abc)
+
+add_executable(integral integral/main.cpp)
+target_link_libraries(integral abc)
+
+add_executable(executable executable/main.cpp)
+target_link_libraries(executable abc)
+
+# TODO this must be foreach-able

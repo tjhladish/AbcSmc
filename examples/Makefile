@@ -20,10 +20,15 @@ CFLAGS := -O2 -Wall -std=c++17 --pedantic
 SHAREDFLAGS := $(CFLAGS) -fPIC -shared -rdynamic -Wl,--no-as-needed
 LIBS := -lm -lgsl -lgslcblas -ldl
 
-default: run_shared
+DEMOS := direct executable shared integral
+
+default: $(patsubst %,demo/%,$(DEMOS)) $(patsubst %,%/config.json,$(DEMOS)) dice.so
+
+bin:
+	mkdir -p $@
 
 demo:
-	cmake -S . -B demo
+	cmake -S . -B $@
 
 demo/%: demo
 	cd $^ && $(MAKE) $*
@@ -32,61 +37,32 @@ demo/%: demo
 	gojq -s add $^ > $@
 
 # this defines how to make the dice.so shared library for use in the `shared` demo
-dice.so: src/dice.cpp include/dice.h
-	$(CPP) $(SHAREDFLAGS) $< -o $@ $(LIBS)
+bin/dice.so: src/dice.cpp include/dice.h | bin
+	$(CPP) $(SHAREDFLAGS) -Iinclude $< -o $@ $(LIBS)
 	nm -gD $@ | grep simulator # check that the simulator is exported
 
 # this defines how to make the dice_game executable for use in the `direct` and `executable` demos 
-dice_game: src/dice_game.cpp include/dice.h
-	$(CPP) $(CFLAGS) $< -o $@ $(LIBS)
+bin/dice_game: src/dice_game.cpp include/dice.h | bin
+	$(CPP) $(CFLAGS) -Iinclude $< -o $@ $(LIBS)
 
 
 # for the dynamic version, need to make the shared object
-run_shared: | dice.so
+run_shared: | bin/dice.so
 
+# for the direct and executable versions, need to make the executable
+run_executable: | bin/dice_game
+
+run_direct: | bin/dice_game
+
+# in general, run off config => sqlite approach
 run_%: demo/% %/config.json
 	./$^ --process --simulate -n 1000
 
-# make variable definitions
+# except for the direct version
+run_direct: demo/direct
+	./$^ 10 44
 
-DEMOS := sql dynamic exec
 
-all: ../libabc.a dice_game dice.so $(addprefix abc_,$(DEMOS))
-
-abc_%.json: reference.json %_partial.json
-	gojq -s add $^ > $@
-
-.FORCE:
-
-../libabc.a: .FORCE
-	$(MAKE) -C $(ABCDIR) -f Makefile
-
-# this defines how to make the various abc_(sql|exec|dynamic) executables
-abc_%: main_%.cpp examples.h ../libabc.a
-	$(CPP) $(CFLAGS) $< -o $@ $(ABC_INC)
-
-# this defines how to make the dice_game executable for use with abc_exec 
-dice_game: dice_game.cpp dice.h
-	$(CPP) $(CFLAGS) $< -o $@ $(ABC_INC) $(GSL_LIB)
-
-# this defines how to make the dice.so shared library for use with abc_dynamic
-dice.so: dice.cpp dice.h ../libabc.a
-	$(CPP) $(SHAREDFLAGS) $< -o $@ $(ABC_INC)
-	nm -gD $@ | grep simulator # check that the simulator is exported
-
-# for the dynamic version, need to make the library
-run_dynamic: | dice.so
-
-# for the executable version, need to make the executable
-run_exec: | dice_game
-
-# this provides a convenient way to run all of the abc_(sql|exec|dynamic) executables
-run_%: abc_% abc_%.json
-	./$^ --process --simulate -n 1000
-
-run_all: $(addprefix run_,$(DEMOS))
-
-.PRECIOUS: abc_%.json abc_%.sqlite abc_%
 
 clean:
 	rm -f $(addprefix abc_,$(DEMOS)) dice_game dice.so

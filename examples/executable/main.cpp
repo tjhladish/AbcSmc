@@ -1,4 +1,4 @@
-#include "AbcSmc.h"
+#include <AbcSmc/AbcSmc.h>
 #include "examples.h"
 
 int main(int argc, char* argv[]) {

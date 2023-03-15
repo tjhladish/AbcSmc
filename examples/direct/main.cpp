@@ -2,10 +2,14 @@
 
 using namespace std;
 
+// this version of a main program demonstrates:
+//  - using the AbcSmc class without a configuration file
+//  - and manually setting the simulator executable
+
 int main(int argc, char* argv[]) {
 
     if (argc != 2) {
-        cerr << "\n\tUsage: ./demo_direct metric1_val metric2_val ...\n\n";
+        cerr << "\n\tUsage: demo/direct metric1_val metric2_val\n\n";
         return 100;
     }
 
@@ -25,7 +29,7 @@ int main(int argc, char* argv[]) {
     abc->set_num_samples(1000);
     abc->set_predictive_prior_fraction(0.1);
     abc->set_pls_validation_training_fraction(0.5); // fraction of runs to use for training (vs. testing) pls model
-    abc->run("./examples/dice_game", RNG);  // ./executable_name summary_stats par1val par2val par3val par4val par5val ...
+    abc->run("bin/dice_game", RNG);  // ./executable_name summary_stats par1val par2val par3val par4val par5val ...
 
     return 0;
 }
