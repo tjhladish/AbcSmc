@@ -148,17 +148,10 @@ namespace ABC {
     ) {
         Row sigma = sigma_squared.array().sqrt();
         Row res = Row::Zero(sigma.cols());
-        for (size_t j = 0; j < sigma.cols(); j++) {
-            // Don't like this, but it will work
-            // as long as min and max are reasonable
-            // (relative to the pdf)
-            bool success = false;
-            auto mpar = _model_pars[j];
-            double dev = mpar->recast(gsl_ran_gaussian(RNG, sigma[j]) + mu[j]);
-            while (!mpar->valid(dev)) {
-                dev = mpar->recast(gsl_ran_gaussian(RNG, sigma[j]) + mu[j]);
-            }
-            res[j] = dev;
+        for (size_t parIdx = 0; parIdx < sigma.cols(); parIdx++) {
+            // this manages normal noise, including finite retries; will fail to the *parameter* mean if it can't find a valid value
+            res[parIdx] = model_pars[parIdx]->noise(RNG, mu[parIdx], sigma[parIdx]);
+            
         }
         return res;      
     }
@@ -485,44 +478,36 @@ namespace ABC {
         const gsl_rng* RNG, const size_t num_samples,
         const Mat2D & posterior, // look up table for POSTERIOR type Parameters
         const std::vector<Parameter*> & mpars,
-        std::vector<size_t> & posterior_ranks // filled in by this
+        std::vector<size_t> & post_ranks // filled in by this
     ) {
-        assert(posterior_ranks.size() == 0); // should be empty, whether to be filled or not
-
+        // setup sampling RNG to deal w/ mixture of prior, posterior, pseudo parameters
         ParRNG par_rng(RNG, mpars, posterior.rows());
+        // return matrix of samples
         Mat2D par_samples = Mat2D::Zero(num_samples, mpars.size());
-
-        std::vector<size_t> nonpost_indices;
-        std::vector<size_t> posterior_indices;
+        // determine which parameters are posterior vs not
+        std::vector<size_t> nonpost_indices, post_indices;
         for (size_t parIdx = 0; parIdx < mpars.size(); parIdx++) {
             if (mpars[parIdx]->isPosterior()) {
-                posterior_indices.push_back(parIdx);
+                post_indices.push_back(parIdx);
             } else {
                 nonpost_indices.push_back(parIdx);
             }
         }
 
-        assert(posterior_indices.size() == posterior.cols());
+        if (post_indices.size()) { post_ranks.resize(num_samples); }
 
-        for (size_t sampIdx = 0; sampIdx < par_samples.rows(); sampIdx++) {
+        // confirm posterior matrix columns == number of posterior parameters
+        assert(post_indices.size() == posterior.cols());
+
+        for (size_t sampIdx = 0; sampIdx < par_samples.rows(); sampIdx++) { // for each sample to be drawn
+            par_rng.unlock(); // allow the pseudo parameter to be incremented (if present, only the first one that qualifies)
             // for each non-posterior parameter
-            for (size_t parIdx : nonpost_indices) {
-                par_samples(sampIdx, parIdx) = mpars[parIdx]->sample(par_rng);
-                // if it's a prior, this will have hit the gsl RNG
-                // if it's a pseudo, it will have hit the incrementer:
-                //   1. get it's state par_rng[self] == index of the PSEUDO parameter for look-up
-                //   2. if the incrementer is unlocked AND the parameter isn't at max value,
-                //      yes: par_rng[self]++, and lock the incrementer
-                //      no: if the incrementer is unlocked, par_rng[self] == 0
-            }
-
-            if (posterior_indices.size()) {
-                posterior_ranks.push_back(mpars[posterior_indices[0]]->sample(par_rng));
-                par_samples(sampIdx, posterior_indices) = posterior.row(posterior_ranks.back());
-                // if the incrementer is unlocked, the posterior will be incremented (or reset to 0 if it's at max value)
-            }
-
+            for (size_t parIdx : nonpost_indices) { par_samples(sampIdx, parIdx) = mpars[parIdx]->sample(par_rng); }
+            // if there are any posterior parameters, get the next posterior index (increments if par_rng is still unlocked)
+            if (post_indices.size()) { post_ranks[sampIdx] = mpars[post_indices[0]]->sample(par_rng); }                
         }
+        // if there are any posterior parameters, fill in the posterior samples
+        if (post_ranks.size() != 0) { par_samples(Eigen::placeholders::all, post_indices) = posterior(post_ranks, Eigen::placeholders::all); }
         return par_samples;
 
     }
