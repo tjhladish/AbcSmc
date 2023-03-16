@@ -6,6 +6,8 @@
 #include <string>
 #include <iostream>
 #include <concepts> // let's us declare concepts for template constraints
+#include <AbcSmc/ParRNG.h>
+#include <gsl/gsl_rng.h>
 
 using std::cerr;
 using std::endl;
@@ -43,18 +45,20 @@ namespace ABC {
     //
     // transform(x) = (u((x + a) * b) + c) * d (i.e. value on the model/natural scale)
     struct ParXform {
-        template <typename T>
-        
-        ParXform(
-            const T & pre_shift, const T & post_shift,
-            const T & pre_scale, const T & post_scale
-        ) : tplus(std::accumulate(pre_shift.begin(), pre_shift.end(), 0.0)),
-            uplus(std::accumulate(post_shift.begin(), post_shift.end(), 0.0)),
-            ttimes(std::accumulate(pre_scale.begin(), pre_scale.end(), 1.0, std::multiplies<float_type>())),
-            utimes(std::accumulate(post_scale.begin(), post_scale.end(), 1.0, std::multiplies<float_type>()))
-        { }
 
-        ParXform() : tplus(0.0), uplus(0.0), ttimes(1.0), utimes(1.0) {}
+        ParXform(
+            const float_type tp = 0.0, const float_type up = 0.0,
+            const float_type tt = 1.0, const float_type ut = 1.0
+        ) : tplus(tp), uplus(up), ttimes(tt), utimes(ut) {}
+
+        template <typename T> 
+        ParXform(const T & pre_shift, const T & post_shift, const T & pre_scale, const T & post_scale) :
+        ParXform(
+            std::accumulate(pre_shift.begin(), pre_shift.end(), 0.0),
+            std::accumulate(post_shift.begin(), post_shift.end(), 0.0),
+            std::accumulate(pre_scale.begin(), pre_scale.end(), 1.0, std::multiplies<float_type>()),
+            std::accumulate(post_scale.begin(), post_scale.end(), 1.0, std::multiplies<float_type>())
+        ) { }
 
         const float_type tplus, uplus, ttimes, utimes;
 
@@ -63,9 +67,7 @@ namespace ABC {
         }
 
     };
-
-    struct ParRNG; // forward declaration for Parameter
-
+    
     class Parameter {
         public:
             Parameter(std::string s, std::string ss) : name(s), short_name(ss) {}
@@ -73,10 +75,10 @@ namespace ABC {
             std::string get_name() const { return name; };
             std::string get_short_name() const { return short_name; };
 
-            virtual float_type sample(ParRNG & /* prng */) const = 0;
+            virtual float_type sample(ParRNG<Parameter, const gsl_rng> & /* prng */) const = 0;
             virtual float_type likelihood(const float_type /* pval */) const = 0;
 
-            // can ignore defining `noise`, `get_mean`, `get_sd`, etc, if that kind of parameter never uses it
+            // can define `noise`, `get_mean`, `get_sd` effectively as errors, unless overriden
             virtual float_type noise(
                 const gsl_rng* /* RNG */, const float_type /* mu */, const float_type /* sigma_squared */,
                 const size_t MAX_ATTEMPTS = 1000
@@ -86,9 +88,10 @@ namespace ABC {
             virtual float_type get_mean() const { return std::numeric_limits<float_type>::signaling_NaN(); };
             virtual float_type get_sd() const { return std::numeric_limits<float_type>::signaling_NaN(); };
 
-            // some methods, there is a typical, real default, but we might wish to override it
-            virtual bool isPosterior() const { return false; };
-            virtual bool increment_state() { return false; };
+            // some methods, there is a meaningful default, but we might wish to override it
+            virtual bool isPosterior() const { return false; }; // the typical use case of a parameter is not a posterior
+            virtual size_t max_index() const { return 0; };     // most parameters are not indexed (pseudo or posterior) parameters
+            
             // if *not* a transforming parameter, no-op
             virtual float_type untransform(
                 const float_type pval, const std::pair<float_type, float_type> & /* rescale */, const ParXform & /* xform */
@@ -101,30 +104,12 @@ namespace ABC {
             // some computations can be done in terms of the properly defined methods
             bool valid(const float_type pval) const { return likelihood(pval) != 0.0; };
 
-        friend ParRNG;
-        protected:
-            virtual void prng_register(std::map<Parameter*, size_t> & m) const { }
-
         private:
             std::string name;
             std::string short_name;
     };
 
-    // this is a state-machine for use with both priors, posteriors, and pseudo parameters
-    // should be passed around by reference
-    // Priors will hit the RNG
-    // Pseudo parameters will hit the pseudo map + potentially increment it / lock the prng map / posterior
-    // Posterior parameters will use the posterior value + potentially increment it if prng is unlocked
-    struct ParRNG {
-        ParRNG(const gsl_rng* RNG, const std::vector<Parameter*> & mpars) : RNG(RNG) {
-            for (Parameter * p : mpars) { p->prng_register(pseudo); }
-        }
-
-        const gsl_rng* RNG;
-        map<Parameter*, size_t> pseudo;
-        bool lock = false;
-        size_t posterior;
-    };
+    typedef ParRNG<Parameter, const gsl_rng> PRNG;
 
     template <typename NT> requires (std::is_integral_v<NT> or std::is_floating_point_v<NT>)
     class TParameter : public Parameter {
@@ -138,20 +123,20 @@ namespace ABC {
             ) : Parameter(s, ss), ptype(p), step(val_step), untran_func(u) {
             }
 
-            float_type sample(ParRNG & prng) const override {
+            float_type sample(PRNG & prng) const override {
                 if (ptype == UNIFORM) {
                     if constexpr (std::integral<NT>) {
                         // + 1 makes it out of [fmin, fmax], instead of [fmin, fmax)
-                        return gsl_rng_uniform_int(prng.RNG, fmax-fmin + 1) + fmin;
+                        return gsl_rng_uniform_int(prng.rng(), fmax-fmin + 1) + fmin;
                     } else {
-                        return gsl_rng_uniform(prng.RNG)*(fmax-fmin) + fmin;
+                        return gsl_rng_uniform(prng.rng())*(fmax-fmin) + fmin;
                     }
                 } else if (ptype == NORMAL) {
                     if constexpr (std::integral<NT>) {
                         cerr << "Integer type not supported for normal distributions.  Aborting." << endl;
                         exit(-199);
                     } else {
-                        return gsl_ran_gaussian(prng.RNG, stdev) + mean;
+                        return gsl_ran_gaussian(prng.rng(), stdev) + mean;
                     }
                 } else {
                     std::cerr << "Prior type " << ptype << " not supported for random sampling.  Aborting." << std::endl;
@@ -202,10 +187,14 @@ namespace ABC {
                 const float_type val1, const float_type val2,
                 const float_type val_step,
                 float_type (*u)(const float_type &)
-            ) : TParameter<NT>(s, ss, p, val1, val2, val_step, u) {}
+            ) : TParameter<NT>(s, ss, p, val1, val2, val_step, u), mean(val1), stdev(val2) {
+            }
 
             float_type get_mean() const override { return mean; }
             float_type get_sd() const override { return stdev; }
+
+        private:
+            float_type mean, stdev;
 
     };
 
@@ -214,14 +203,10 @@ namespace ABC {
         public:
             Posterior(
                 const std::string & s, const std::string & ss,
-                const PriorType p,
                 const float_type val1, const float_type val2,
                 const float_type val_step,
                 float_type (*u)(const float_type &)
-            ) : TParameter<NT>(s, ss, p, val1, val2, val_step, u) {}
-
-            float_type get_mean() const override { return mean; }
-            float_type get_sd() const override { return stdev; }
+            ) : TParameter<NT>(s, ss, POSTERIOR, val1, val2, val_step, u) {}
 
     };
 
@@ -230,14 +215,10 @@ namespace ABC {
         public:
             Pseudo(
                 const std::string & s, const std::string & ss,
-                const PriorType p,
                 const float_type val1, const float_type val2,
                 const float_type val_step,
                 float_type (*u)(const float_type &)
-            ) : TParameter<NT>(s, ss, p, val1, val2, val_step, u) {}
-
-            float_type get_mean() const override { return mean; }
-            float_type get_sd() const override { return stdev; }
+            ) : TParameter<NT>(s, ss, PSEUDO, val1, val2, val_step, u) {}
 
     };
 
