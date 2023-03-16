@@ -15,7 +15,6 @@
 class AbcLog; // forward declaration of AbcLog; see AbcLog.h
 
 enum FilteringType {PLS_FILTERING, SIMPLE_FILTERING};
-enum NumericType { INT, FLOAT };
 
 class AbcSmc {
     public:
@@ -106,18 +105,9 @@ class AbcSmc {
         }
 
         // TODO model_pars => map<string, Parameter*>, check for duplicate names
-        bool add_parameter(ABC::Parameter *const p) {
+        bool add_parameter(const ABC::Parameter * const p) {
             _model_pars.push_back(p);
             return true;
-        }
-
-        template <typename NT> // any concepts / constraints on NT will be propogated here by the compiler
-        bool add_next_parameter(
-            std::string name, std::string short_name,
-            ABC::PriorType ptype,
-            float_type val1, float_type val2, float_type step, float_type (*u)(const float_type &)
-        ) {
-            return add_parameter(ABC::create_parameter<NT>(name, short_name, ptype, val1, val2, step, u));
         }
 
         void set_filtering_type(FilteringType ft) {
@@ -186,8 +176,8 @@ class AbcSmc {
         friend AbcLog;
         Mat2D X_orig;
         Mat2D Y_orig;
-        std::vector<ABC::Parameter*> _model_pars;
-        std::vector<ABC::Metric*> _model_mets;
+        std::vector<const ABC::Parameter*> _model_pars;
+        std::vector<const ABC::Metric*> _model_mets;
         map<size_t, map<std::string, std::vector<size_t> > > _par_modification_map;
         map<size_t, std::pair<float_type, float_type> > _par_rescale_map; 
 

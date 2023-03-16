@@ -17,7 +17,7 @@ target_include_directories(jsoncpp PUBLIC lib/jsoncpp/include lib/jsoncpp/src/li
 add_library(abc STATIC
     $<TARGET_OBJECTS:CCRC32> $<TARGET_OBJECTS:sqdb> $<TARGET_OBJECTS:sqlite3>
     src/AbcLog.cpp src/AbcMPI.cpp src/AbcSmc.cpp src/AbcUtil.cpp
-    src/Parameter.cpp
+    src/Parameter.cpp src/Priors.cpp
 )
 find_package(GSL REQUIRED) # the abc library objects depend on the GSL library
 target_link_libraries(abc pls sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE_DL_LIBS})

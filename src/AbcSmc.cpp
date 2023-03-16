@@ -11,6 +11,8 @@
 #include <AbcSmc/AbcSmc.h>
 #include <AbcSmc/AbcMPI.h>
 #include <AbcSmc/AbcLog.h>
+#include <AbcSmc/Priors.h>
+#include <AbcSmc/IndexedPars.h>
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -194,7 +196,6 @@ bool AbcSmc::parse_config(string conf_filename) {
             exit(-205);
         }
 
-        NumericType ntype = INT;
         string ntype_str = mpar["num_type"].asString();
         if (ntype_str == "INT") {
             ntype = INT;
@@ -272,7 +273,6 @@ bool AbcSmc::parse_config(string conf_filename) {
         string name = mmet["name"].asString();
         string short_name = mmet.get("short_name", "").asString();
 
-        NumericType ntype = INT;
         string ntype_str = mmet["num_type"].asString();
         if (ntype_str == "INT") {
             ntype = INT;
