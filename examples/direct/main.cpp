@@ -31,5 +31,7 @@ int main(int argc, char* argv[]) {
     abc->set_pls_validation_training_fraction(0.5); // fraction of runs to use for training (vs. testing) pls model
     abc->run("bin/dice_game", RNG);  // ./executable_name summary_stats par1val par2val par3val par4val par5val ...
 
+    gsl_rng_free(RNG);
+
     return 0;
 }
