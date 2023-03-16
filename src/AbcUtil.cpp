@@ -517,7 +517,7 @@ namespace ABC {
     ) {
         assert(posterior_ranks.size() == 0); // should be empty, whether to be filled or not
 
-        ParRNG par_rng(RNG, mpars);
+        ParRNG par_rng(RNG, mpars, posterior.rows());
         Mat2D par_samples = Mat2D::Zero(num_samples, mpars.size());
 
         std::vector<size_t> nonpost_indices;
