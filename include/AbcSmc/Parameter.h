@@ -132,37 +132,10 @@ namespace ABC {
             TParameter(
                 const std::string & s, const std::string & ss,
                 const PriorType p,
-                const float_type val1, const float_type val2, const float_type val_step,
+                const float_type val1, const float_type val2,
+                const float_type val_step,
                 float_type (*u)(const float_type &)
             ) : Parameter(s, ss), ptype(p), step(val_step), untran_func(u) {
-                if (ptype == UNIFORM) {
-                    assert(val1 < val2);
-                    fmin = val1;
-                    fmax = val2;
-                    mean = (val2 + val1) / 2.0;
-                    stdev = sqrt(pow(val2-val1,2)/12);
-                    state = 0;   // dummy variable for UNIFORM
-                } else if (ptype == NORMAL) {
-                    fmin = std::numeric_limits<double>::lowest(); // NOT min()!!!! That's the smallest representable positive value.
-                    fmax = std::numeric_limits<double>::max();
-                    mean = val1;
-                    stdev = val2;
-                } else if (ptype == PSEUDO) {
-                    fmin = val1;
-                    fmax = val2;
-                    mean = 0;    // dummy variable for PSEUDO
-                    stdev = 0;   // dummy variable for PSEUDO
-                    state = fmin;
-                } else if (ptype == POSTERIOR) {
-                    fmin = val1; // min index for posterior database, generally 0
-                    fmax = val2; // max index for posterior database
-                    mean = 0;    // dummy variable for PSEUDO
-                    stdev = 0;   // dummy variable for PSEUDO
-                    state = fmin;
-                } else {
-                    std::cerr << "Prior type " << ptype << " not supported.  Aborting." << std::endl;
-                    exit(-200);
-                }
             }
 
             float_type sample(ParRNG & prng) const override {
@@ -206,9 +179,6 @@ namespace ABC {
                 }
             };
 
-            float_type get_mean() const override { return mean; }
-            float_type get_sd() const override { return stdev; }
-
             // bool is_integral() const override { if constexpr (std::integral<NT>) { return true; } else { return false; } }
             
             float_type untransform(
@@ -221,6 +191,54 @@ namespace ABC {
             PriorType ptype;
             float_type fmin, fmax, mean, stdev, state, step;
             float_type (*untran_func) (const float_type &);
+    };
+
+    template <typename NT>
+    class Prior : TParameter<NT> {
+        public:
+            Prior(
+                const std::string & s, const std::string & ss,
+                const PriorType p,
+                const float_type val1, const float_type val2,
+                const float_type val_step,
+                float_type (*u)(const float_type &)
+            ) : TParameter<NT>(s, ss, p, val1, val2, val_step, u) {}
+
+            float_type get_mean() const override { return mean; }
+            float_type get_sd() const override { return stdev; }
+
+    };
+
+    template <typename NT>
+    class Posterior : TParameter<NT> {
+        public:
+            Posterior(
+                const std::string & s, const std::string & ss,
+                const PriorType p,
+                const float_type val1, const float_type val2,
+                const float_type val_step,
+                float_type (*u)(const float_type &)
+            ) : TParameter<NT>(s, ss, p, val1, val2, val_step, u) {}
+
+            float_type get_mean() const override { return mean; }
+            float_type get_sd() const override { return stdev; }
+
+    };
+
+    template <typename NT>
+    class Pseudo : TParameter<NT> {
+        public:
+            Pseudo(
+                const std::string & s, const std::string & ss,
+                const PriorType p,
+                const float_type val1, const float_type val2,
+                const float_type val_step,
+                float_type (*u)(const float_type &)
+            ) : TParameter<NT>(s, ss, p, val1, val2, val_step, u) {}
+
+            float_type get_mean() const override { return mean; }
+            float_type get_sd() const override { return stdev; }
+
     };
 
     // this manages translating PriorTypes into particular instantiations
