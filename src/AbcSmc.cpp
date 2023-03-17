@@ -110,6 +110,24 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
     }
 }
 
+Metric* parse_metric(const Json::Value & mmet) {
+    string name = mmet["name"].asString();
+    string short_name = mmet.get("short_name", "").asString();
+    float_type val = mmet["value"].asDouble();
+
+    string ntype_str = mmet["num_type"].asString();
+
+    if (ntype_str == "INT") {
+        return new ABC::TMetric<int>(name, short_name, obs_val);
+    } else if (ntype_str == "FLOAT") {
+        return new ABC::TMetric<int>(name, short_name, obs_val);
+    } else {
+        cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
+        exit(-209);
+    }
+
+}
+
 bool AbcSmc::parse_config(string conf_filename) {
     if (not file_exists(conf_filename.c_str())) {
         cerr << "File does not exist: " << conf_filename << endl;
@@ -173,12 +191,13 @@ bool AbcSmc::parse_config(string conf_filename) {
         par_name_idx[name] = i;
     }
 
-    for ( Json::Value mpar : model_par )  {// Iterates over the sequence elements.
+    for (const Json::Value mpar : model_par)  {// Iterates over the sequence elements.
         string name = mpar["name"].asString();
         string short_name = mpar.get("short_name", "").asString();
 
-        ABC::PriorType ptype = ABC::UNIFORM;
         string ptype_str = mpar["dist_type"].asString();
+        string ntype_str = mpar["num_type"].asString();
+
         if (ptype_str == "UNIFORM") {
             ptype = ABC::UNIFORM;
         } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
@@ -196,7 +215,6 @@ bool AbcSmc::parse_config(string conf_filename) {
             exit(-205);
         }
 
-        string ntype_str = mpar["num_type"].asString();
         if (ntype_str == "INT") {
             ntype = INT;
         } else if (ntype_str == "FLOAT") {
@@ -267,29 +285,8 @@ bool AbcSmc::parse_config(string conf_filename) {
         }
     }
 
-    // Parse model metrics
-    const Json::Value model_met = par["metrics"];
-    for ( Json::Value mmet : model_met )  {// Iterates over the sequence elements.
-        string name = mmet["name"].asString();
-        string short_name = mmet.get("short_name", "").asString();
-
-        string ntype_str = mmet["num_type"].asString();
-        if (ntype_str == "INT") {
-            ntype = INT;
-        } else if (ntype_str == "FLOAT") {
-            ntype = FLOAT;
-        } else {
-            cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
-            exit(-209);
-        }
-
-        double val = mmet["value"].asDouble();
-
-        if (ntype == INT) {
-            add_next_metric<int>(name, short_name, val);
-        } else {
-            add_next_metric<float_type>(name, short_name, val);
-        }
+    for (const Json::Value mmet : par["metrics"])  { // Iterates over the sequence elements.
+        add_next_metric(parse_metric(mmet));
     }
 
     return true;

@@ -95,21 +95,28 @@ class AbcSmc {
         void write_particle_file( const int t );
         void write_predictive_prior_file( const int t );
 
-        template <typename NT> // any concepts / constraints on NT will be propogated here by the compiler
-        ABC::Metric* add_next_metric(std::string name, std::string short_name, double obs_val) {
-            ABC::Metric* m = new ABC::TMetric<NT>(name, short_name, obs_val);
+        const ABC::Metric * const add_next_metric(const ABC::Metric * const m) {
             _model_mets.push_back(m);
-            _met_vals.resize(_model_mets.size());
-            _met_vals[_model_mets.size()-1 ] = obs_val;
+            _met_vals.push_back(m->get_obs_val());
             return m;
         }
 
         // TODO model_pars => map<string, Parameter*>, check for duplicate names
-        bool add_parameter(const ABC::Parameter * const p) {
+        const ABC::Parameter * const add_next_parameter(const ABC::Parameter * const p) {
             _model_pars.push_back(p);
             return true;
         }
 
+        void add_modification_map(
+            const ABC::Parameter * const par,
+            map<std::string, std::vector<size_t> > mod_map
+        ) { _par_modification_map[par] = mod_map; };
+
+        void add_par_rescale(
+            const ABC::Parameter * const par,
+            std::pair<float_type, float_type> par_rescale
+        ) { _par_rescale_map[par] = par_rescale; }
+    
         void set_filtering_type(FilteringType ft) {
             switch(ft) {
               case PLS_FILTERING:
@@ -160,15 +167,6 @@ class AbcSmc {
         Row get_doubled_variance(const size_t t) const { return _doubled_variance[t]; }
         void append_doubled_variance(const Row & v2) { _doubled_variance.push_back(v2); }
 
-        void add_modification_map(
-            const size_t parIdx,
-            map<std::string, std::vector<size_t> > mod_map
-        ) { _par_modification_map[parIdx] = mod_map; };
-
-        void add_par_rescale(
-            const size_t parIdx, std::pair<float_type, float_type> par_rescale
-        ) { _par_rescale_map[parIdx] = par_rescale; };
-
         map<std::string, std::vector<size_t> > get_par_modification_map(const size_t parIdx) const { return _par_modification_map.at(parIdx); }
         std::pair<float_type,float_type> get_par_rescale(const size_t parIdx) const { return _par_rescale_map.at(parIdx); }
 
@@ -178,8 +176,8 @@ class AbcSmc {
         Mat2D Y_orig;
         std::vector<const ABC::Parameter*> _model_pars;
         std::vector<const ABC::Metric*> _model_mets;
-        map<size_t, map<std::string, std::vector<size_t> > > _par_modification_map;
-        map<size_t, std::pair<float_type, float_type> > _par_rescale_map; 
+        map<const ABC::Parameter*, map<std::string, std::vector<size_t> > > _par_modification_map;
+        map<const ABC::Parameter*, std::pair<float_type, float_type> > _par_rescale_map; 
 
         Row _met_vals;
         size_t _num_smc_sets;
