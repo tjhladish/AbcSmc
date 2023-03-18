@@ -2,8 +2,16 @@
 #define ABCSMC_PARXFORM_H
 
 #include <vector>
+#include <cstddef>
+
+// for testing purposes; normally defined by PLS library
+#ifndef PLS_H // NB: no def of PLS_H
+typedef double float_type;
+#endif
 
 namespace ABC {
+
+typedef float_type transformer(const float_type &);
 
 // this defines shift/scale transformation, from _fitting_ space (a/k/a transformed) to _model_ space (a/k/a untransformed).
 //
@@ -21,12 +29,15 @@ namespace ABC {
 // These combined according to specification for addends and factors to produce (a,b,c,d).
 struct ParXform {
 
+    ParXform() = delete;
+
     ParXform(
-        const std::vector<size_t> & fitting_space_add_idx,
-        const std::vector<size_t> & fitting_space_mul_idx,
-        const std::vector<size_t> & model_space_add_idx,
-        const std::vector<size_t> & model_space_mul_idx,
-    ) : _idx_fitting_space_addends(fitting_space_add_idx),
+        const transformer * u,
+        const std::vector<size_t> & fitting_space_add_idx = {},
+        const std::vector<size_t> & fitting_space_mul_idx = {},
+        const std::vector<size_t> & model_space_add_idx = {},
+        const std::vector<size_t> & model_space_mul_idx = {}
+    ) : _u(u), _idx_fitting_space_addends(fitting_space_add_idx),
         _idx_fitting_space_factors(fitting_space_mul_idx),
         _idx_model_space_addends(model_space_add_idx),
         _idx_model_space_factors(model_space_mul_idx) {    
@@ -44,19 +55,37 @@ struct ParXform {
         for (auto i : _idx_fitting_space_factors) { ttimes *= fitting_space_values[i]; }
         for (auto i : _idx_model_space_addends) { uplus += fitting_space_values[i]; }
         for (auto i : _idx_model_space_factors) { utimes *= fitting_space_values[i]; }
-        return (u((pval + tplus)*ttimes) + uplus)*utimes;
+        return (_u((pval + tplus)*ttimes) + uplus)*utimes;
     }
 
     private:
+        const transformer * _u;
         const std::vector<size_t> _idx_fitting_space_addends;
         const std::vector<size_t> _idx_fitting_space_factors;
         const std::vector<size_t> _idx_model_space_addends;
         const std::vector<size_t> _idx_model_space_factors;
-
 };
 
 struct ParRescale {
-    
+    ParRescale(const float_type p1 = 0.0, const float_type p2 = 1.0) : par1(p1), par2(p2) {}
+    const float_type par1, par2;
+    float_type rescale(const float_type & pval) const { return (par2 - par1)*pval + par1; }
+};
+
+struct FunXform {
+    FunXform(const transformer * u) : _u(u) {}
+
+    template <typename T>
+    float_type transform(
+        const float_type & pval, const T & /* fitting_space_values */
+    ) const { return _u(pval); }
+
+    private:
+        const transformer * _u;
+};
+
+struct NonRescale {
+    float_type rescale(const float_type & pval) const { return pval; }
 };
 
 }

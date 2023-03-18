@@ -11,6 +11,7 @@
 #include <PLS/pls.h>
 #include <AbcSmc/Parameter.h>
 #include <AbcSmc/Metric.h>
+#include <AbcSmc/ParXform.h>
 
 class AbcLog; // forward declaration of AbcLog; see AbcLog.h
 
@@ -27,7 +28,6 @@ class AbcSmc {
             //_next_predictive_prior_size = 0;
             resume_flag = false;
             resume_directory = "";
-            use_transformed_pars = false;
             _retain_posterior_rank = true;
             use_mvn_noise = false;
             use_pls_filtering = true;
@@ -38,7 +38,6 @@ class AbcSmc {
             _mp = &mp;
             resume_flag = false;
             resume_directory = "";
-            use_transformed_pars = false;
             use_mvn_noise = false;
             use_pls_filtering = true;
         };
@@ -97,24 +96,25 @@ class AbcSmc {
 
         const ABC::Metric * const add_next_metric(const ABC::Metric * const m) {
             _model_mets.push_back(m);
-            _met_vals.push_back(m->get_obs_val());
+            _met_vals.resize(_model_mets.size());
+            _met_vals[_model_mets.size()-1] = m->get_obs_val();
             return m;
         }
 
         // TODO model_pars => map<string, Parameter*>, check for duplicate names
         const ABC::Parameter * const add_next_parameter(const ABC::Parameter * const p) {
             _model_pars.push_back(p);
-            return true;
+            return p;
         }
 
         void add_modification_map(
             const ABC::Parameter * const par,
-            map<std::string, std::vector<size_t> > mod_map
-        ) { _par_modification_map[par] = mod_map; };
+            const ABC::ParXform * const xform
+        ) { _par_modification_map[par] = xform; };
 
         void add_par_rescale(
             const ABC::Parameter * const par,
-            std::pair<float_type, float_type> par_rescale
+            const ABC::ParRescale * const par_rescale
         ) { _par_rescale_map[par] = par_rescale; }
     
         void set_filtering_type(FilteringType ft) {
@@ -150,11 +150,11 @@ class AbcSmc {
         bool simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
         bool simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
 
-        ABC::Parameter* get_parameter_by_name(string name) {
-            ABC::Parameter* p = nullptr;
-            for (auto _p: _model_pars) { if (_p->get_name() == name) p = _p;}
-            assert(p);
-            return p;
+        const ABC::Parameter * get_parameter_by_name(const std::string & name) const {
+            for (auto _p: _model_pars) { 
+                if (_p->get_name() == name) return _p;
+            }
+            return nullptr;
         }
 
         size_t npar() { return _model_pars.size(); }
@@ -167,17 +167,14 @@ class AbcSmc {
         Row get_doubled_variance(const size_t t) const { return _doubled_variance[t]; }
         void append_doubled_variance(const Row & v2) { _doubled_variance.push_back(v2); }
 
-        map<std::string, std::vector<size_t> > get_par_modification_map(const size_t parIdx) const { return _par_modification_map.at(parIdx); }
-        std::pair<float_type,float_type> get_par_rescale(const size_t parIdx) const { return _par_rescale_map.at(parIdx); }
-
     private:
         friend AbcLog;
         Mat2D X_orig;
         Mat2D Y_orig;
         std::vector<const ABC::Parameter*> _model_pars;
         std::vector<const ABC::Metric*> _model_mets;
-        map<const ABC::Parameter*, map<std::string, std::vector<size_t> > > _par_modification_map;
-        map<const ABC::Parameter*, std::pair<float_type, float_type> > _par_rescale_map; 
+        map<const ABC::Parameter*, const ABC::ParXform* > _par_modification_map;
+        map<const ABC::Parameter*, const ABC::ParRescale* > _par_rescale_map; 
 
         Row _met_vals;
         size_t _num_smc_sets;
@@ -191,7 +188,6 @@ class AbcSmc {
         AbcSimFun * _simulator = new AbcSimUnset();
 
         bool resume_flag;
-        bool use_transformed_pars;
         std::string resume_directory;
         std::string _database_filename;
         std::string _posterior_database_filename;
@@ -220,7 +216,7 @@ class AbcSmc {
         void _set_predictive_prior(const int t, const int next_pred_prior_size, const Col& distances);
 
         void _filter_particles_simple(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size);
-        PLS_Model _filter_particles(
+        PLS::Model _filter_particles(
             const size_t t, const Mat2D & X_orig, const Mat2D & Y_orig,
             const size_t pred_prior_size, const bool verbose = true
         );
@@ -247,7 +243,7 @@ class AbcSmc {
 
         Mat2D slurp_posterior();
 
-        std::vector<double> do_complicated_untransformations(const std::vector<ABC::Parameter*> & _model_pars, const Row & pars );
+        Row convert_fitting_to_model_space(const Row & pars);
 
         void calculate_doubled_variances( const size_t previous_set );
 
