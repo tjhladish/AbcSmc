@@ -90,16 +90,16 @@ namespace ABC {
     // This template will be used to define the int or floatness of `Parameter`s
     // used as roughly:
     // class SomePar : Parameter, TParameter<int, Parameter> { ... }
-    template <NumericType NT, class B>
-    struct TParameter : public virtual B {
-        float_type recast(const float_type pval) const override {
-            if constexpr (std::is_integral_v<NT>) {
-                return static_cast<float_type>(std::round(pval));
-            } else {
-                return pval;
-            }
-        }
-    };
+    // template <NumericType NT, class B>
+    // struct TParameter : public virtual B {
+    //     float_type recast(const float_type pval) const override {
+    //         if constexpr (std::is_integral_v<NT>) {
+    //             return static_cast<float_type>(std::round(pval));
+    //         } else {
+    //             return pval;
+    //         }
+    //     }
+    // };
 
 }
 
