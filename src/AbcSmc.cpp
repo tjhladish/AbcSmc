@@ -111,21 +111,128 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
 }
 
 Metric* parse_metric(const Json::Value & mmet) {
-    string name = mmet["name"].asString();
-    string short_name = mmet.get("short_name", "").asString();
-    float_type val = mmet["value"].asDouble();
-
-    string ntype_str = mmet["num_type"].asString();
+    const string name = mmet["name"].asString();
+    const string short_name = mmet.get("short_name", name).asString();
+    const float_type val = mmet["value"].asDouble();
+    const string ntype_str = mmet["num_type"].asString();
 
     if (ntype_str == "INT") {
-        return new ABC::TMetric<int>(name, short_name, obs_val);
+        return new ABC::TMetric<int>(name, short_name, val);
     } else if (ntype_str == "FLOAT") {
-        return new ABC::TMetric<int>(name, short_name, obs_val);
+        return new ABC::TMetric<float_type>(name, short_name, val);
     } else {
         cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
         exit(-209);
     }
 
+}
+
+// TODO
+void parse_transform(
+    const Json::Value & mparu,
+    ParRescale * pscale,
+    ParXform * pxform,
+    transformer * _untransform_func,
+    const std::map<const std::string, const size_t> par_name_idx
+) {
+    if (mparu.type() == Json::ValueType::stringValue) {
+        string ttype_str = mparu.asString();
+        if (ttype_str == "NONE") { // TODO - it's possible this may not actually ever be called
+            _untransform_func = [](const float_type & t) { return t; };
+            //ttype = UNTRANSFORMED;
+        } else if (ttype_str == "POW_10") {
+            _untransform_func = [](const float_type & t) { return pow(10.0, t); };
+            //ttype = LOG_10;
+        } else if (ttype_str == "LOGISTIC") {
+            _untransform_func = [](const float_type & t) { return ABC::logistic(t); };
+            //ttype = LOGIT;
+        } else {
+            cerr << "Unknown parameter transformation type: " << ttype_str << ".  Aborting." << endl;
+            exit(-206);
+        }
+        pscale = new ParRescale();
+        pxform = new ParXform(_untransform_func);
+    } else if (mparu.type() == Json::ValueType::objectValue) {
+        string ttype_str = mparu["type"].asString();
+        if (ttype_str != "LOGISTIC") {
+            cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
+            exit(-207);
+        }
+        pscale = new ParRescale(mparu["min"].asDouble(), mparu["max"].asDouble());
+        _untransform_func = [](const float_type & t) { return ABC::logistic(t); };
+        //Json::ValueType mod_type = untransform["transformed_addend"].type();
+        std::map<string, vector<size_t>> mod_map = {
+            { "transformed_addend", {} },
+            { "transformed_factor", {} },
+            { "untransformed_addend", {} },
+            { "untransformed_factor", {} }
+        };
+        for (auto & mod_type: mod_map) {
+            if (mparu.isMember(mod_type.first)) {
+                for (const Json::Value & json_val: mparu[mod_type.first]) {
+                    const std::string par_name = json_val.asString();
+                    mod_type.second.push_back(par_name_idx.at(par_name));
+                }
+            }
+        }
+        pxform = new ParXform(_untransform_func,
+            mod_map["transformed_addend"],   mod_map["transformed_factor"],
+            mod_map["untransformed_addend"], mod_map["untransformed_factor"]
+        );
+    } else {
+        cerr << "Unsupported JSON data type associated with 'untransform' parameter key.\n";
+        exit(-208);
+    }
+}
+
+Parameter * parse_parameter(
+    const Json::Value & mpar
+) {
+    const string name = mpar["name"].asString();
+    const string short_name = mpar.get("short_name", name).asString();
+
+    const string ptype_str = mpar["dist_type"].asString();
+    const string ntype_str = mpar["num_type"].asString();
+
+    const double step = mpar.get("step", 1.0).asDouble(); // default increment is 1
+
+    ABC::Parameter *par;
+
+    if (not ((ntype_str == "INT") or (ntype_str == "FLOAT"))) {
+        cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl;
+        exit(-206);
+    }
+
+    if (ptype_str == "UNIFORM") {
+        if (ntype_str == "INT") {
+            const long par1 = mpar["par1"].asInt64();
+            const long par2 = mpar["par2"].asInt64();
+            par = new DiscreteUniformPrior(name, short_name, par1, par2);
+        } else {
+            const float_type par1 = mpar["par1"].asDouble();
+            const float_type par2 = mpar["par2"].asDouble();
+            par = new ContinuousUniformPrior(name, short_name, par1, par2);
+        }
+    } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
+        if (ntype_str == "INT") {
+            cerr << "Parameter numeric " << ntype_str << " not supported for parameter type " << ptype_str << ".  Aborting." << endl;
+            exit(-206);
+        }
+        const float_type par1 = mpar["par1"].asDouble();
+        const float_type par2 = mpar["par2"].asDouble();
+        par = new GaussianPrior(name, short_name, par1, par2);
+    } else if (ptype_str == "PSEUDO") {
+        std::vector<double> states;
+        par = new PseudoPar(name, short_name, states);
+    } else if (ptype_str == "POSTERIOR") {
+        // TODO iota + stride?
+        const size_t maxIdx = mpar["par2"].asUInt64();
+        par = new PosteriorPar(name, short_name, maxIdx);
+    } else {
+        cerr << "Unknown parameter distribution type: " << ptype_str << ".  Aborting." << endl;
+        exit(-205);
+    }
+    return par;
 }
 
 bool AbcSmc::parse_config(string conf_filename) {
@@ -183,128 +290,52 @@ bool AbcSmc::parse_config(string conf_filename) {
 
     // Parse model parameters
     const Json::Value model_par = par["parameters"];
-    map<string, int> par_name_idx;
-    // TODO find a way to size_t this
-    for ( unsigned int i = 0; i < model_par.size(); ++i )  {// Build name lookup
-        string name = model_par[i]["name"].asString();
+    map<const string, const size_t> par_name_idx;
+    // TODO find a way to size_t this?
+    for (unsigned int parIdx = 0; parIdx < model_par.size(); ++parIdx)  {// Build name lookup
+        const string name = model_par[parIdx]["name"].asString();
         assert(par_name_idx.count(name) == 0);
-        par_name_idx[name] = i;
+        par_name_idx.emplace(name, parIdx);
     }
 
-    for (const Json::Value mpar : model_par)  {// Iterates over the sequence elements.
-        string name = mpar["name"].asString();
-        string short_name = mpar.get("short_name", "").asString();
+    for (const Json::Value & mpar : model_par)  {// Iterates over the sequence elements.
 
-        string ptype_str = mpar["dist_type"].asString();
-        string ntype_str = mpar["num_type"].asString();
-
-        if (ptype_str == "UNIFORM") {
-            ptype = ABC::UNIFORM;
-        } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
-            ptype = ABC::NORMAL;
-        } else if (ptype_str == "PSEUDO") {
-            ptype = ABC::PSEUDO;
-        } else if (ptype_str == "POSTERIOR") {
-            ptype = ABC::POSTERIOR;
-            if (_posterior_database_filename == "") {
-                cerr << "Parameter specfied as type POSTERIOR, without previously specifying a posterior_database_filename.  Aborting." << endl;
-                exit(-204);
-            }
-        } else {
-            cerr << "Unknown parameter distribution type: " << ptype_str << ".  Aborting." << endl;
-            exit(-205);
+        ABC::Parameter * par = parse_parameter(mpar);
+        if (par->isPosterior() and (_posterior_database_filename == "")) {
+            cerr << "Parameter specfied as type POSTERIOR, without previously specifying a posterior_database_filename.  Aborting." << endl;
+            exit(-204);
         }
 
-        if (ntype_str == "INT") {
-            ntype = INT;
-        } else if (ntype_str == "FLOAT") {
-            ntype = FLOAT;
-        } else {
-            cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl;
-            exit(-206);
-        }
-
-        float_type (*_untransform_func)(const float_type &);
-        // linear rescaling [min, max] not for par as sampled, but as input to sim
-        // NB: if par is not on [0, 1] after untransforming, this is still a linear rescaling, but not onto [min, max]
-        pair<float_type, float_type> par_rescale = {0.0, 1.0};
-        map<string, vector<size_t> > mod_map { {"transformed_addend", {}}, {"transformed_factor", {}}, {"untransformed_addend", {}}, {"untransformed_factor", {}} };
-        //auto _untransform = [](const double t) { return t; };
         if (not mpar.isMember("untransform")) {
-            _untransform_func = [](const float_type & t) { return t; };
-        } else if (mpar["untransform"].type() == Json::ValueType::stringValue) {
-            string ttype_str = mpar.get("untransform", "NONE").asString();
-            if (ttype_str == "NONE") { // TODO - it's possible this may not actually ever be called
-                _untransform_func = [](const float_type & t) { return t; };
-                //ttype = UNTRANSFORMED;
-            } else if (ttype_str == "POW_10") {
-                _untransform_func = [](const float_type & t) { return pow(10.0, t); };
-                //ttype = LOG_10;
-                use_transformed_pars = true;
-            } else if (ttype_str == "LOGISTIC") {
-                _untransform_func = [](const float_type & t) { return ABC::logistic(t); };
-                //ttype = LOGIT;
-                use_transformed_pars = true;
-            } else {
-                cerr << "Unknown parameter transformation type: " << ttype_str << ".  Aborting." << endl;
-                exit(-206);
-            }
-        } else if (mpar["untransform"].type() == Json::ValueType::objectValue) {
-            Json::Value untransform = mpar["untransform"];
-            string ttype_str = untransform["type"].asString();
-            if (ttype_str != "LOGISTIC") {
-                cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
-                exit(-207);
-            }
-            par_rescale = { untransform["min"].asDouble(), untransform["max"].asDouble() };
-            _untransform_func = [](const float_type & t) { return ABC::logistic(t); };
-            use_transformed_pars = true;
-            //Json::ValueType mod_type = untransform["transformed_addend"].type();
-
-            for (auto& mod_type: mod_map) {
-                if (untransform.isMember(mod_type.first)) {
-                    for (auto json_val: untransform[mod_type.first]) mod_type.second.push_back(par_name_idx[json_val.asString()]);
-                }
-            }
+            // no-op
         } else {
-            cerr << "Unsupported JSON data type associated with 'untransform' parameter key.\n";
-            exit(-208);
-        }
-
-        add_modification_map(_model_pars.size(), mod_map);
-        add_par_rescale(_model_pars.size(), par_rescale);
-
-        double par1 = mpar["par1"].asDouble();
-        double par2 = mpar["par2"].asDouble();
-        double step = mpar.get("step", 1.0).asDouble(); // default increment is 1
-
-        if (ntype == INT) {
-            add_next_parameter<int>(name, short_name, ptype, par1, par2, step, _untransform_func);
-        } else {
-            add_next_parameter<float_type>(name, short_name, ptype, par1, par2, step, _untransform_func);
+            float_type (*_untransform_func)(const float_type &);
+            ABC::ParRescale * par_rescale;
+            ABC::ParXform * mod_map;
+            parse_transform(mpar["untransform"], par_rescale, mod_map, _untransform_func, par_name_idx);
+            add_modification_map(par, mod_map);
+            add_par_rescale(par, par_rescale);
         }
     }
 
-    for (const Json::Value mmet : par["metrics"])  { // Iterates over the sequence elements.
-        add_next_metric(parse_metric(mmet));
-    }
+    for (const Json::Value & mmet : par["metrics"]) { add_next_metric(parse_metric(mmet)); }
 
     return true;
 }
 
-vector<double> AbcSmc::do_complicated_untransformations(const vector<ABC::Parameter*>& _model_pars, const Row & pars) {
-    assert( _model_pars.size() == npar() );
-    assert( static_cast<size_t>(pars.size()) == npar() );
-    const vector<double> identities = {0.0, 1.0, 0.0, 1.0};
-    vector<double> upars(npar());
-    for (size_t parIdx = 0; parIdx < npar(); ++parIdx) {
+Row AbcSmc::convert_fitting_to_model_space(
+    const Row & pars
+) {
+    assert( _model_pars.size() == pars.size() );
+    Row upars = pars; // copy initially - all upars == pars
+    for (size_t parIdx = 0; parIdx < pars.size(); ++parIdx) {
         const ABC::Parameter* mpar = _model_pars[parIdx];
-        map<string, vector<size_t> > mod_map = get_par_modification_map(parIdx);
-        ABC::ParXform xform(
-            pars(mod_map["transformed_addend"]), pars(mod_map["untransformed_addend"]),
-            pars(mod_map["transformed_factor"]), pars(mod_map["untransformed_factor"])
-        );
-        upars[parIdx] = mpar->untransform(pars[parIdx], get_par_rescale(parIdx), xform);
+        if (_par_modification_map.contains(mpar)) { // ...if this is a modified par
+            // transform => rescale => update upars
+            upars[parIdx] = _par_rescale_map[mpar]->rescale(
+                _par_modification_map[mpar]->transform(pars[parIdx], pars)
+            );
+        }
     }
     return upars;
 }
@@ -393,8 +424,8 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
-            if (use_transformed_pars) {
-                vector<double> upars = do_complicated_untransformations(_model_pars, noised_pars.row(i));
+            if (_par_modification_map.size()) {
+                const Row upars = convert_fitting_to_model_space(noised_pars.row(i));
                 ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
                 //cerr << "attempting: " << ss.str() << endl;
                 _db_execute_stringstream(db, ss);
@@ -678,7 +709,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         ss << "create table " << PAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
         _db_execute_stringstream(db, ss);
 
-        if (use_transformed_pars) {
+        if (_par_modification_map.size()) {
             ss << "create table " << UPAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
             _db_execute_stringstream(db, ss);
         }
@@ -718,8 +749,8 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         ss << "insert into " << PAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << parrow[j]; ss << " );";
         _db_execute_stringstream(db, ss);
 
-        if (use_transformed_pars) {
-            vector<double> upars = do_complicated_untransformations(_model_pars, parrow);
+        if (_par_modification_map.size()) {
+            const Row upars = convert_fitting_to_model_space(parrow);
             ss << "insert into " << UPAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
             _db_execute_stringstream(db, ss);
         }
@@ -908,7 +939,7 @@ Mat2D AbcSmc::slurp_posterior() {
 
     int num_posterior_pars = 0; // num of cols
     string posterior_strings = "";
-    for (ABC::Parameter* p: _model_pars) {
+    for (const ABC::Parameter * p: _model_pars) {
         if (p->isPosterior()) {
             ++num_posterior_pars;
             if (posterior_strings != "") {

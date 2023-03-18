@@ -120,7 +120,7 @@ namespace ABC {
 
     Row gsl_ran_trunc_mv_normal(
         const gsl_rng* RNG,
-        const vector<Parameter*> _model_pars,
+        const vector<const Parameter*> _model_pars,
         const Row & mu, const gsl_matrix* L
     ) {
         const size_t npar = _model_pars.size();
@@ -143,14 +143,14 @@ namespace ABC {
 
     Row gsl_ran_trunc_normal(
         const gsl_rng* RNG,
-        const std::vector<Parameter*> _model_pars,
+        const std::vector<const Parameter*> _model_pars,
         const Row & mu, const Row & sigma_squared
     ) {
         Row sigma = sigma_squared.array().sqrt();
         Row res = Row::Zero(sigma.cols());
         for (size_t parIdx = 0; parIdx < sigma.cols(); parIdx++) {
             // this manages normal noise, including finite retries; will fail to the *parameter* mean if it can't find a valid value
-            res[parIdx] = model_pars[parIdx]->noise(RNG, mu[parIdx], sigma[parIdx]);
+            res[parIdx] = _model_pars[parIdx]->noise(RNG, mu[parIdx], sigma[parIdx]);
             
         }
         return res;      
@@ -364,7 +364,7 @@ namespace ABC {
     Mat2D sample_predictive_priors(
         const gsl_rng* RNG, const size_t num_samples,
         const Col & weights, const Mat2D & parameter_prior,
-        const std::vector<Parameter*> & pars,
+        const std::vector<const Parameter*> & pars,
         const Row & doubled_variance
     ) {
         const Mat2D sampled_pars = sample_posterior(RNG, num_samples, weights, parameter_prior);
@@ -378,7 +378,7 @@ namespace ABC {
     Mat2D sample_mvn_predictive_priors(
         const gsl_rng* RNG, const size_t num_samples,
         const Col & weights, const Mat2D & parameter_prior,
-        const std::vector<Parameter*> & pars,
+        const std::vector<const Parameter*> & pars,
         const gsl_matrix* L
     ) {
         // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
@@ -477,7 +477,7 @@ namespace ABC {
     Mat2D sample_priors(
         const gsl_rng* RNG, const size_t num_samples,
         const Mat2D & posterior, // look up table for POSTERIOR type Parameters
-        const std::vector<Parameter*> & mpars,
+        const std::vector<const Parameter*> & mpars,
         std::vector<size_t> & post_ranks // filled in by this
     ) {
         // setup sampling RNG to deal w/ mixture of prior, posterior, pseudo parameters
@@ -524,7 +524,7 @@ namespace ABC {
     }
 
     Row weight_predictive_prior(
-        const std::vector<Parameter*> & mpars,
+        const std::vector<const Parameter*> & mpars,
         const Mat2D & params
     ) {
         const float_type uniform_wt = 1.0/static_cast<double>(params.rows());
@@ -532,7 +532,7 @@ namespace ABC {
     }
 
     Row weight_predictive_prior(
-        const std::vector<Parameter*> & mpars,
+        const std::vector<const Parameter*> & mpars,
         const Mat2D & params,
         const Mat2D & prev_params,
         const Row & prev_weights,
