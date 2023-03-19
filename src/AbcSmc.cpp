@@ -222,7 +222,12 @@ Parameter * parse_parameter(
         const float_type par2 = mpar["par2"].asDouble();
         par = new GaussianPrior(name, short_name, par1, par2);
     } else if (ptype_str == "PSEUDO") {
-        std::vector<double> states;
+        std::vector<float_type> states;
+        const float_type smax = mpar["par2"].asDouble();
+        const float_type step = mpar.get("step", "0").asDouble();
+        for (float_type s = mpar["par1"].asDouble(); s <= smax; s += step) {
+            states.push_back(s);
+        }
         par = new PseudoPar(name, short_name, states);
     } else if (ptype_str == "POSTERIOR") {
         // TODO iota + stride?
