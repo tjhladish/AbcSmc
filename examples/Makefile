@@ -27,7 +27,9 @@ default: $(patsubst %,demo/%,$(DEMOS)) $(patsubst %,%/config.json,$(DEMOS)) dice
 bin output:
 	mkdir -p $@
 
-demo:
+.FORCE:
+
+demo: .FORCE
 	cmake -S . -B $@
 
 demo/%: demo

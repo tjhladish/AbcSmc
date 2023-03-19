@@ -130,36 +130,36 @@ Metric* parse_metric(const Json::Value & mmet) {
 // TODO
 void parse_transform(
     const Json::Value & mparu,
-    ParRescale * pscale,
-    ParXform * pxform,
-    transformer * _untransform_func,
+    ParRescale ** pscale,
+    ParXform ** pxform,
+    transformer ** _untransform_func,
     const std::map<const std::string, const size_t> par_name_idx
 ) {
     if (mparu.type() == Json::ValueType::stringValue) {
         string ttype_str = mparu.asString();
         if (ttype_str == "NONE") { // TODO - it's possible this may not actually ever be called
-            _untransform_func = [](const float_type & t) { return t; };
+            *_untransform_func = [](const float_type & t) { return t; };
             //ttype = UNTRANSFORMED;
         } else if (ttype_str == "POW_10") {
-            _untransform_func = [](const float_type & t) { return pow(10.0, t); };
+            *_untransform_func = [](const float_type & t) { return pow(10.0, t); };
             //ttype = LOG_10;
         } else if (ttype_str == "LOGISTIC") {
-            _untransform_func = [](const float_type & t) { return ABC::logistic(t); };
+            *_untransform_func = [](const float_type & t) { return ABC::logistic(t); };
             //ttype = LOGIT;
         } else {
             cerr << "Unknown parameter transformation type: " << ttype_str << ".  Aborting." << endl;
             exit(-206);
         }
-        pscale = new ParRescale();
-        pxform = new ParXform(_untransform_func);
+        *pscale = new ParRescale();
+        *pxform = new ParXform(*_untransform_func);
     } else if (mparu.type() == Json::ValueType::objectValue) {
         string ttype_str = mparu["type"].asString();
         if (ttype_str != "LOGISTIC") {
             cerr << "Only type: LOGISTIC is currently supported for untransformation objects.  (NONE and POW_10 supported as untransformation strings.)\n";
             exit(-207);
         }
-        pscale = new ParRescale(mparu["min"].asDouble(), mparu["max"].asDouble());
-        _untransform_func = [](const float_type & t) { return ABC::logistic(t); };
+        *pscale = new ParRescale(mparu["min"].asDouble(), mparu["max"].asDouble());
+        *_untransform_func = [](const float_type & t) { return ABC::logistic(t); };
         //Json::ValueType mod_type = untransform["transformed_addend"].type();
         std::map<string, vector<size_t>> mod_map = {
             { "transformed_addend", {} },
@@ -175,7 +175,7 @@ void parse_transform(
                 }
             }
         }
-        pxform = new ParXform(_untransform_func,
+        *pxform = new ParXform(*_untransform_func,
             mod_map["transformed_addend"],   mod_map["transformed_factor"],
             mod_map["untransformed_addend"], mod_map["untransformed_factor"]
         );
@@ -305,14 +305,16 @@ bool AbcSmc::parse_config(string conf_filename) {
             cerr << "Parameter specfied as type POSTERIOR, without previously specifying a posterior_database_filename.  Aborting." << endl;
             exit(-204);
         }
+        add_next_parameter(par);
 
         if (not mpar.isMember("untransform")) {
             // no-op
         } else {
-            float_type (*_untransform_func)(const float_type &);
+            // declare these as pointers, pass them by reference to be created by the function
+            transformer * _untransform_func;
             ABC::ParRescale * par_rescale;
             ABC::ParXform * mod_map;
-            parse_transform(mpar["untransform"], par_rescale, mod_map, _untransform_func, par_name_idx);
+            parse_transform(mpar["untransform"], &par_rescale, &mod_map, &_untransform_func, par_name_idx);
             add_modification_map(par, mod_map);
             add_par_rescale(par, par_rescale);
         }
