@@ -1,0 +1,36 @@
+{
+
+    "shared"            : "bin/dice.so",
+    "database_filename" : "output/pseudo.sqlite",
+
+    "parameters" : [
+        {"name"       : "number of dice",
+         "short_name" : "ndice",
+         "dist_type"  : "PSEUDO",
+         "num_type"   : "INT",
+         "par1"       : 1,
+         "par2"       : 10
+        },
+
+        {"name"       : "number of sides",
+         "short_name" : "sides",
+         "dist_type"  : "PSEUDO",
+         "num_type"   : "INT",
+         "par1"       : 2,
+         "par2"       : 10,
+         "step"       : 2
+        }
+    ],             
+
+    "metrics" : [   
+        {"name"       : "sum",
+         "num_type"   : "INT",
+         "comment"    : "From rolling X dice, Y sides each."
+        },
+
+        {"name"       : "sd",
+         "num_type"   : "FLOAT",
+         "comment"    : "From rolling X dice, Y sides each."
+        }
+    ]
+}
