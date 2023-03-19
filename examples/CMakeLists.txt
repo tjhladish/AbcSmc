@@ -25,4 +25,7 @@ target_link_libraries(integral abc)
 add_executable(executable executable/main.cpp)
 target_link_libraries(executable abc)
 
+add_executable(pseudo pseudo/main.cpp)
+target_link_libraries(pseudo abc)
+
 # TODO this must be foreach-able?

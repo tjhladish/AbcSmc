@@ -51,6 +51,8 @@ bin/dice_game: src/dice_game.cpp include/dice.h | bin
 # for the dynamic version, need to make the shared object
 run_shared: | bin/dice.so
 
+run_pseudo: | bin/dice.so
+
 # for the direct and executable versions, need to make the executable
 run_executable: | bin/dice_game
 

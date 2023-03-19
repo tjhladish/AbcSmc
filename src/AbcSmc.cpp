@@ -56,13 +56,15 @@ vector<float> as_float_vector(Json::Value val, string key) { // not worth templa
 
 vector<int> as_int_vector(Json::Value val, string key) {
     vector<int> extracted_vals;
-    if ( val[key].isInt() ) {
-        extracted_vals.push_back( val[key].asInt() );
-    } else if ( val[key].isArray() ) {
-        for (Json::Value jv : val[key]) extracted_vals.push_back( jv.asInt() );
-    } else {
-        cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting ints or array of ints." << endl;
-        exit(-216);
+    if (val.isMember(key)) {
+        if ( val[key].isInt() ) {
+            extracted_vals.push_back( val[key].asInt() );
+        } else if ( val[key].isArray() ) {
+            for (Json::Value jv : val[key]) extracted_vals.push_back( jv.asInt() );
+        } else {
+            cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting ints or array of ints." << endl;
+            exit(-216);
+        }
     }
     return extracted_vals;
 }
@@ -270,7 +272,7 @@ bool AbcSmc::parse_config(string conf_filename) {
         set_resume( true );
     }
 
-    set_smc_iterations( par["smc_iterations"].asInt() ); // TODO: or have it test for convergence
+    set_smc_iterations( par.get("smc_iterations", 1).asInt() ); // TODO: or have it test for convergence
     _smc_set_sizes = as_int_vector(par, "num_samples");
     process_predictive_prior_arguments(par);
     // TODO--allow specification of pred prior size (single value or list of values)
