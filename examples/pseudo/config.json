@@ -1,7 +1,7 @@
 {
 
-    "shared"            : "bin/dice.so",
-    "database_filename" : "output/pseudo.sqlite",
+    "shared"            : "libdice.so",
+    "database_filename" : "pseudo.sqlite",
 
     "parameters" : [
         {"name"       : "number of dice",
@@ -9,16 +9,14 @@
          "dist_type"  : "PSEUDO",
          "num_type"   : "INT",
          "par1"       : 1,
-         "par2"       : 10
+         "par2"       : 5
         },
 
         {"name"       : "number of sides",
          "short_name" : "sides",
          "dist_type"  : "PSEUDO",
          "num_type"   : "INT",
-         "par1"       : 2,
-         "par2"       : 10,
-         "step"       : 2
+         "vals"       : [2, 4, 6, 8, 10]
         }
     ],             
 
