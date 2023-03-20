@@ -23,7 +23,12 @@ add_custom_command(OUTPUT shared_config.json
     VERBATIM
 )
 
-add_custom_target(test DEPENDS shared_config.json)
+add_custom_command(OUTPUT pseudo_config.json
+    COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/pseudo/config.json pseudo_config.json
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/pseudo/config.json
+    VERBATIM
+)
 
 # all the demos depend on abc
 foreach(demo shared integral executable pseudo)
@@ -42,6 +47,9 @@ foreach(execdemo executable)
     add_dependencies(${execdemo} dice_game)
 endforeach()
 
-add_dependencies(shared test)
+foreach(demo shared pseudo)
+    add_custom_target(${demo}_config DEPENDS ${demo}_config.json)
+    add_dependencies(${demo} ${demo}_config)
+endforeach()
 
 # TODO this must be foreach-able?
