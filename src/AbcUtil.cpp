@@ -338,7 +338,7 @@ namespace ABC {
         return (sims.rowwise() - ref).rowwise().norm();
     }
 
-    double calculate_nrmse(
+    float_type calculate_nrmse(
         const Mat2D & posterior_mets, // rows are posterior samples, columns are metrics
         const Row & observed
     ) {
@@ -353,7 +353,7 @@ namespace ABC {
         for (size_t i = 0; i < expected.size(); ++i) { if (sim[i] == observed[i]) expected[i] = 1; }
 
         // delta = (sim - obs) / expected => each squared => collapse to mean => sqrt
-        double res = ((sim - observed).array() / expected.array()).square().mean();
+        float_type res = ((sim - observed).array() / expected.array()).square().mean();
 
         return sqrt(res);
 

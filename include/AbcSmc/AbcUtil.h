@@ -114,7 +114,7 @@ namespace ABC {
         return row;
     }
 
-    double calculate_nrmse(
+    float_type calculate_nrmse(
         const Mat2D & posterior_mets,
         const Row & observed
     );
