@@ -12,8 +12,10 @@ namespace ABC {
 struct IndexedPar : public Parameter {
     IndexedPar(
         const std::string & s, const std::string & ss,
-        const size_t maxIdx
-    ) : Parameter(s, ss, maxIdx) {}
+        const size_t size
+    ) : Parameter(s, ss, size) {
+        assert(size > 0); // forbid empty-state indexed pars
+    }
 
     float_type likelihood(const float_type pval) const override {
         std::cerr << "ERROR: it is an error to ask for likelihood from an IndexedPar; attempted on " << get_name() << std::endl;
@@ -31,7 +33,7 @@ struct PseudoPar : public IndexedPar {
     PseudoPar(
         const std::string & s, const std::string & ss,
         const std::vector<float_type> & vals
-    ) : IndexedPar(s, ss, vals.size()-1), states(vals) {}
+    ) : IndexedPar(s, ss, vals.size()), states(vals) {}
 
     // TODO support other constructors?
 
@@ -45,8 +47,8 @@ struct PseudoPar : public IndexedPar {
 struct PosteriorPar : public IndexedPar {
     PosteriorPar(
         const std::string & s, const std::string & ss,
-        const size_t maxIdx
-    ) : IndexedPar(s, ss, maxIdx) {}
+        const size_t size
+    ) : IndexedPar(s, ss, size) {}
 
     float_type sample(PRNG & rng) const override { return static_cast<float_type>(rng.posterior()); }
     bool isPosterior() const override { return true; }

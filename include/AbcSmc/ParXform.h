@@ -3,11 +3,7 @@
 
 #include <vector>
 #include <cstddef>
-
-// for testing purposes; normally defined by PLS library
-#ifndef PLS_H // NB: no def of PLS_H
-typedef double float_type;
-#endif
+#include <AbcSmc/TypeDefs.h>
 
 namespace ABC {
 
@@ -72,6 +68,7 @@ struct ParRescale {
     float_type rescale(const float_type & pval) const { return (par2 - par1)*pval + par1; }
 };
 
+// TODO: options for simpler transformations / rescales
 struct FunXform {
     FunXform(const transformer * u) : _u(u) {}
 

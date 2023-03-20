@@ -6,6 +6,7 @@
 #include <sstream>
 #include <fstream>
 #include <chrono>
+#include <algorithm> // all_of
 
 #include <AbcSmc/RunningStat.h>
 #include <AbcSmc/AbcSmc.h>
@@ -50,56 +51,89 @@ vector<T> as_vector(const Json::Value & val) {
     return extracted_vals;
 }
 
-std::vector<size_t> parse_predictive_prior(
-    const Json::Value & par
+void parse_iterations(
+    const Json::Value & par, const size_t pseudosize,
+    size_t & iterations,
+    float_type & training_frac,
+    vector<size_t> & set_sizes,
+    vector<size_t> & pred_prior_sizes
 ) {
-    const size_t arg_ct = par.isMember("predictive_prior_fraction") + par.isMember("predictive_prior_size");
-    if (arg_ct == 0) {
-        cerr << "Error: either predictive_prior_fraction or predictive_prior_size must be specified in configuration file." << endl;
-        exit(1);
-    } else if (arg_ct == 2) {
-        cerr << "Error: only one of predictive_prior_fraction and predictive_prior_size may be specified in configuration file." << endl;
-        exit(1);
-    } else if (par.isMember("predictive_prior_fraction")) {
-        auto ppfs = as_vector<float_type>(par["predictive_prior_fraction"]);
-        if (ppfs.size() > 1 and _smc_set_sizes.size() > 1 and ppfs.size() != _smc_set_sizes.size()) {
-            cerr << "Error: If num_samples and predictive_prior_fraction both have length > 1 in configuration file, they must be equal in length." << endl;
-            exit(1);
+    if (pseudosize != 0) { // definitely in projection mode; ignore other parameters
+        if (par.get("smc_iterations", 1).asInt() != 1) { // ignoring OR erroring if specified != 1
+            cerr << "Cannot use smc_iterations > 1 with ONLY PSEUDO or POSTERIOR parameters.  Aborting." << endl;
+            exit(-202);
         }
-        vector<int> set_sizes_copy = _smc_set_sizes;
-        const int max_set = max(ppfs.size(), set_sizes_copy.size());
-        ppfs.resize(max_set, ppfs.back());
-        set_sizes_copy.resize(max_set, set_sizes_copy.back());
-        std::vector<size_t> pred_prior_sizes(ppfs.size());
-        for (size_t i = 0; i < ppfs.size(); ++i) {
-            if (ppfs[i] <= 0 or ppfs[i] > 1) {
-                cerr << "Error: predictive_prior_fraction in configuration file must be > 0 and <= 1" << endl;
-                exit(1);
-            }
-            pred_prior_sizes[i] = round(ppfs[i] * set_sizes_copy[i]);
-        }
-        return pred_prior_sizes;
-    } else if (par.isMember("predictive_prior_size")) {
-
-        std::vector<size_t> pred_prior_sizes = as_vector<size_t>(par["predictive_prior_size"]);
-
-        if (_predictive_prior_sizes.size() > 1 and _smc_set_sizes.size() > 1 and _predictive_prior_sizes.size() != _smc_set_sizes.size()) {
-            cerr << "Error: If num_samples and predictive_prior_size both have length > 1 in configuration file, they must be equal in length." << endl;
-            exit(1);
-        }
-        const size_t max_set = max(_predictive_prior_sizes.size(), _smc_set_sizes.size());
-        for (size_t i = 0; i < max_set; ++i) {
-            if (get_pred_prior_size(i, false) > get_num_particles(i, false)) {
-                cerr << "Error: requested predictive prior size is greater than requested SMC set size for at least one set in configuration file." << endl;
-                exit(1);
+        if (par.isMember("num_samples")) {
+            size_t checksize = (as_vector<size_t>(par["num_samples"]))[0];
+            if (checksize != pseudosize) {
+                std::cerr << "ERROR: `num_samples` ("<< checksize <<") does not match imputed combinations of PSEUDO and/or POSTERIOR parameters ("<< pseudosize <<")." << endl;
+                exit(-201);
+            } else {
+                std::cerr << "WARNING: specified `num_samples` for all PSEUDO and/or POSTERIOR parameters." << std::endl;
             }
         }
-        return pred_prior_sizes;
+        if (par.isMember("predictive_prior_fraction") or par.isMember("predictive_prior_size")) {
+            std::cerr << "WARNING: ignoring `predictive_prior_*` options in projection mode." << std::endl;
+        }
+        iterations = 1;
+        set_sizes = { pseudosize };
+    } else { // some priors => fitting mode => predictive prior fractions
+        // pred_prior_sizes is a series of sizes, but may be passed as EITHER fractions OR sizes.
+        // both / neither is an error
+        if (
+            (par.isMember("predictive_prior_fraction") and par.isMember("predictive_prior_size")) or
+            not (par.isMember("predictive_prior_fraction") or par.isMember("predictive_prior_size"))
+        ) {
+            std::cerr << "Error: exactly one of `predictive_prior_fraction` or `predictive_prior_size` must be specified in configuration file." << std::endl;
+            exit(1);
+        }
+
+        // if doing iterations, may have a training fraction; defaults to 0.5
+        training_frac = par.get("pls_training_fraction", 0.5).as<float_type>();
+        if (training_frac <= 0 or 1 <= training_frac) {
+            std::cerr << "Error: pls_training_fraction must be in (0, 1)." << std::endl;
+            exit(1);
+        }
+
+        set_sizes = as_vector<size_t>(par["num_samples"]);
+
+        if (par.isMember("predictive_prior_fraction")) {
+            auto ppfs = as_vector<float_type>(par["predictive_prior_fraction"]);
+            if (not std::all_of(ppfs.begin(), ppfs.end(), [](float_type f) { return (0 < f) and (f <= 1); })) {
+                cerr << "Error: `predictive_prior_fraction`s must be in (0, 1]" << endl;
+                exit(1);
+            }
+            auto set_sizes_copy = set_sizes;
+            const int max_set = max(ppfs.size(), set_sizes_copy.size());
+            ppfs.resize(max_set, ppfs.back());
+            set_sizes_copy.resize(max_set, set_sizes_copy.back());
+            pred_prior_sizes.resize(max_set);
+            for (size_t i = 0; i < max_set; ++i) { pred_prior_sizes[i] = round(ppfs[i] * set_sizes_copy[i]); }
+        } else { // if (par.isMember("predictive_prior_size")) {
+            pred_prior_sizes = as_vector<size_t>(par["predictive_prior_size"]);
+            const size_t max_set = max(pred_prior_sizes.size(), set_sizes.size());
+            size_t i = 0;
+            for (; i < max_set; ++i) { if (pred_prior_sizes[i] > set_sizes[i]) {
+                cerr << "Error: requested predictive prior size > SMC set size at: " << i << endl;
+                exit(1);
+            } }
+            // now either done with both, or one has more to do, so if there *are* more...
+            // EITHER more pred prior
+            for (; i < pred_prior_sizes.size(); ++i) { if (pred_prior_sizes[i] > set_sizes.back()) {
+                cerr << "Error: requested predictive prior size > SMC set size at: " << i << endl;
+                exit(1);
+            } }
+            // OR more set sizes
+            for (; i < set_sizes.size(); ++i) { if (pred_prior_sizes.back() > set_sizes[i]) {
+                cerr << "Error: requested predictive prior size > SMC set size at: " << i << endl;
+                exit(1);
+            } }
+        }
+
+        iterations = par.get("smc_iterations", max(set_sizes.size(), pred_prior_sizes.size())).asUInt64();
+
     }
-}
-
-void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
-    
+  
 }
 
 Metric* parse_metric(const Json::Value & mmet) {
@@ -119,7 +153,6 @@ Metric* parse_metric(const Json::Value & mmet) {
 
 }
 
-// TODO
 void parse_transform(
     const Json::Value & mparu,
     ParRescale ** pscale,
@@ -250,22 +283,55 @@ Json::Value prepare(const string & configfile) {
     return par;
 }
 
-bool AbcSmc::parse_config(const string & conf_filename) {
-    if (not file_exists(conf_filename.c_str())) {
-        cerr << "File does not exist: " << conf_filename << endl;
-        exit(1);
-    }
-    // TODO - Make sure any existing database actually reflects what is expected in JSON, particularly that par and met tables are legit
-    Json::Value par;   // will contain the par value after parsing.
-    Json::Reader reader;
-    string json_data = slurp(conf_filename);
+Mat2D slurp_posterior(
+    const std::string & _posterior_database_filename,
+    const std::vector<const ABC::Parameter *> & _model_pars
+) {
+    // TODO - handle sql/sqlite errors
+    // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
 
-    bool parsingSuccessful = reader.parse( json_data, par );
-    if ( !parsingSuccessful ) {
-        // report to the user the failure and their locations in the document.
-        cerr << "Failed to parse configuration\n" << reader.getFormattedErrorMessages();
-        exit(1);
+    // determine dimensions of results we're going to read in
+    sqdb::Db post_db(_posterior_database_filename.c_str());
+    Statement posterior_query = post_db.Query(("select count(*) from " + JOB_TABLE + " where posterior > -1;").c_str());
+    posterior_query.Next();
+    const int posterior_size = posterior_query.GetField(0); // num of rows
+
+    int num_posterior_pars = 0; // num of cols
+    string posterior_strings = "";
+    for (const ABC::Parameter * p: _model_pars) {
+        if (p->isPosterior()) {
+            ++num_posterior_pars;
+            if (posterior_strings != "") {
+                posterior_strings += ", ";
+            }
+            posterior_strings += p->get_short_name();
+        }
     }
+
+    Mat2D posterior = Mat2D::Zero( posterior_size, num_posterior_pars );
+
+    // Identify table to pull parameter values from
+    string post_par_table = _db_tables_exist(post_db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
+    stringstream ss;
+    ss << "select " << posterior_strings << " from " << post_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial and posterior > -1;";
+    posterior_query = post_db.Query(ss.str().c_str());
+
+    int r = 0;
+    while(posterior_query.Next()) {
+        for (int c = 0; c < num_posterior_pars; ++c) {
+            posterior(r, c) = static_cast<float_type>(posterior_query.GetField(c));
+        }
+        ++r;
+    }
+
+    return posterior;
+}
+
+bool AbcSmc::parse_config(const string & conf_filename) {
+    auto par = prepare(conf_filename);
+
+    // if we use a posterior from an earlier ABC run to determine some of the parameter values, do we keep the rank?
+    set_retain_posterior_rank( par.get("retain_posterior_rank", false).asBool() );
 
     // Parse model parameters
     const Json::Value model_par = par["parameters"];
@@ -277,18 +343,19 @@ bool AbcSmc::parse_config(const string & conf_filename) {
         par_name_idx.emplace(name, parIdx);
     }
 
-    for (const Json::Value & mpar : model_par)  {// Iterates over the sequence elements.
+    // if we're retaining the posterior rank, we definitely have a posterior; otherwise, determine from parameters
+    bool anyPosterior = _retain_posterior_rank;
+    // if all parameters are pseudo / posterior, we can compute the size of a run
+    size_t pseudosize = 1;
+
+    for (const Json::Value & mpar : model_par)  { // Iterates over the sequence elements.
 
         ABC::Parameter * par = parse_parameter(mpar);
-        if (par->isPosterior() and (_posterior_database_filename == "")) {
-            cerr << "Parameter specfied as type POSTERIOR, without previously specifying a posterior_database_filename.  Aborting." << endl;
-            exit(-204);
-        }
+        anyPosterior = anyPosterior or par->isPosterior();
+        pseudosize *= par->state_size();
         add_next_parameter(par);
 
-        if (not mpar.isMember("untransform")) {
-            // no-op
-        } else {
+        if (mpar.isMember("untransform")) {
             // declare these as pointers, pass them by reference to be created by the function
             transformer * _untransform_func;
             ABC::ParRescale * par_rescale;
@@ -299,8 +366,21 @@ bool AbcSmc::parse_config(const string & conf_filename) {
         }
     }
 
+    if (anyPosterior) {
+        if (not par.isMember("posterior_database_filename")) {
+            cerr << "Parameter specfied as type POSTERIOR, without previously specifying a posterior_database_filename.  Aborting." << endl;
+            exit(-204);
+        }
+        if (_num_smc_sets > 1) {
+            cerr << "Cannot use posterior parameters with multiple SMC sets.  Aborting." << endl;
+            exit(-203);
+        }
+        _posterior = slurp_posterior(par["posterior_database_filename"].asString(), _model_pars);
+    }
+
     for (const Json::Value & mmet : par["metrics"]) { add_next_metric(parse_metric(mmet)); }
 
+    parse_iterations(par, pseudosize, _num_smc_sets, _pls_training_fraction, _smc_set_sizes, _predictive_prior_sizes);
 
     // TODO these should be mutually exclusive options
     std::string executable = par.get("executable", "").asString();
@@ -312,30 +392,19 @@ bool AbcSmc::parse_config(const string & conf_filename) {
     if (resume_dir != "") {
         if (_mp->mpi_rank == mpi_root) cerr << "Resuming in directory: " << resume_dir << endl;
         set_resume_directory( resume_dir );
-        set_resume( true );
     }
-
-    set_smc_iterations( par.get("smc_iterations", 1).asInt() ); // TODO: or have it test for convergence
-    _smc_set_sizes = as_vector<size_t>(par["num_samples"]);
-
-    _predictive_prior_sizes = parse_predictive_prior(par);
 
     // TODO--allow specification of pred prior size (single value or list of values)
     //set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
-    set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
+    
     set_database_filename( par["database_filename"].asString() );
-    // are we going to have particles that use a posterior from an earlier ABC run
-    // to determine some of the parameter values?
-    set_posterior_database_filename( par.get("posterior_database_filename", "").asString() );
-    set_retain_posterior_rank( par.get("retain_posterior_rank", "false").asString() );
-    if (_posterior_database_filename != "" and _num_smc_sets > 1) {
-        cerr << "Using a posterior database as input is not currently supported with smc_iterations > 1. Aborting." << endl;
-        exit(-203);
-    }
 
-    string noise = par.get("noise", "INDEPENDENT").asString();
-    use_mvn_noise = (noise == "MULTIVARIATE");
-    if (noise != "INDEPENDENT" and noise != "MULTIVARIATE") {
+    const string noise = par.get("noise", "INDEPENDENT").asString();
+    if (noise == "INDEPENDENT") {
+        _noise = ABC::NOISE::INDEPENDENT;
+    } else if (noise == "MULTIVARIATE") {
+        _noise = ABC::NOISE::MULTIVARIATE;
+    } else {
         cerr << "Unknown parameter noise type specified: " << noise << ". Aborting." << endl;
         exit(-210);
     }
@@ -343,27 +412,30 @@ bool AbcSmc::parse_config(const string & conf_filename) {
     return true;
 }
 
-Row AbcSmc::convert_fitting_to_model_space(
-    const Row & pars
+Row AbcSmc::_to_model_space(
+    const Row & fitting_space_pars
 ) {
-    assert( _model_pars.size() == pars.size() );
-    Row upars = pars; // copy initially - all upars == pars
-    for (size_t parIdx = 0; parIdx < pars.size(); ++parIdx) {
+    assert( _model_pars.size() == fitting_space_pars.size() );
+    Row model_space_pars = fitting_space_pars; // copy initially - all model_space_pars == fitting_space_pars
+    for (size_t parIdx = 0; parIdx < fitting_space_pars.size(); ++parIdx) {
         const ABC::Parameter* mpar = _model_pars[parIdx];
         if (_par_modification_map.contains(mpar)) { // ...if this is a modified par
             // transform => rescale => update upars
-            upars[parIdx] = _par_rescale_map[mpar]->rescale(
-                _par_modification_map[mpar]->transform(pars[parIdx], pars)
+            model_space_pars[parIdx] = _par_rescale_map[mpar]->rescale(
+                _par_modification_map[mpar]->transform(fitting_space_pars[parIdx], fitting_space_pars)
             );
         }
     }
-    return upars;
+    return model_space_pars;
 }
 
 // Build DB if it doesn't exist;
 // If it does exist but more sets are needed, filter particles and sample for next set;
 // If the specified number of sets already exist, exit gracefully
-bool AbcSmc::process_database(const gsl_rng* RNG) {
+bool AbcSmc::process_database(
+    const gsl_rng* RNG,
+    const bool verbose
+) {
 
     if (build_database(RNG)) return true; // if DB doesn't exist, create it and exit
 
@@ -393,36 +465,41 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
         //_db_execute_stringstream(db, ss);
 
         stringstream ss;
-        const size_t num_particles = get_num_particles(next_set);
+        const size_t num_particles = get_smc_size_at(next_set);
 
         Mat2D noised_pars;
         const int last_serial = serials.back().back();
-        if (use_mvn_noise) {
-            gsl_matrix* L = setup_mvn_sampler(
-                _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all)
-            );
-            noised_pars = ABC::sample_mvn_predictive_priors(
-                RNG, num_particles, 
-                _weights[next_set-1],
-                _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
-                _model_pars,
-                L
-            );
-            gsl_matrix_free(L);
-        } else {
-            noised_pars = ABC::sample_predictive_priors(
-                RNG, num_particles, 
-                _weights[next_set-1],
-                _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
-                _model_pars,
-                _doubled_variance[next_set-1]
-            );
+
+        switch (_noise) {
+            case NOISE::MULTIVARIATE: {
+                gsl_matrix* L = setup_mvn_sampler(
+                    _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all)
+                );
+                noised_pars = ABC::sample_mvn_predictive_priors(
+                    RNG, num_particles, 
+                    _weights[next_set-1],
+                    _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                    _model_pars,
+                    L
+                );
+                gsl_matrix_free(L);
+                if (verbose) std::cerr << "Populating next set using MULTIVARIATE noising of parameters." << std::endl;
+                break;
+            }
+            case NOISE::INDEPENDENT: {
+                noised_pars = ABC::sample_predictive_priors(
+                    RNG, num_particles, 
+                    _weights[next_set-1],
+                    _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                    _model_pars,
+                    _doubled_variance[next_set-1]
+                );
+                if (verbose) std::cerr << "Populating next set using INDEPENDENT noising of parameters." << std::endl;
+                break;
+            }
+            default: std::cerr << "Unknown noise type.  Aborting." << std::endl; exit(-1);
         }
         
-
-        string noise_type = use_mvn_noise ? "MULTIVARIATE" : "INDEPENDENT";
-        cerr << "Populating next set using " << noise_type << " noising of parameters.\n";
-
         db.Query("BEGIN EXCLUSIVE;").Next();
 
         for (size_t i = 0; i < noised_pars.rows(); i++) {
@@ -445,7 +522,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             _db_execute_stringstream(db, ss);
 
             if (_par_modification_map.size()) {
-                const Row upars = convert_fitting_to_model_space(noised_pars.row(i));
+                const Row upars = _to_model_space(noised_pars.row(i));
                 ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
                 //cerr << "attempting: " << ss.str() << endl;
                 _db_execute_stringstream(db, ss);
@@ -487,7 +564,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             cerr << "ERROR: Failed to read SMC set from database because not all particles are complete in set " << t << "\n";
             return false;
         }
-        const int json_set_size = get_num_particles(t, false);
+        const int json_set_size = get_smc_size_at(t);
         if (set_size != json_set_size) {
             cerr << "ERROR:\tSet size for one or more sets does not agree between configuration file and database:" << endl
                  << "\tSet " << t << " in configuration file has size " << json_set_size << " vs size " << set_size << " in database." << endl;
@@ -536,16 +613,19 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
                 _predictive_prior.back()[rank] = idx;
             }
         } else { // Otherwise, do the filtering now and update the DB
-            if (use_pls_filtering) {
-                _predictive_prior.push_back(
+            // filtering: rank all particles according to fitting scheme
+            switch(_filtering) {
+                case FILTER::PLS: { _predictive_prior.push_back(
                     particle_ranking_PLS(_particle_metrics[t], _particle_parameters[t], _met_vals, _pls_training_fraction)
-                );
-            } else {
-                _predictive_prior.push_back(
+                ); break; }
+                case FILTER::SIMPLE: { _predictive_prior.push_back(
                     particle_ranking_simple(_particle_metrics[t], _particle_parameters[t], _met_vals )
-                );
+                ); break; }
+                default: std::cerr << "ERROR: Unsupported filtering method: " << _filtering << std::endl; return false;
             }
-            const size_t next_pred_prior_size = get_pred_prior_size(t);
+
+            // trim that ranking to the size of the next predictive prior (n.b. this only drops from the indexing vector, not the actual data)
+            const size_t next_pred_prior_size = get_pred_prior_size_at(t);
             _predictive_prior.back().resize(next_pred_prior_size);
 
             auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
@@ -563,6 +643,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             }
             _db_execute_strings(db, update_strings);
         }
+
         calculate_predictive_prior_weights( t );
     }
 
@@ -580,7 +661,7 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
     return true;
 }
 
-bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed, const unsigned long int serial) {
+bool AbcSmc::_run_simulator(Row &par, Row &met, const size_t rng_seed, const size_t serial) {
     vector<float_type> met_vec = (*_simulator)( as_vector(par), rng_seed, serial, _mp );
     bool particle_success = (met_vec.size() == nmet());
     if (!particle_success) {
@@ -673,7 +754,7 @@ bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
 }
 
 
-bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
+bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     // Note that retval here is whether tables exist, rather than whether
     // db transaction was successful.  A failed transaction will throw
     // an exception and exit.
@@ -710,13 +791,11 @@ bool AbcSmc::_db_tables_exist(sqdb::Db &db, vector<string> table_names) {
 
 
 bool AbcSmc::build_database(const gsl_rng* RNG) {
-    if (_posterior_database_filename != "" and not file_exists(_posterior_database_filename.c_str())) {
-        cerr << "ERROR: Cannot read in posterior database: " << _posterior_database_filename << " does not exist\n";
-        exit(-215);
-    }
 
+    // create the DB handle
     sqdb::Db db(_database_filename.c_str());
 
+    // create the tables if they don't exist; if they already exist, this function is a no-op
     stringstream ss;
     if ( !_db_tables_exist(db, {JOB_TABLE}) and !_db_tables_exist(db, {PAR_TABLE}) and !_db_tables_exist(db, {MET_TABLE}) ) {
         db.Query("BEGIN EXCLUSIVE;").Next();
@@ -741,15 +820,10 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         return false;
     }
 
-    Mat2D posterior;
-    if (_posterior_database_filename != "") {
-        posterior = slurp_posterior();
-    }
-
     const size_t set_num = 0;
-    const size_t num_particles = get_num_particles(set_num);
+    const size_t num_particles = get_smc_size_at(set_num);
     std::vector<size_t> posterior_ranks = {};
-    Mat2D pars = sample_priors(RNG, num_particles, posterior, _model_pars, posterior_ranks);
+    Mat2D pars = sample_priors(RNG, num_particles, _posterior, _model_pars, posterior_ranks);
 
     db.Query("BEGIN EXCLUSIVE;").Next();
 
@@ -770,7 +844,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         _db_execute_stringstream(db, ss);
 
         if (_par_modification_map.size()) {
-            const Row upars = convert_fitting_to_model_space(parrow);
+            const Row upars = _to_model_space(parrow);
             ss << "insert into " << UPAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
             _db_execute_stringstream(db, ss);
         }
@@ -947,60 +1021,14 @@ bool AbcSmc::simulate_next_particles(
     return true;
 }
 
-Mat2D AbcSmc::slurp_posterior() {
-    // TODO - handle sql/sqlite errors
-    // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
-
-    // determine dimensions of results we're going to read in
-    sqdb::Db post_db(_posterior_database_filename.c_str());
-    Statement posterior_query = post_db.Query(("select count(*) from " + JOB_TABLE + " where posterior > -1;").c_str());
-    posterior_query.Next();
-    const int posterior_size = posterior_query.GetField(0); // num of rows
-
-    int num_posterior_pars = 0; // num of cols
-    string posterior_strings = "";
-    for (const ABC::Parameter * p: _model_pars) {
-        if (p->isPosterior()) {
-            ++num_posterior_pars;
-            if (posterior_strings != "") {
-                posterior_strings += ", ";
-            }
-            posterior_strings += p->get_short_name();
-        }
-    }
-
-    Mat2D posterior = Mat2D::Zero( posterior_size, num_posterior_pars );
-
-    // Identify table to pull parameter values from
-    string post_par_table = _db_tables_exist(post_db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
-    stringstream ss;
-    ss << "select " << posterior_strings << " from " << post_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial and posterior > -1;";
-    posterior_query = post_db.Query(ss.str().c_str());
-
-    int r = 0;
-    while(posterior_query.Next()) {
-        for (int c = 0; c < num_posterior_pars; ++c) {
-            posterior(r,c) = (double) posterior_query.GetField(c);
-        }
-        ++r;
-    }
-
-    return posterior;
-}
-
-// used entirely for side effect?
-void AbcSmc::calculate_doubled_variances( const size_t smcSet ) {
-    assert(_doubled_variance.size() == smcSet); // current length of doubled variance == index of previous set
-    append_doubled_variance(
+void AbcSmc::calculate_predictive_prior_weights(const size_t set_num) {
+    assert(_doubled_variance.size() == set_num); // current length of doubled variance == index of previous set
+    _doubled_variance.push_back(
         ABC::calculate_doubled_variance(
-            _particle_parameters[smcSet](_predictive_prior[smcSet], Eigen::placeholders::all)
+            _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all)
         )
     );
-}
 
-void AbcSmc::calculate_predictive_prior_weights(int set_num) {
-    // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
-    calculate_doubled_variances(set_num);
     if (set_num == 0) {
         _weights.push_back(
             ABC::weight_predictive_prior(
@@ -1022,14 +1050,13 @@ void AbcSmc::calculate_predictive_prior_weights(int set_num) {
 
 void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
 
-    auto _num_particles = get_num_particles(t);
+    auto _num_particles = get_smc_size_at(t);
 
     // sample parameter distributions; copy values into Y matrix and into send_data buffer
     Row par_row;
     if (t == 0) {
-        Mat2D posterior = slurp_posterior();
         std::vector<size_t> dump(_num_particles);
-        Y_orig = sample_priors(RNG, _num_particles, posterior, _model_pars, dump);
+        Y_orig = sample_priors(RNG, _num_particles, _posterior, _model_pars, dump);
     } else {
         Y_orig = ABC::sample_predictive_priors(
             RNG, _num_particles, 
