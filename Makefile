@@ -1,14 +1,10 @@
-<<<<<<< HEAD
-=======
-
->>>>>>> 709ba0c (extract Parameter into own header)
 .FORCE:
 
 build: .FORCE
-	cmake -S . -B $@
-<<<<<<< HEAD
+	@cmake -S . -B $@ > /dev/null
 
 clean: .FORCE
 	git clean -ifdx -e .vscode
-=======
->>>>>>> 709ba0c (extract Parameter into own header)
+
+build/examples/%.sqlite: build
+	@cd $^ && make $* --quiet > /dev/null && cd examples && ./$* $*_config.json --process --simulate -n 1000

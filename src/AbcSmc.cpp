@@ -219,8 +219,6 @@ Parameter * parse_parameter(
     const string ptype_str = mpar["dist_type"].asString();
     const string ntype_str = mpar["num_type"].asString();
 
-    const double step = mpar.get("step", 1.0).asDouble(); // default increment is 1
-
     ABC::Parameter *par;
 
     if (not ((ntype_str == "INT") or (ntype_str == "FLOAT"))) {
@@ -248,10 +246,14 @@ Parameter * parse_parameter(
         par = new GaussianPrior(name, short_name, par1, par2);
     } else if (ptype_str == "PSEUDO") {
         std::vector<float_type> states;
-        const float_type smax = mpar["par2"].asDouble();
-        const float_type step = mpar.get("step", 1.0).asDouble();
-        for (float_type s = mpar["par1"].asDouble(); s <= smax; s += step) {
-            states.push_back(s);
+        if (mpar.isMember("vals")) {
+            states = as_vector<float_type>(mpar["vals"]);
+        } else {
+            const float_type smax = mpar["par2"].asDouble();
+            const float_type step = mpar.get("step", 1.0).asDouble();
+            for (float_type s = mpar["par1"].asDouble(); s <= smax; s += step) {
+                states.push_back(s);
+            }
         }
         par = new PseudoPar(name, short_name, states);
     } else if (ptype_str == "POSTERIOR") {

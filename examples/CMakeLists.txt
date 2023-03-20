@@ -1,31 +1,47 @@
-cmake_minimum_required( VERSION 3.24.2 )
 
 project( AbcSmcExamples )
 
-set( CMAKE_CXX_STANDARD 20 )
-set( CMAKE_CXX_FLAGS "-Wall -Wpedantic -O2 -fPIC" )
-
-# look in the parent directory for assorted dependencies
-add_subdirectory(.. ${CMAKE_SOURCE_DIR}/../build)
 # the example specific includes
 include_directories(include)
 
 # the demos all depend on abc
 
+add_library(dice SHARED src/dice.cpp)
+target_link_libraries(dice GSL::gsl GSL::gslcblas)
+
+add_executable(dice_game src/dice_game.cpp)
+target_link_libraries(dice_game GSL::gsl GSL::gslcblas)
+
 # TODO: not yet working
 # add_executable(direct direct/main.cpp)
 # target_link_libraries(direct abc)
 
-add_executable(shared shared/main.cpp)
-target_link_libraries(shared abc)
+add_custom_command(OUTPUT shared_config.json
+    COMMAND gojq -s add ${CMAKE_CURRENT_SOURCE_DIR}/reference.json ${CMAKE_CURRENT_SOURCE_DIR}/shared/partial.json > shared_config.json
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/reference.json ${CMAKE_CURRENT_SOURCE_DIR}/shared/partial.json
+    VERBATIM
+)
 
-add_executable(integral integral/main.cpp)
-target_link_libraries(integral abc)
+add_custom_target(test DEPENDS shared_config.json)
 
-add_executable(executable executable/main.cpp)
-target_link_libraries(executable abc)
+# all the demos depend on abc
+foreach(demo shared integral executable pseudo)
+    add_executable(${demo} ${demo}/main.cpp)
+    target_link_libraries(${demo} abc)
+#    add_dependencies(${demo} ${demo}/config.json)
+endforeach()
 
-add_executable(pseudo pseudo/main.cpp)
-target_link_libraries(pseudo abc)
+# ...some depend on the shared library o
+foreach(shareddemo shared pseudo)
+    target_link_libraries(${shareddemo} dice)
+endforeach()
+
+# ...some depend on the executable
+foreach(execdemo executable)
+    add_dependencies(${execdemo} dice_game)
+endforeach()
+
+add_dependencies(shared test)
 
 # TODO this must be foreach-able?
