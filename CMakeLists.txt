@@ -5,6 +5,8 @@ project( AbcSmc )
 set( CMAKE_CXX_STANDARD 20 )
 set( CMAKE_CXX_FLAGS "-Wall -Wpedantic -O2 -fPIC" )
 
+set(CMAKE_INSTALL_MESSAGE LAZY)
+
 add_subdirectory(lib/PLS ${CMAKE_BINARY_DIR}/PLS)
 add_subdirectory(lib/CCRC32 ${CMAKE_BINARY_DIR}/CCRC32)
 add_subdirectory(lib/sqdb ${CMAKE_BINARY_DIR}/sqdb)
@@ -24,3 +26,5 @@ target_link_libraries(abc pls sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE_DL_L
 
 # look in these directories for header files, also make them available to other projects that link to abc
 target_include_directories(abc PUBLIC include src lib)
+
+add_subdirectory(examples)
