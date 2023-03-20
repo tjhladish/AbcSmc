@@ -16,12 +16,14 @@ target_link_libraries(dice_game GSL::gsl GSL::gslcblas)
 # add_executable(direct direct/main.cpp)
 # target_link_libraries(direct abc)
 
-add_custom_command(OUTPUT shared_config.json
-    COMMAND gojq -s add ${CMAKE_CURRENT_SOURCE_DIR}/reference.json ${CMAKE_CURRENT_SOURCE_DIR}/shared/partial.json > shared_config.json
+foreach(demo shared executable)
+add_custom_command(OUTPUT ${demo}_config.json
+    COMMAND gojq -s add ${CMAKE_CURRENT_SOURCE_DIR}/reference.json ${CMAKE_CURRENT_SOURCE_DIR}/${demo}/partial.json > ${demo}_config.json
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/reference.json ${CMAKE_CURRENT_SOURCE_DIR}/shared/partial.json
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/reference.json ${CMAKE_CURRENT_SOURCE_DIR}/${demo}/partial.json
     VERBATIM
 )
+endforeach()
 
 add_custom_command(OUTPUT pseudo_config.json
     COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/pseudo/config.json pseudo_config.json
@@ -47,7 +49,7 @@ foreach(execdemo executable)
     add_dependencies(${execdemo} dice_game)
 endforeach()
 
-foreach(demo shared pseudo)
+foreach(demo shared pseudo executable)
     add_custom_target(${demo}_config DEPENDS ${demo}_config.json)
     add_dependencies(${demo} ${demo}_config)
 endforeach()

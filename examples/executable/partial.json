@@ -1,4 +1,4 @@
 {
-    "executable"                    : "dice_game",
+    "executable"                    : "./dice_game",
     "database_filename"             : "executable.sqlite"
 }
