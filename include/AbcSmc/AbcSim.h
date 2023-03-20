@@ -10,22 +10,17 @@
 #include <PLS/pls.h> // for float_type
 #include <AbcSmc/AbcMPIPar.h>
 
+// TODO approach this way?
+// https://stackoverflow.com/questions/58394556/c-concepts-can-i-have-a-constraint-requiring-a-function-be-present-in-a-clas
+
 using std::vector;
+using std::ostringstream;
+using std::istringstream;
+using std::string;
 
 // if compiling with MPI support, have to handle slightly complex MPI objects
 // this must be defined in a matching way between and AbcSmc executables *and*
 // other code using this header.
-
-namespace ABC {
-
-  template <typename T>
-  inline std::string toString (const T& t) {
-      std::stringstream ss;
-      ss << t;
-      return ss.str();
-  }
-
-}
 
 // defines the core abstraction for a simulator: (1) a functor, (2) with an operator(), (3) return type vector<float> (the metrics),
 // (4) arguments vector<float> (the parameters), and unsigned long int, unsigned long int, MPI_par* (the abc seed/serial/mpi information)
@@ -86,7 +81,7 @@ struct AbcFPtrMPI : AbcSimFun {
     AbcSimMPI* fptr;
     AbcFPtrMPI(AbcSimMPI * _fptr) : fptr(_fptr) { } // constructor for a function pointer directly
     AbcFPtrMPI(const char * target) : AbcFPtrMPI(loadSO<AbcSimMPI>(target)) { } // construct from a char*-style string (the file name for shared object)
-    AbcFPtrMPI(const std::string target) : AbcFPtrMPI(target.c_str()) { } // construct from a std::string (the file name for shared object)
+    AbcFPtrMPI(const string target) : AbcFPtrMPI(target.c_str()) { } // construct from a string (the file name for shared object)
     
     // for this version, we override the MPI version of the operator()
     // rather than just having it be an ignored parameter
@@ -110,7 +105,7 @@ struct AbcFPtrBase : AbcSimFun {
     AbcSimBase* fptr;
     AbcFPtrBase(AbcSimBase * _fptr) : fptr(_fptr) { } // constructor for a function pointer directly
     AbcFPtrBase(const char * target) : AbcFPtrBase(loadSO<AbcSimBase>(target)) { } // construct from a char*-style string (the file name for shared object)
-    AbcFPtrBase(const std::string target) : AbcFPtrBase(target.c_str()) { } // construct from a std::string (the file name for shared object)
+    AbcFPtrBase(const string target) : AbcFPtrBase(target.c_str()) { } // construct from a string (the file name for shared object)
 
     vector<float_type> operator()(
       vector<float_type> pars, const unsigned long int seed, const unsigned long int serial
@@ -123,34 +118,34 @@ struct AbcFPtrBase : AbcSimFun {
 // which should receive the parameters as a sequence of command line arguments and reply on standard out with the metrics
 // as a series of numbers.
 struct AbcExec : AbcSimFun {
-    const std::string command;
-    AbcExec(std::string _command) : command(_command) { }
+    const string command;
+    AbcExec(string _command) : command(_command) { }
 
     vector<float_type> operator()(
       vector<float_type> pars, const unsigned long int /*seed*/, const unsigned long int /*serial*/
     ) const override {
-        auto execcom = command;
+        ostringstream execcom(command, std::ios_base::ate);
         vector<float_type> mets;
-        for (auto par : pars) { execcom += " " + ABC::toString(par); }
+        for (const float_type par : pars) { execcom << " " << par; }
 
-        FILE* pipe = popen(execcom.c_str(), "r");
+        FILE* pipe = popen(execcom.str().c_str(), "r");
         if (!pipe) {
-            std::cerr << "ERROR: Unable to create pipe to " << execcom << std::endl;
+            std::cerr << "ERROR: Unable to create pipe to " << execcom.str() << std::endl;
             exit(103);
         }
 
         char buffer[512];
-        std::string retval = "";
+        string retval = "";
         while(!feof(pipe)) {
             if(fgets(buffer, 512, pipe) != NULL) { retval += buffer; }
         }
         pclose(pipe);
 
         if (retval == "ERROR" or retval == "") {
-            std::cerr << command << " does not exist or appears to be an invalid simulator" << std::endl;
+            std::cerr << command << " does not exist or appears to be an invalid simulator." << std::endl;
+            std::cerr << "Attempted: " << execcom.str().c_str() << std::endl;
         } else {
-            std::stringstream ss;
-            ss.str(retval);
+            istringstream ss(retval);
             // TODO deal with empty mets on !particle_success
             float_type met;
             while(ss >> met) mets.push_back(met);
