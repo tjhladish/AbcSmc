@@ -41,8 +41,8 @@ struct ParRNG {
     ) : _rng(rng), posteriorMaxIdx(posterior_size-1) {
         // this builds up the map of pseudo parameters => counters
         for (const Par * p : mpars) {                                 // for each parameter ...
-            if ((not (p->isPosterior())) and (p->max_index() != 0)) { // if this isn't a posterior, and it has a max index ...
-                _pseudo[p] = { 0, p->max_index() };                    // ... then register it 
+            if ((not (p->isPosterior())) and (p->state_size() != 0)) { // if this isn't a posterior, and it has state size > 0 ...
+                _pseudo[p] = { 0, p->state_size() - 1 };              // ... then register it 
             }               
         }
     }

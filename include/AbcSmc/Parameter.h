@@ -38,7 +38,7 @@ namespace ABC {
     class Parameter {
         public:
             Parameter(const std::string & s, const std::string & ss, const size_t & mi = 0) :
-            name(s), short_name(ss), maxIdx(mi) {
+            name(s), short_name(ss), _state_size(mi) {
                 // TODO: sanitize short_name
             }
 
@@ -78,12 +78,13 @@ namespace ABC {
             // some computations can be done in terms of the properly defined methods
             bool valid(const float_type pval) const { return likelihood(pval) != 0.0; };
 
-            size_t max_index() const { return maxIdx; };     // most parameters are not indexed (pseudo or posterior) parameters
+            // indexed parameters (e.g. posterior) have a state size; size 0 == "arbitrary" size (though e.g. discrete uniform prior has finite size)
+            size_t state_size() const { return _state_size; };     // most parameters are not indexed (pseudo or posterior) parameters
 
         private:
             const std::string name;
             const std::string short_name;
-            const size_t maxIdx; // usually unset
+            const size_t _state_size; // usually unset
 
     };
 
