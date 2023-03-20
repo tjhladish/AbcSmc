@@ -131,7 +131,7 @@ class AbcSmc {
         FilteringType get_filtering_type() const { return use_pls_filtering ? PLS_FILTERING : SIMPLE_FILTERING; }
 
         void process_predictive_prior_arguments(Json::Value par);
-        bool parse_config(std::string conf_filename);
+        bool parse_config(const std::string & conf_filename);
 
         bool build_database(const gsl_rng* RNG);
         bool process_database(const gsl_rng* RNG);
@@ -178,11 +178,11 @@ class AbcSmc {
 
         Row _met_vals;
         size_t _num_smc_sets;
-        vector<int> _smc_set_sizes;
+        vector<size_t> _smc_set_sizes;
         //int _num_particles;
         float _pls_training_fraction;
         //int _pls_training_set_size;
-        vector<int> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
+        vector<size_t> _predictive_prior_sizes;  // TODO -- at parsing time, pred prior fractions should be converted to sizes
         //int _next_predictive_prior_size;
         //int _predictive_prior_size; // number of particles that will be used to inform predictive prior
         AbcSimFun * _simulator = new AbcSimUnset();

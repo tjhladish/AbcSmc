@@ -39,39 +39,21 @@ bool file_exists(const char *fileName) {
     return infile.good();
 }
 
-
-vector<float> as_float_vector(Json::Value val, string key) { // not worth templating, despite appearances
-    vector<float> extracted_vals;
-    if ( val[key].isDouble() ) {
-        extracted_vals.push_back( val[key].asFloat() );
-    } else if ( val[key].isArray() ) {
-        for (Json::Value jv : val[key]) extracted_vals.push_back( jv.asFloat() );
-    } else {
-        cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting floats or array of floats." << endl;
-        exit(-216);
+template <NumericType T>
+vector<T> as_vector(const Json::Value & val) {
+    vector<T> extracted_vals;
+    if (val.isArray()) { for (const Json::Value & jv : val) {
+        extracted_vals.push_back( jv.as<T>() ); // NB, jsoncpp handles cast failures
+    } } else {
+        extracted_vals.push_back( val.as<T>() );
     }
     return extracted_vals;
 }
 
-
-vector<int> as_int_vector(Json::Value val, string key) {
-    vector<int> extracted_vals;
-    if (val.isMember(key)) {
-        if ( val[key].isInt() ) {
-            extracted_vals.push_back( val[key].asInt() );
-        } else if ( val[key].isArray() ) {
-            for (Json::Value jv : val[key]) extracted_vals.push_back( jv.asInt() );
-        } else {
-            cerr << "Unfamiliar value type associated with " << key << " in configuration file: expecting ints or array of ints." << endl;
-            exit(-216);
-        }
-    }
-    return extracted_vals;
-}
-
-
-void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
-    int arg_ct = par.isMember("predictive_prior_fraction") + par.isMember("predictive_prior_size");
+std::vector<size_t> parse_predictive_prior(
+    const Json::Value & par
+) {
+    const size_t arg_ct = par.isMember("predictive_prior_fraction") + par.isMember("predictive_prior_size");
     if (arg_ct == 0) {
         cerr << "Error: either predictive_prior_fraction or predictive_prior_size must be specified in configuration file." << endl;
         exit(1);
@@ -79,7 +61,7 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
         cerr << "Error: only one of predictive_prior_fraction and predictive_prior_size may be specified in configuration file." << endl;
         exit(1);
     } else if (par.isMember("predictive_prior_fraction")) {
-        vector<float> ppfs = as_float_vector(par, "predictive_prior_fraction");
+        auto ppfs = as_vector<float_type>(par["predictive_prior_fraction"]);
         if (ppfs.size() > 1 and _smc_set_sizes.size() > 1 and ppfs.size() != _smc_set_sizes.size()) {
             cerr << "Error: If num_samples and predictive_prior_fraction both have length > 1 in configuration file, they must be equal in length." << endl;
             exit(1);
@@ -88,16 +70,19 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
         const int max_set = max(ppfs.size(), set_sizes_copy.size());
         ppfs.resize(max_set, ppfs.back());
         set_sizes_copy.resize(max_set, set_sizes_copy.back());
-        _predictive_prior_sizes.clear();
+        std::vector<size_t> pred_prior_sizes(ppfs.size());
         for (size_t i = 0; i < ppfs.size(); ++i) {
             if (ppfs[i] <= 0 or ppfs[i] > 1) {
                 cerr << "Error: predictive_prior_fraction in configuration file must be > 0 and <= 1" << endl;
                 exit(1);
             }
-            _predictive_prior_sizes.push_back( round(ppfs[i] * set_sizes_copy[i]) );
+            pred_prior_sizes[i] = round(ppfs[i] * set_sizes_copy[i]);
         }
+        return pred_prior_sizes;
     } else if (par.isMember("predictive_prior_size")) {
-        _predictive_prior_sizes = as_int_vector(par, "predictive_prior_size");
+
+        std::vector<size_t> pred_prior_sizes = as_vector<size_t>(par["predictive_prior_size"]);
+
         if (_predictive_prior_sizes.size() > 1 and _smc_set_sizes.size() > 1 and _predictive_prior_sizes.size() != _smc_set_sizes.size()) {
             cerr << "Error: If num_samples and predictive_prior_size both have length > 1 in configuration file, they must be equal in length." << endl;
             exit(1);
@@ -109,7 +94,12 @@ void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
                 exit(1);
             }
         }
+        return pred_prior_sizes;
     }
+}
+
+void AbcSmc::process_predictive_prior_arguments(Json::Value par) {
+    
 }
 
 Metric* parse_metric(const Json::Value & mmet) {
@@ -226,7 +216,7 @@ Parameter * parse_parameter(
     } else if (ptype_str == "PSEUDO") {
         std::vector<float_type> states;
         const float_type smax = mpar["par2"].asDouble();
-        const float_type step = mpar.get("step", "0").asDouble();
+        const float_type step = mpar.get("step", 1.0).asDouble();
         for (float_type s = mpar["par1"].asDouble(); s <= smax; s += step) {
             states.push_back(s);
         }
@@ -242,7 +232,25 @@ Parameter * parse_parameter(
     return par;
 }
 
-bool AbcSmc::parse_config(string conf_filename) {
+Json::Value prepare(const string & configfile) {
+    if (not file_exists(configfile.c_str())) {
+        cerr << "File does not exist: " << configfile << endl;
+        exit(1);
+    }
+    // TODO - Make sure any existing database actually reflects what is expected in JSON, particularly that par and met tables are legit
+    Json::Value par;   // will contain the par value after parsing.
+    Json::Reader reader;
+    string json_data = slurp(configfile);
+
+    if ( !reader.parse( json_data, par ) ) {
+        // report to the user the failure and their locations in the document.
+        cerr << "Failed to parse configuration\n" << reader.getFormattedErrorMessages();
+        exit(1);
+    }
+    return par;
+}
+
+bool AbcSmc::parse_config(const string & conf_filename) {
     if (not file_exists(conf_filename.c_str())) {
         cerr << "File does not exist: " << conf_filename << endl;
         exit(1);
@@ -257,42 +265,6 @@ bool AbcSmc::parse_config(string conf_filename) {
         // report to the user the failure and their locations in the document.
         cerr << "Failed to parse configuration\n" << reader.getFormattedErrorMessages();
         exit(1);
-    }
-
-    // TODO these should be mutually exclusive options
-    std::string executable = par.get("executable", "").asString();
-    if (executable != "") { set_executable( executable ); }
-    std::string sharedobj = par.get("shared", "").asString();
-    if (sharedobj != "") { set_simulator( sharedobj ); }
-
-    string resume_dir = par.get("resume_directory", "").asString();
-    if (resume_dir != "") {
-        if (_mp->mpi_rank == mpi_root) cerr << "Resuming in directory: " << resume_dir << endl;
-        set_resume_directory( resume_dir );
-        set_resume( true );
-    }
-
-    set_smc_iterations( par.get("smc_iterations", 1).asInt() ); // TODO: or have it test for convergence
-    _smc_set_sizes = as_int_vector(par, "num_samples");
-    process_predictive_prior_arguments(par);
-    // TODO--allow specification of pred prior size (single value or list of values)
-    //set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
-    set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
-    set_database_filename( par["database_filename"].asString() );
-    // are we going to have particles that use a posterior from an earlier ABC run
-    // to determine some of the parameter values?
-    set_posterior_database_filename( par.get("posterior_database_filename", "").asString() );
-    set_retain_posterior_rank( par.get("retain_posterior_rank", "false").asString() );
-    if (_posterior_database_filename != "" and _num_smc_sets > 1) {
-        cerr << "Using a posterior database as input is not currently supported with smc_iterations > 1. Aborting." << endl;
-        exit(-203);
-    }
-
-    string noise = par.get("noise", "INDEPENDENT").asString();
-    use_mvn_noise = (noise == "MULTIVARIATE");
-    if (noise != "INDEPENDENT" and noise != "MULTIVARIATE") {
-        cerr << "Unknown parameter noise type specified: " << noise << ". Aborting." << endl;
-        exit(-210);
     }
 
     // Parse model parameters
@@ -328,6 +300,45 @@ bool AbcSmc::parse_config(string conf_filename) {
     }
 
     for (const Json::Value & mmet : par["metrics"]) { add_next_metric(parse_metric(mmet)); }
+
+
+    // TODO these should be mutually exclusive options
+    std::string executable = par.get("executable", "").asString();
+    if (executable != "") { set_executable( executable ); }
+    std::string sharedobj = par.get("shared", "").asString();
+    if (sharedobj != "") { set_simulator( sharedobj ); }
+
+    string resume_dir = par.get("resume_directory", "").asString();
+    if (resume_dir != "") {
+        if (_mp->mpi_rank == mpi_root) cerr << "Resuming in directory: " << resume_dir << endl;
+        set_resume_directory( resume_dir );
+        set_resume( true );
+    }
+
+    set_smc_iterations( par.get("smc_iterations", 1).asInt() ); // TODO: or have it test for convergence
+    _smc_set_sizes = as_vector<size_t>(par["num_samples"]);
+
+    _predictive_prior_sizes = parse_predictive_prior(par);
+
+    // TODO--allow specification of pred prior size (single value or list of values)
+    //set_predictive_prior_fraction( par["predictive_prior_fraction"].asFloat() );
+    set_pls_validation_training_fraction( par["pls_training_fraction"].asFloat() ); // fraction of runs to use for training
+    set_database_filename( par["database_filename"].asString() );
+    // are we going to have particles that use a posterior from an earlier ABC run
+    // to determine some of the parameter values?
+    set_posterior_database_filename( par.get("posterior_database_filename", "").asString() );
+    set_retain_posterior_rank( par.get("retain_posterior_rank", "false").asString() );
+    if (_posterior_database_filename != "" and _num_smc_sets > 1) {
+        cerr << "Using a posterior database as input is not currently supported with smc_iterations > 1. Aborting." << endl;
+        exit(-203);
+    }
+
+    string noise = par.get("noise", "INDEPENDENT").asString();
+    use_mvn_noise = (noise == "MULTIVARIATE");
+    if (noise != "INDEPENDENT" and noise != "MULTIVARIATE") {
+        cerr << "Unknown parameter noise type specified: " << noise << ". Aborting." << endl;
+        exit(-210);
+    }
 
     return true;
 }
