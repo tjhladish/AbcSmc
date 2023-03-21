@@ -23,7 +23,6 @@ using std::vector;
 using std::string;
 using std::stringstream;
 using std::ofstream;
-using std::setw;
 
 using namespace sqdb;
 using namespace ABC;
