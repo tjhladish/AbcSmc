@@ -102,17 +102,11 @@ namespace ABC {
 
     LogisticFit* logistic_reg(const std::vector<double> &x, const std::vector<int> &successes, const std::vector<int> &attempts);
 
-    inline vector<float_type> as_vector(const Row data) {
-        vector<float_type> vec(data.size());
-        for (size_t i = 0; i < static_cast<size_t>(data.size()); i++) vec[i] = data[i];
-        return vec;
-    }
+    vector<float_type> as_vector(const Row & data);
 
-    inline Row as_row(const vector<float_type> & data) {
-        Row row(data.size());
-        for (size_t i = 0; i < data.size(); i++) row[i] = data[i];
-        return row;
-    }
+    Row as_row(const vector<float_type> & data);
+
+    Col euclidean(const Mat2D & sims, const Row & ref);
 
     float_type calculate_nrmse(
         const Mat2D & posterior_mets,
@@ -129,8 +123,6 @@ namespace ABC {
     gsl_vector* to_gsl_v(const RandomAccessible & from);
 
     gsl_matrix* to_gsl_m(const Mat2D & from);
-
-    Col euclidean(const Mat2D & sims, const Row & ref);
 
     Mat2D sample_predictive_priors(
         const gsl_rng* RNG, const size_t num_samples,
