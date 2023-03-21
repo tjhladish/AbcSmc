@@ -4,6 +4,7 @@
 #include <gsl/gsl_multimin.h>
 #include <gsl/gsl_sf_gamma.h>
 #include <AbcSmc/RunningStat.h>
+#include <Eigen/Dense>
 
 using std::string;
 using std::vector;
@@ -302,6 +303,18 @@ namespace ABC {
             data.push_back(datum);
         }
         return logistic_reg(data);
+    }
+
+    vector<float_type> as_vector(const Row & data) {
+        vector<float_type> vec(data.size());
+        for (size_t i = 0; i < static_cast<size_t>(data.size()); i++) vec[i] = data[i];
+        return vec;
+    }
+
+    Row as_row(const vector<float_type> & data) {
+        Row row(data.size());
+        for (size_t i = 0; i < data.size(); i++) row[i] = data[i];
+        return row;
     }
 
     Col euclidean(const Mat2D & sims, const Row & ref) {
