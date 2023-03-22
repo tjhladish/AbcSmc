@@ -56,7 +56,10 @@ CLIArgs parse_args(std::string cmd, int argc, char* argv[]) {
 };
 
 template<typename ABC>
-inline void abc_inner(ABC * abc, CLIArgs& args, const gsl_rng * RNG, size_t buffer_size) {
+inline void abc_inner(
+    ABC * abc, const CLIArgs& args, const gsl_rng * RNG, const size_t buffer_size,
+    const size_t smcset = 0 // TODO find a good way to pass this
+) {
 
     if (args.process_db) {
         gsl_rng_set(RNG, time(NULL) * getpid()); // seed the rng using sys time and the process id
@@ -70,15 +73,18 @@ inline void abc_inner(ABC * abc, CLIArgs& args, const gsl_rng * RNG, size_t buff
 };
 
 template<typename ABC>
-void abc_loop(ABC * abc, CLIArgs& args, const gsl_rng * RNG) {
+void abc_loop(
+    ABC * abc, CLIArgs& args, const gsl_rng * RNG,
+    const size_t smcset = 0 // TODO find a good way to pass this
+) {
 
     if (args.do_all) {
         size_t set_count = abc->get_smc_iterations();
         for (size_t i = 0; i < set_count; ++i) {
-            abc_inner(abc, args, RNG, abc->get_num_particles(i, QUIET));
+            abc_inner(abc, args, RNG, abc->get_num_particles(i, QUIET), i);
         }
     } else {
-        abc_inner(abc, args, RNG, args.buffer_size);
+        abc_inner(abc, args, RNG, args.buffer_size, smcset);
     }
 
     if (args.do_all) {

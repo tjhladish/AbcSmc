@@ -92,17 +92,11 @@ float_type normalcdf(float_type z) {
 // Thomas E. V. Non-parametric statistical methods for multivariate calibration
 // model selection and comparison. J. Chemometrics 2003; 17: 653–659
 //
-float_type wilcoxon(const Col err_1, const Col err_2) {
-    assert(err_1.rows() == err_2.rows());
-
-    const size_t n = err_1.rows();
+float_type wilcoxon(const Col & err_1, const Col & err_2) {
+    assert(err_1.size() == err_2.size());
+    size_t n = err_1.rows();
     Col del = err_1.cwiseAbs() - err_2.cwiseAbs();
-    assert(static_cast<size_t>(del.size()) == n);
-
-    // TODO: setZero necessary?
-    Rowi sdel;
-    sdel.setZero(n);
-    //Matrix<int, Dynamic, 1> sdel = del.unaryExpr(std::ptr_fun(_sgn)); // can't get this to work
+    Rowi sdel = Rowi::Zero(n);
     for (size_t i = 0; i < n; i++) {
         sdel(i) = (0 < del(i)) - (del(i) < 0); // get the sign of each element
     }
@@ -110,8 +104,8 @@ float_type wilcoxon(const Col err_1, const Col err_2) {
     // 's' gives the original positions (indices) of the sorted values
     auto s = ordered(adel);
     float_type d = 0;
-    for (size_t i = 0; i < n; i++) { d += (i + 1) * sdel(s[i]); }
-    float_type t  = n * (n + 1) / 2.0;
+    for (size_t i = 0; i < n; i++) { d += static_cast<float_type>(i + 1) * sdel(s[i]); }
+    float_type t  = static_cast<float_type>(n * (n + 1)) / 2.0;
     float_type v  = (t - d) / 2.0;
     float_type ev = t/2.0;
     float_type sv = sqrt(static_cast<float_type>(n * (n+1) * (2*n+1)) / 24.0);
@@ -299,46 +293,32 @@ const Rowsz PLS_Model::optimal_num_components(const Mat2D& X, const Mat2D& Y, co
     }
 
     Mat2D press = Mat2D::Zero(Y.cols(), A);
-    Rowsz min_press_idx = Rowsz::Zero(Y.cols());
-    Row  min_press_val(Y.cols());
-    Rowsz best_comp(Y.cols());
 
     // Determine PRESS values
     for (size_t i = 0; i < static_cast<size_t>(errors.size()); i++) {    // for each Y category
-        for (size_t j = 0; j < static_cast<size_t>(errors[i].rows()); j++) {      // for each observation
-            for (size_t k = 0; k < static_cast<size_t>(errors[i].cols()); k++) {  // for each component
-                press(i,k) += pow(errors[i](j,k), 2);
-            }
+        for (size_t k = 0; k < static_cast<size_t>(errors[i].cols()); k++) {  // for each component
+            // for each observation
+            press(i, k) += errors[i](Eigen::placeholders::all, k).array().square().sum();
         }
     }
 
-    min_press_val = press.col(0);
-    // Find the component number that minimizes PRESS for each Y category
-    for (size_t i = 0; i < static_cast<size_t>(press.rows()); i++) {              // for each Y category
-        for (size_t j = 0; j < static_cast<size_t>(press.cols()); j++) {          // for each component
-            if (press(i,j) < min_press_val(i)) {
-                min_press_val(i) = press(i,j);
-                min_press_idx(i) = j;
-            }
-        }
-    }
-
-    best_comp = min_press_idx.array() + 1; // +1 to convert from index to component number
+    Colsz min_press_idx(press.rows());
+    for (size_t r = 0; r < press.rows(); r++) { press.row(r).minCoeff(&min_press_idx[r]); }
+    Rowsz best_comp = min_press_idx.array() + 1; // +1 to convert from index to component number
     // Find the min number of components that is not significantly
     // different from the min PRESS at alpha = 0.1 for each Y category
     const float_type ALPHA = 0.1;
-    for (size_t i = 0; i < static_cast<size_t>(press.rows()); i++) {              // for each Y category
-        for (size_t j = 0; j < min_press_idx(i); j++) {      // for each smaller number of components
-            Col err1 = errors[i].col(min_press_idx(i));
-            Col err2 = errors[i].col(j);
-            auto p = wilcoxon(err1, err2);
+    for (size_t i = 0; i < errors.size(); i++) {             // for each Y category
+        Col err1 = errors[i].col(min_press_idx(i));          // get errors for the min press # of components
+        for (size_t j = 0; j < min_press_idx(i); j++) {      // for fewer # of components
+            Col err2 = errors[i].col(j);                     // ... get their errors
+            float_type p = wilcoxon(err1, err2);             // determine if error-with-fewer-components is good enough
             if (p > ALPHA) {
-                best_comp(i) = j + 1; // +1 to convert from index to component number
+                best_comp[i] = j + 1;                        // +1 to convert from index to # of components
                 break;
             }
         }
     }
-
     return best_comp;
 }
 
@@ -369,4 +349,16 @@ void PLS_Model::print_state(std::ostream& os) const {
         "coefficients:" << std::endl <<
         coefficients() << std::endl;
 
-}
+};
+
+void PLS_Model::print_model_assessment(
+    const Mat2D & X, const Mat2D & Y,
+    const size_t training_size, const size_t testing_size,
+    const size_t optimal_components, const size_t used_components,
+    std::ostream& os
+) const {
+    os << "Train / Test split: " << training_size << " / " << testing_size << std::endl;
+    print_explained_variance(X, Y, os);
+    os << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << optimal_components << std::endl;
+    os << "Using " << used_components << " components." << std::endl;
+};

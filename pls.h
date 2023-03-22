@@ -39,6 +39,8 @@ using std::complex;
 
 typedef Matrix<float_type, Dynamic, Dynamic> Mat2D;
 typedef Matrix<float_type, Dynamic, 1>  Col;
+typedef Matrix<int, Dynamic, 1>  Coli;
+typedef Matrix<size_t, Dynamic, 1>  Colsz;
 typedef Matrix<float_type, 1, Dynamic>  Row;
 typedef Matrix<int, 1, Dynamic>  Rowi;
 typedef Matrix<size_t, 1, Dynamic>  Rowsz;
@@ -154,6 +156,12 @@ struct PLS_Model {
     // output methods
     void print_explained_variance(const Mat2D& X, const Mat2D& Y, std::ostream& os = std::cerr) const;
     void print_state(std::ostream& os) const;
+    void print_model_assessment(
+        const Mat2D & X, const Mat2D & Y,
+        const size_t training_size, const size_t testing_size,
+        const size_t optimal_components, const size_t used_components,
+        std::ostream& os = std::cerr
+    ) const;
 
     private:
         size_t A; // number of components

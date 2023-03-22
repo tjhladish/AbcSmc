@@ -74,9 +74,6 @@ class Parameter {
             }
         }
 
-        // doubled variance of particles
-        double get_doubled_variance(int t) const { return doubled_variance[t]; }
-        void append_doubled_variance(double v2) { doubled_variance.push_back(v2); }
         void set_prior_limits(double min, double max) { fmin = min; fmax = max; }
         double get_prior_min() const { return fmin; }
         double get_prior_max() const { return fmax; }
@@ -109,7 +106,6 @@ class Parameter {
         PriorType ptype;
         NumericType ntype;
         double fmin, fmax, mean, stdev, state, step;
-        std::vector<double> doubled_variance;
         double (*untran_func) (const double);
         std::pair<double, double> rescale;
         std::map < std::string, std::vector<int> > par_modification_map; // how this par modifies others
@@ -305,9 +301,9 @@ class AbcSmc {
         );
         bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
 
-        bool simulate_particle_by_serial(const int serial_req);
-        bool simulate_particle_by_posterior_idx(const int posterior_req);
         bool simulate_next_particles(const int n = 1, const int serial_req = -1, const int posterior_req = -1); // defaults to running next particle
+        bool simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
+        bool simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
 
         Parameter* get_parameter_by_name(string name) {
             Parameter* p = nullptr;
@@ -319,10 +315,13 @@ class AbcSmc {
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
 
-        PLS_Model& run_PLS(Mat2D&, Mat2D&, const size_t pls_training_set_size, const size_t ncomp);
         std::string get_database_filename()                 { return _database_filename; }
         std::vector< Mat2D > get_particle_parameters() { return _particle_parameters; }
         std::vector< Mat2D > get_particle_metrics()    { return _particle_metrics; }
+
+        Row get_doubled_variance(const size_t t) const { return _doubled_variance[t]; }
+        void append_doubled_variance(const Row & v2) { _doubled_variance.push_back(v2); }
+
 
     private:
         friend AbcLog;
@@ -349,8 +348,10 @@ class AbcSmc {
         bool _retain_posterior_rank;
         std::vector< Mat2D > _particle_metrics;
         std::vector< Mat2D > _particle_parameters;
-        std::vector< std::vector<int> > _predictive_prior; // vector of row indices for particle metrics and parameters
-        std::vector< std::vector<double> > _weights;
+        std::vector< std::vector<size_t> > _predictive_prior; // vector of row indices for particle metrics and parameters
+        std::vector<Col> _weights;
+        std::vector<Row> _doubled_variance;
+
         bool use_mvn_noise;
         bool use_pls_filtering;
 
@@ -367,8 +368,13 @@ class AbcSmc {
         void _particle_worker_mpi(const size_t seed, const size_t serial);
 
         void _set_predictive_prior(const int t, const int next_pred_prior_size, const Col& distances);
+
         void _filter_particles_simple(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size);
-        PLS_Model _filter_particles(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size, const bool verbose = true);
+        PLS_Model _filter_particles(
+            const size_t t, const Mat2D & X_orig, const Mat2D & Y_orig,
+            const size_t pred_prior_size, const bool verbose = true
+        );
+
         long double calculate_nrmse(vector<Col> posterior_mets);
 
         void set_resume(const bool res) { resume_flag = res; }
@@ -389,26 +395,14 @@ class AbcSmc {
         bool _update_sets_table(sqdb::Db &db, int t);
         //bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
-        Col euclidean( Row obs_met, Mat2D sim_met );
-
         Mat2D slurp_posterior();
 
-        Row sample_priors( const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank );
+        std::vector<double> do_complicated_untransformations(const std::vector<Parameter*> & _model_pars, const Row & pars );
 
-        std::vector<double> do_complicated_untransformations( std::vector<Parameter*>& _model_pars, Row& pars );
-
-        void calculate_doubled_variances( int t );
-
-        void normalize_weights( std::vector<double>& weights );
+        void calculate_doubled_variances( const size_t previous_set );
 
         void calculate_predictive_prior_weights( int set_num );
 
-        gsl_matrix* setup_mvn_sampler(const int);
-        Row sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L );
-
-        Row sample_predictive_priors( int set_num, const gsl_rng* RNG );
-
-        Row _z_transform_observed_metrics( Row& means, Row& stdevs );
 };
 
 #endif

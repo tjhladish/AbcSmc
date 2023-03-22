@@ -48,7 +48,7 @@ void AbcLog::report_convergence_data(
     }
     for (size_t parIdx = 0; parIdx < abc->_model_pars.size(); parIdx++) {
         const Parameter* par = abc->_model_pars[parIdx];
-        const double current_stdev = sqrt(par->get_doubled_variance(set_t)/2.0);
+        const double current_stdev = sqrt(abc->_doubled_variance[set_t][parIdx]/2.0);
         const double prior_mean = par->get_prior_mean();
         const double prior_mean_delta = current_means[parIdx] - prior_mean;
         const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
@@ -70,7 +70,7 @@ void AbcLog::report_convergence_data(
         print_stats("Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n", os);
 
         if (set_t != 0) {
-            double last_stdev = sqrt(par->get_doubled_variance(set_t-1)/2.0);
+            double last_stdev = sqrt(abc->_doubled_variance[set_t-1][parIdx]/2.0);
             double delta = current_stdev - last_stdev;
             double pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
             print_stats("Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n", os);

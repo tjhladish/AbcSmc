@@ -288,7 +288,7 @@ bool AbcSmc::parse_config(string conf_filename) {
 }
 
 
-vector<double> AbcSmc::do_complicated_untransformations(vector<Parameter*>& _model_pars, Row& pars) {
+vector<double> AbcSmc::do_complicated_untransformations(const vector<Parameter*>& _model_pars, const Row & pars) {
     assert( _model_pars.size() == npar() );
     assert( static_cast<size_t>(pars.size()) == npar() );
     const vector<double> identities = {0.0, 1.0, 0.0, 1.0};
@@ -336,26 +336,45 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
 
     if (_num_smc_sets > next_set) {
 
-        db.Query("BEGIN EXCLUSIVE;").Next();
         //ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
         //_db_execute_stringstream(db, ss);
 
         stringstream ss;
-        Row pars;
+        const size_t num_particles = get_num_particles(next_set);
+
+        Mat2D noised_pars;
         const int last_serial = serials.back().back();
-        gsl_matrix* L = setup_mvn_sampler(next_set);
+        if (use_mvn_noise) {
+            gsl_matrix* L = setup_mvn_sampler(
+                _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all)
+            );
+            noised_pars = ABC::sample_mvn_predictive_priors(
+                RNG, num_particles, 
+                _weights[next_set-1],
+                _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                _model_pars,
+                L
+            );
+            gsl_matrix_free(L);
+        } else {
+            noised_pars = ABC::sample_predictive_priors(
+                RNG, num_particles, 
+                _weights[next_set-1],
+                _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                _model_pars,
+                _doubled_variance[next_set-1]
+            );
+        }
+        
 
         string noise_type = use_mvn_noise ? "MULTIVARIATE" : "INDEPENDENT";
         cerr << "Populating next set using " << noise_type << " noising of parameters.\n";
-        const size_t num_particles = get_num_particles(next_set);
-        for (size_t i = 0; i < num_particles; i++) {
+
+        db.Query("BEGIN EXCLUSIVE;").Next();
+
+        for (size_t i = 0; i < noised_pars.rows(); i++) {
             const int serial = last_serial + 1 + i;
 
-            if (use_mvn_noise) {
-                pars = sample_mvn_predictive_priors(next_set, RNG, L);
-            } else {
-                pars = sample_predictive_priors(next_set, RNG);
-            }
             QueryStr qstr;
 
             ss << "insert into " << JOB_TABLE << " values ( " << serial << ", "
@@ -366,13 +385,14 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
-            const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-            ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
+            const size_t seed = gsl_rng_get(RNG);
+
+            ss << "insert into " << PAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << noised_pars(i, j); ss << " );";
             //cerr << "attempting: " << ss.str() << endl;
             _db_execute_stringstream(db, ss);
 
             if (use_transformed_pars) {
-                vector<double> upars = do_complicated_untransformations(_model_pars, pars);
+                vector<double> upars = do_complicated_untransformations(_model_pars, noised_pars.row(i));
                 ss << "insert into " << UPAR_TABLE << " values ( " << serial << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
                 //cerr << "attempting: " << ss.str() << endl;
                 _db_execute_stringstream(db, ss);
@@ -383,7 +403,7 @@ bool AbcSmc::process_database(const gsl_rng* RNG) {
             _db_execute_stringstream(db, ss);
         }
         db.CommitTransaction();
-        gsl_matrix_free(L);
+        
     } else {
         cerr << "Database already contains " << _num_smc_sets << " complete sets.\n";
     }
@@ -456,23 +476,28 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
         //const int posterior_size = posterior_pairs.size() > 0 ? posterior_pairs.size() : _next_predictive_prior_size;
         //_predictive_prior.push_back( vector<int>(posterior_size) );
         if (posterior_pairs.size() > 0) { // This is a set that has already undergone particle filtering & ranking
-            _predictive_prior.push_back( vector<int>(posterior_pairs.size()) );
+            _predictive_prior.push_back( vector<size_t>(posterior_pairs.size()) );
             for (size_t i = 0; i < posterior_pairs.size(); i++) {
                 const int rank = posterior_pairs[i].first;
                 const int idx = posterior_pairs[i].second;
                 _predictive_prior.back()[rank] = idx;
             }
         } else { // Otherwise, do the filtering now and update the DB
-            //set_next_predictive_prior_size(t, _particle_parameters[t].size());
-            const size_t next_pred_prior_size = get_pred_prior_size(t);
-            _predictive_prior.push_back( vector<int>(next_pred_prior_size) );
             if (use_pls_filtering) {
-                _filter_particles( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+                _predictive_prior.push_back(
+                    particle_ranking_PLS(_particle_metrics[t], _particle_parameters[t], _met_vals, _pls_training_fraction)
+                );
             } else {
-                _filter_particles_simple( t, _particle_metrics[t], _particle_parameters[t], next_pred_prior_size );
+                _predictive_prior.push_back(
+                    particle_ranking_simple(_particle_metrics[t], _particle_parameters[t], _met_vals )
+                );
             }
+            const size_t next_pred_prior_size = get_pred_prior_size(t);
+            _predictive_prior.back().resize(next_pred_prior_size);
+
             auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
             auto posterior_mets = _particle_metrics[t](_predictive_prior[t], Eigen::placeholders::all);
+
             AbcLog::filtering_report(this, t, posterior_pars, posterior_mets);
 
             vector<string> update_strings(next_pred_prior_size);
@@ -501,43 +526,6 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
 
     return true;
 }
-
-
-/*void AbcSmc::set_next_predictive_prior_size(int set_idx, int set_size) {
-    _next_predictive_prior_size = round(set_size * _predictive_prior_fraction);
-}*/
-
-
-void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
-
-    auto _num_particles = get_num_particles(t);
-
-    // sample parameter distributions; copy values into Y matrix and into send_data buffer
-    Row par_row;
-    for (size_t i = 0; i < _num_particles; i++) {
-        if (t == 0) { // sample priors
-            Mat2D posterior = slurp_posterior();
-            int posterior_rank = -1;
-            Y_orig.row(i) = sample_priors(RNG, posterior, posterior_rank);
-        } else {      // sample predictive priors
-            Y_orig.row(i) = sample_predictive_priors(t, RNG);
-        }
-    }
-
-    X_orig.resize(_num_particles, nmet());
-
-    ABC::particle_scheduler(X_orig, Y_orig, _mp);
-
-}
-
-
-void AbcSmc::_particle_worker_mpi(
-    const size_t seed,
-    const size_t serial
-) {
-    ABC::particle_worker(npar(), nmet(), _simulator, seed, serial, _mp);
-}
-
 
 bool AbcSmc::_run_simulator(Row &par, Row &met, const unsigned long int rng_seed, const unsigned long int serial) {
     vector<float_type> met_vec = (*_simulator)( as_vector(par), rng_seed, serial, _mp );
@@ -705,15 +693,17 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         posterior = slurp_posterior();
     }
 
-    db.Query("BEGIN EXCLUSIVE;").Next();
-
-    Row pars;
     const size_t set_num = 0;
     const size_t num_particles = get_num_particles(set_num);
+    std::vector<size_t> posterior_ranks = {};
+    Mat2D pars = sample_priors(RNG, num_particles, posterior, _model_pars, posterior_ranks);
+
+    db.Query("BEGIN EXCLUSIVE;").Next();
+
     for (size_t i = 0; i < num_particles; i++) {
-        int posterior_rank = -1;
-        pars = sample_priors(RNG, posterior, posterior_rank);
-        if (not _retain_posterior_rank) posterior_rank = -1;
+        auto parrow = pars.row(i);      
+        auto posterior_rank = _retain_posterior_rank ? posterior_ranks[i] : -1;  
+
         QueryStr qstr;
 
         db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, %d, %d, %d, NULL, 'Q', %d, 0 );"), JOB_TABLE.c_str(), i, set_num, i, time(NULL), posterior_rank)).Next();
@@ -723,11 +713,11 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
         const int rowid = ((int) s.GetField(0)) - 1; // indexing should start at 0
 
         const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-        ss << "insert into " << PAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << pars[j]; ss << " );";
+        ss << "insert into " << PAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << parrow[j]; ss << " );";
         _db_execute_stringstream(db, ss);
 
         if (use_transformed_pars) {
-            vector<double> upars = do_complicated_untransformations(_model_pars, pars);
+            vector<double> upars = do_complicated_untransformations(_model_pars, parrow);
             ss << "insert into " << UPAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
             _db_execute_stringstream(db, ss);
         }
@@ -830,10 +820,6 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
     return db_success;
 }
 
-bool AbcSmc::simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
-
-bool AbcSmc::simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
-
 bool AbcSmc::simulate_next_particles(
     const int n, const int serial_req, const int posterior_req
 ) { // defaults are 1, -1, -1
@@ -878,7 +864,9 @@ bool AbcSmc::simulate_next_particles(
             const high_resolution_clock::time_point start_time = high_resolution_clock::now();
             const int serial = serials[i];
             met_mat.push_back( Row(nmet()) );
+// TODO this is the critical step in this function - the rest is managing accounting steps / storage
             bool success = _run_simulator(par_mat[i], met_mat[i], rng_seeds[i], serial);
+// END critical step
             if (not success) exit(-211);
 
             stringstream ss;
@@ -904,100 +892,6 @@ bool AbcSmc::simulate_next_particles(
     }
 
     return true;
-}
-
-void AbcSmc::_set_predictive_prior (
-    const int t,
-    const int next_pred_prior_size,
-    const Col& distances
-) {
-    vector<size_t> ranking = ordered(distances);
-    vector<int> sample(ranking.begin(), ranking.begin() + next_pred_prior_size); // This is the predictive prior / posterior
-    _predictive_prior[t] = sample;
-
-}
-
-void AbcSmc::_filter_particles_simple (int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size) {
-    // x is metrics, y is parameters
-    Row X_sim_means, X_sim_stdev;
-    Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
-    Mat2D Y = colwise_z_scores( Y_orig );
-    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
-
-    Col distances  = euclidean(obs_met, X);
-    _set_predictive_prior (t, next_pred_prior_size, distances);
-}
-
-// Run PLS
-// Box-Cox transform data -- TODO?
-//void test_bc( Mat2D );
-//test_bc(Y_orig);
-// @tjh TODO: obsolete? have updated the PLS constructor to just do the calculation if presented with X/Y/components/method
-// as that seems to be the most common use case
-PLS_Model& AbcSmc::run_PLS(
-    Mat2D &X, // predictors; rows = sample, cols = variables
-    Mat2D &Y, // responses; rows = sample, cols = variables
-    const size_t pls_training_set_size, // number of samples from X and Y to use
-    const size_t ncomp // number of PLS components to keep
-) {
-
-    // assert same rows to X and Y? or perhaps manage that in PLS?
-    assert(pls_training_set_size <= static_cast<size_t>(X.rows())); // can't train against more observations than we have
-    const size_t npred = X.cols();      // number of predictor variables
-    const size_t nresp = Y.cols();      // number of response variables
-    return PLS_Model(npred, nresp, ncomp).plsr(
-        X.topRows(pls_training_set_size),
-        Y.topRows(pls_training_set_size), KERNEL_TYPE1
-    );
-    
-}
-
-PLS_Model AbcSmc::_filter_particles (
-    int t, Mat2D &X_orig, Mat2D &Y_orig, int next_pred_prior_size,
-    const bool verbose
-) {
-    Row X_sim_means, X_sim_stdev;
-    Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
-    Mat2D Y = colwise_z_scores( Y_orig );
-    Row obs_met = _z_transform_observed_metrics( X_sim_means, X_sim_stdev );
-
-    const size_t pls_training_set_size = round(X.rows() * _pls_training_fraction);
-    // @tjh TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
-    size_t ncomp = npar();             // It doesn't make sense to consider more components than model parameters
-
-    PLS_Model plsm(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), ncomp);
-
-    // A is number of components to use
-    if (verbose) { plsm.print_explained_variance(X, Y); }
-
-    const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
-    auto num_components = plsm.optimal_num_components(X.bottomRows(test_set_size), Y.bottomRows(test_set_size), NEW_DATA);
-    size_t num_components_used = num_components.maxCoeff();
-    if (verbose) {
-        cerr << "Optimal number of components for each parameter (validation method == NEW DATA):\t" << num_components << endl;
-        cerr << "Using " << num_components_used << " components." << endl;
-    }
-
-    // Calculate new, orthogonal metrics (==scores) using the pls model
-    // Is casting as real always safe?
-    Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
-    Mat2D sim_scores = plsm.scores(X, num_components_used).real();
-    Col   distances  = euclidean(obs_scores, sim_scores);
-
-    _set_predictive_prior(t, next_pred_prior_size, distances);
-
-    return plsm;
-}
-
-Col AbcSmc::euclidean( Row obs_met, Mat2D sim_met ) {
-    Col distances = Col::Zero(sim_met.rows());
-    for (int r = 0; r<sim_met.rows(); r++) {
-        for (int c = 0; c<sim_met.cols(); c++) {
-            distances(r) += pow(obs_met(c) - sim_met(r,c), 2);
-        }
-        distances(r) = sqrt( distances(r) );
-    }
-    return distances;
 }
 
 Mat2D AbcSmc::slurp_posterior() {
@@ -1041,230 +935,67 @@ Mat2D AbcSmc::slurp_posterior() {
     return posterior;
 }
 
-
-Row AbcSmc::sample_priors(const gsl_rng* RNG, Mat2D& posterior, int &posterior_rank) {
-    Row par_sample = Row::Zero(_model_pars.size());
-    bool increment_nonrandom_par = true; // only one PSEUDO parameter gets incremented each time
-    bool increment_posterior = true;     // posterior parameters get incremented together, when all pseudo pars reach max val
-    vector<int> posterior_indices;
-    // for each parameter
-    for (size_t i = 0; i < _model_pars.size(); i++) {
-        Parameter* p = _model_pars[i];
-        float_type val;
-        // if it's a non-random, PSEUDO parameter
-        if (p->get_prior_type() == PSEUDO) {
-            // get the state now, so that the first time it will have the initialized value
-            val = (float_type) p->get_state();
-            // We need to imitate the way nested loops work, but in a single loop.
-            // PSEUDO parameters only get incremented when any and all previous PSEUDO parameters
-            // have reached their max values and are being reset
-            if (increment_nonrandom_par) {
-                // This parameter has reached it's max value and gets reset to minimum
-                // Because of possible floating point errors, we check whether the state is within step/10,000 from the max
-                const float_type PSEUDO_EPSILON = 0.0001 * p->get_step();
-                if (p->get_state() + PSEUDO_EPSILON >= p->get_prior_max()) {
-                    p->reset_state();
-                // otherwise, increment this one and prevent others from being incremented
-                } else {
-                    p->increment_state();
-                    increment_nonrandom_par = false;
-                    increment_posterior     = false;
-                }
-            }
-        } else if (p->get_prior_type() == POSTERIOR) {
-            val = 0; // will be replaced later in function
-            if (posterior_indices.size() == 0) {
-                posterior_rank = (int) p->get_state();
-            } else {
-                // require that posterior pars be synchronized
-                assert(posterior_rank == (int) p->get_state());
-            }
-            posterior_indices.push_back(i);
-        } else {
-            // Random parameters get sampled independently from each other, and are therefore easy
-            val = p->sample(RNG);
-        }
-
-        par_sample(i) = val;
-    }
-    if (_posterior_database_filename != "") {
-
-        for (unsigned int c = 0; c < posterior_indices.size(); ++c) {
-            par_sample(posterior_indices[c]) = posterior(posterior_rank, c);
-            Parameter* p = _model_pars[posterior_indices[c]];
-
-            if (increment_posterior) {
-                if (p->get_state() >= p->get_prior_max()) {
-                    p->reset_state();
-                } else {
-                    p->increment_state();
-                }
-            }
-
-        }
-
-//cerr << "sample: " << par_sample << endl;
-    }
-    return par_sample;
-}
-
-void AbcSmc::calculate_doubled_variances( int t ) {
-    vector<RunningStat> stats(npar());
-    Mat2D par_values = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
-    // TODO: turn this into Eigen column-wise operation?
-    for (size_t parIdx = 0; parIdx < par_values.cols(); parIdx++) {
-        stats[parIdx].Push(par_values.col(parIdx));
-    }
-    for (size_t parIdx = 0; parIdx < npar(); parIdx++) {
-        _model_pars[parIdx]->append_doubled_variance( 2 * stats[parIdx].Variance() );
-    }
-}
-
-void AbcSmc::normalize_weights( vector<double>& weights ) {
-    double total = 0;
-    for (size_t i = 0; i < weights.size(); i++) {
-        total += weights[i];
-    }
-
-    for (size_t i = 0; i < weights.size(); i++) {
-        weights[i] /= total;
-    }
+// used entirely for side effect?
+void AbcSmc::calculate_doubled_variances( const size_t smcSet ) {
+    assert(_doubled_variance.size() == smcSet); // current length of doubled variance == index of previous set
+    append_doubled_variance(
+        ABC::calculate_doubled_variance(
+            _particle_parameters[smcSet](_predictive_prior[smcSet], Eigen::placeholders::all)
+        )
+    );
 }
 
 void AbcSmc::calculate_predictive_prior_weights(int set_num) {
     // We need to calculate the proper weights for the predictive prior so that we know how to sample from it.
-    calculate_doubled_variances( set_num );
+    calculate_doubled_variances(set_num);
     if (set_num == 0) {
-        // uniform weights for set 0 predictive prior
-        //_weights[set_num].resize(_predictive_prior[set_num].size(), 1.0/(double) _predictive_prior[set_num].size());
-        const double uniform_wt = 1.0/(double) _predictive_prior[set_num].size();
-        _weights.push_back( vector<double>(_predictive_prior[set_num].size(), uniform_wt) );
+        _weights.push_back(
+            ABC::weight_predictive_prior(
+                _model_pars, _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all)
+            )
+        );
     } else if ( set_num > 0 ) {
-        // weights from set - 1 are needed to calculate weights for current set
-        _weights.push_back( vector<double>( _predictive_prior[set_num].size(), 0.0 ) );
-        //_weights[set_num].resize( _predictive_prior[set_num].size() );
-
-        Mat2D par_values = _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all);
-        Mat2D prev_par_values = _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all);
-
-        for (size_t post_rank = 0; post_rank < par_values.rows(); post_rank++) {
-            double numerator = 1;
-            double denominator = 0.0;
-            for (size_t parIdx = 0; parIdx < par_values.cols(); parIdx++) {
-                Parameter* par = _model_pars[parIdx];
-                const double par_value = par_values(post_rank, parIdx);
-                if (par->get_prior_type() == NORMAL) {
-                    numerator *= gsl_ran_gaussian_pdf(par_value - par->get_prior_mean(), par->get_prior_stdev());
-                } else if (par->get_prior_type() == UNIFORM) {
-                    // The RHS here will be 1 under normal circumstances.  If the prior has been revised during a fit,
-                    // this should throw out values outside of the prior's range
-                    numerator *= (int) (par_value >= par->get_prior_min() and par_value <= par->get_prior_max());
-                }
-            }
-
-            for (size_t prev_post_rank = 0; prev_post_rank < prev_par_values.rows(); prev_post_rank++) {
-                double running_product = _weights[set_num - 1][prev_post_rank];
-                for (size_t parIdx = 0; parIdx < prev_par_values.cols(); parIdx++) {
-                    double par_value = par_values(post_rank, parIdx);
-                    double old_par_value = prev_par_values(prev_post_rank, parIdx);
-                    double old_doubled_variance = _model_pars[parIdx]->get_doubled_variance(set_num-1);
-
-                    // This conditional handles the (often improbable) case where a parameter has completely converged.
-                    // It allows ABC to continue exploring other parameters, rather than causing the math
-                    // to fall apart because the density at the converged value is infinite.
-                    if (old_doubled_variance != 0 or par_value != old_par_value) {
-                        running_product *= gsl_ran_gaussian_pdf(par_value-old_par_value, sqrt(old_doubled_variance) );
-                    }
-                }
-                denominator += running_product;
-            }
-
-            _weights[set_num][post_rank] = numerator / denominator;
-        }
-        normalize_weights( _weights[set_num] );
+        _weights.push_back(
+            ABC::weight_predictive_prior(
+                _model_pars,
+                _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all),
+                _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
+                _weights[set_num - 1],
+                _doubled_variance[set_num -1]
+            )
+        );
     }
 }
 
+void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG) {
 
-gsl_matrix* AbcSmc::setup_mvn_sampler(const int set_num) {
-    // ALLOCATE DATA STRUCTURES
-    // variance-covariance matrix calculated from pred prior values
-    // NB: always allocate this small matrix, so that we don't have to check whether it's safe to free later
-    const size_t num_pars = static_cast<size_t>(_particle_parameters[set_num-1].cols());
-    gsl_matrix* sigma_hat = gsl_matrix_alloc(num_pars, num_pars);
+    auto _num_particles = get_num_particles(t);
 
-    if (use_mvn_noise) {
-        // INITIALIZE DATA STRUCTURES
-        Mat2D par_values = _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all);
-        // container for predictive prior aka posterior from last set
-        gsl_matrix* posterior_par_vals = gsl_matrix_alloc(par_values.rows(), par_values.cols());
-
-
-        for (size_t post_rank = 0; post_rank < par_values.rows(); ++post_rank) {
-            for (size_t parIdx = 0; parIdx < par_values.cols(); ++parIdx) {
-                // copy values from pred prior into a gsl matrix
-                gsl_matrix_set(posterior_par_vals, post_rank, parIdx, par_values(post_rank, parIdx));
-            }
-        }
-        // calculate maximum likelihood estimate of variance-covariance matrix sigma_hat
-        gsl_ran_multivariate_gaussian_vcov(posterior_par_vals, sigma_hat);
-
-        for (size_t parIdx = 0; parIdx < par_values.cols(); parIdx++) {
-            // sampling is done using a kernel with a broader kernel than found in pred prior values
-            const double doubled_variance = 2 * gsl_matrix_get(sigma_hat, parIdx, parIdx);
-            gsl_matrix_set(sigma_hat, parIdx, parIdx, doubled_variance);
-        }
-
-        // not a nice interface, gsl.  sigma_hat is converted in place from a variance-covariance matrix
-        // to the same values in the upper triangle, and the diagonal and lower triangle equal to L,
-        // the Cholesky decomposition
-        gsl_linalg_cholesky_decomp1(sigma_hat);
-
-        gsl_matrix_free(posterior_par_vals);
+    // sample parameter distributions; copy values into Y matrix and into send_data buffer
+    Row par_row;
+    if (t == 0) {
+        Mat2D posterior = slurp_posterior();
+        std::vector<size_t> dump(_num_particles);
+        Y_orig = sample_priors(RNG, _num_particles, posterior, _model_pars, dump);
+    } else {
+        Y_orig = ABC::sample_predictive_priors(
+            RNG, _num_particles, 
+            _weights[t-1],
+            _particle_parameters[t-1](_predictive_prior[t-1], Eigen::placeholders::all),
+            _model_pars,
+            _doubled_variance[t-1]
+        );
     }
 
-    return sigma_hat;
+    X_orig.resize(_num_particles, nmet());
+
+    ABC::particle_scheduler(X_orig, Y_orig, _mp);
+
 }
 
-
-Row AbcSmc::sample_mvn_predictive_priors( int set_num, const gsl_rng* RNG, gsl_matrix* L ) {
-    // container for sampled values
-    Row par_values = Row::Zero(npar());
-    // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
-    const int r = _predictive_prior[set_num-1][gsl_rng_nonuniform_int(_weights[set_num-1], RNG)];
-    const Row par = _particle_parameters[set_num-1](r, Eigen::placeholders::all);
-    gsl_vector* par_val_hat = gsl_vector_alloc(par.cols());
-    for (size_t parIdx = 0; parIdx < par.cols(); parIdx++) {
-        gsl_vector_set(par_val_hat, parIdx, par[parIdx]);
-    }
-    par_values = rand_trunc_mv_normal( _model_pars, par_val_hat, L, RNG );
-    gsl_vector_free(par_val_hat);
-
-    return par_values;
+void AbcSmc::_particle_worker_mpi(
+    const size_t seed,
+    const size_t serial
+) {
+    ABC::particle_worker(npar(), nmet(), _simulator, seed, serial, _mp);
 }
-
-Row AbcSmc::sample_predictive_priors( int set_num, const gsl_rng* RNG ) {
-    Row par_values = Row::Zero(npar());
-    // Select a particle index r to use from the predictive prior
-    int r = _predictive_prior[set_num-1][gsl_rng_nonuniform_int(_weights[set_num-1], RNG)];
-    const Row par = _particle_parameters[set_num-1](r, Eigen::placeholders::all);
-    for (size_t parIdx = 0; parIdx < par.cols(); parIdx++) {
-        const Parameter* parameter = _model_pars[parIdx];
-        double doubled_variance = parameter->get_doubled_variance(set_num-1);
-        double par_min = parameter->get_prior_min();
-        double par_max = parameter->get_prior_max();
-        par_values(parIdx) = rand_trunc_normal(par[parIdx], doubled_variance, par_min, par_max, RNG );
-
-        if (parameter->get_numeric_type() == INT) {
-            par_values(parIdx) = (double) ((int) (par_values(parIdx) + 0.5));
-        }
-    }
-    return par_values;
-}
-
-Row AbcSmc::_z_transform_observed_metrics(Row& means, Row& stdevs) {
-    Row zmat = Row::Zero(nmet());
-    for (size_t i = 0; i < nmet(); i++) { zmat(i) = (_model_mets[i]->get_obs_val() - means(i)) / stdevs(i); }
-    return zmat;
-}
-
