@@ -42,8 +42,6 @@ namespace ABC {
     //using namespace std;
     using namespace Eigen;
 
-    vector<string> split(const std::string& s, char c);
-
     std::string slurp(std::string filename);
     std::string get_nth_line(const std::string& filename, int N);
 
@@ -51,8 +49,6 @@ namespace ABC {
     inline float_type logistic(const float_type l) { return 1.0 / (1.0 + exp(-l)); }
 
     //int _sgn(float_type val) { return (0 < val) - (val < 0); }
-
-    Mat2D read_matrix_file(std::string filename, char sep);
 
     float_type median(const Col & data);
 

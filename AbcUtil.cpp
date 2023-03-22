@@ -22,17 +22,6 @@ using namespace PLS;
 
 namespace ABC {
 
-    vector<string> split(const string &s, char delim) {
-        vector<string> tokens;
-        stringstream ss(s);
-        string token;
-        while (getline(ss, token, delim)) {
-            tokens.push_back(token);
-        }
-        return tokens;
-    }
-
-
     string slurp(string filename) {
         ifstream ifs(filename.c_str());
 
@@ -54,68 +43,6 @@ namespace ABC {
 
         std::getline(in,s);
         return s;
-    }
-
-
-    Mat2D read_matrix_file(string filename, char sep) {
-        cerr << "Loading " << filename << endl;
-        ifstream myfile(filename.c_str());
-
-        vector<vector<double> > M;
-        if (myfile.is_open()) {
-            string line;
-
-            while ( getline(myfile,line) ) {
-                //split string based on "," and store results into vector
-                vector<string> fields = split(line, sep);
-                vector<double> row(fields.size());
-                // TODO: std::transform(fields.begin(), fields.end(), row.begin(), std::stod);
-                for (size_t i = 0; i < fields.size(); i++) { row[i] = std::stod(fields[i]); }
-                M.push_back(row);
-            }
-        }
-
-        Mat2D X( (int) M.size(), (int) M[0].size() );
-        for( unsigned int i=0; i < M.size(); i++ ) {
-            for( unsigned int j=0; j < M[i].size(); j++ ) {
-                X(i,j)=M[i][j];
-            }
-        }
-        return X;
-    }
-
-
-    Row colwise_stdev(const Mat2D & mat, const Row & means ) {
-        const float_type N = mat.rows();
-        if ( N < 2 ) return Row::Zero(mat.cols());
-        // N-1 for unbiased sample variance
-        return ((mat.rowwise() - means).array().square().colwise().sum()/(N-1)).sqrt();
-    }
-
-    Row z_scores(
-        const Row & vals, const Row & means, const Row & stdev
-    ) {
-       return (vals - means).cwiseQuotient(stdev);
-    }
-
-    Mat2D colwise_z_scores(const Mat2D & mat, const Row & mean, const Row & stdev) {
-
-        Row local_sd = stdev;
-        // sd == 0 => implies all values the same => x_i - mean == 0
-        // Technically: z scores are undefined if the stdev is 0 => this should yield nan.
-        // However, scores == nan => borks downstream calculations
-        // This makes the scores == 0 instead.
-        // TODO: change algorithm to not pass this parameter to PLS.
-        for (int c = 0; c < local_sd.size(); c++) if (local_sd[c] == 0) local_sd[c] = 1;
-        Mat2D mmeans = mat.rowwise() - mean;
-
-        Mat2D zs = mmeans.array().rowwise() / stdev.array();
-        return zs;
-    };
-
-    float_type mean(const Col & data) {
-        assert( data.size() > 0 );
-        return data.mean();
     }
 
     float_type median(const Col & data) {
@@ -796,7 +723,7 @@ std::vector<size_t> ABC::particle_ranking_simple (
     const Row & target_values
 ) {
     Row X_sim_means = X_orig.colwise().mean();
-    Row X_sim_stdev = PLS::colwise_stdev(X_orig, X_sim_means);
+    Row X_sim_stdev = colwise_stdev(X_orig, X_sim_means);
     Row obs_met = z_scores(target_values, X_sim_means, X_sim_stdev);
 
     Mat2D X = colwise_z_scores(X_orig, X_sim_means, X_sim_stdev);
