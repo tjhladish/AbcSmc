@@ -450,7 +450,7 @@ namespace ABC {
     }
 
     std::vector<size_t> particle_ranking_PLS(
-        const Mat2D & X_orig, const Mat2D & Y_orig,
+        const Mat2D & metric_vals, const Mat2D & param_vals,
         const Row & target_values,
         const float_type training_fraction
     ) {
@@ -458,21 +458,21 @@ namespace ABC {
 
         // Box-Cox transform data -- TODO?
 
-        Row X_sim_means = X_orig.colwise().mean();
-        Row X_sim_stdev = colwise_stdev(X_orig, X_sim_means);
-        Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
-        Mat2D Y = colwise_z_scores( Y_orig );
-        Row obs_met = z_scores(target_values, X_sim_means, X_sim_stdev);
+        Row met_means = metric_vals.colwise().mean();
+        Row met_stdev = colwise_stdev(metric_vals, met_means);
+        Mat2D z_met = colwise_z_scores( metric_vals, met_means, met_stdev );
+        Mat2D z_par = colwise_z_scores( param_vals );
+        Row obs_met = z_scores(target_values, met_means, met_stdev);
 
-        const size_t pls_training_set_size = round(X.rows() * training_fraction);
-        // @tjh TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
-        size_t ncomp = Y_orig.cols();             // It doesn't make sense to consider more components than model parameters
+        const size_t pls_training_set_size = round(z_met.rows() * training_fraction);
 
-        // assert: X / Y have matching order; X / Y are randomly ordered
-        PLS_Model plsm(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), ncomp);
+        // contrary to expectations: metrics are the predictors, parameters are the response
+        // we're trying to find the representation of the metrics that explains most of what's going on in the parameters
+        // assert: met / par have matching order; met / par are randomly ordered (so not getting biased train/test split)
+        PLS::Model plsm(z_met.topRows(pls_training_set_size), z_par.topRows(pls_training_set_size));
 
-        const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
-        auto em = plsm.error<PLS::NEW_DATA>(X.bottomRows(test_set_size), Y.bottomRows(test_set_size));
+        const size_t test_set_size = z_met.rows() - pls_training_set_size; // number of observations not in training set
+        auto em = plsm.error_NEW_DATA(z_met.bottomRows(test_set_size), z_par.bottomRows(test_set_size));
         auto num_components = PLS::optimal_num_components(em);
 
         size_t num_components_used = num_components.maxCoeff();
@@ -480,7 +480,7 @@ namespace ABC {
         // Calculate new, orthogonal metrics (==scores) using the pls model
         // Is casting as real always safe?
         Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
-        Mat2D sim_scores = plsm.scores(X, num_components_used).real();
+        Mat2D sim_scores = plsm.scores(z_met, num_components_used).real();
         Col   distances  = euclidean(sim_scores, obs_scores);
 
         return ordered(distances);
