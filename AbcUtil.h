@@ -15,7 +15,7 @@
 #include "ranker.h"
 #include <math.h>
 
-#include "pls/pls.h"
+#include "PLS/pls.h"
 
 using namespace std;
 

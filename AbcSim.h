@@ -7,7 +7,7 @@
 #include <sstream> // for stringstream
 #include <string> // for string
 
-#include "pls/pls.h" // for float_type
+#include "PLS/pls.h" // for float_type
 #include "AbcMPIPar.h"
 
 using std::vector;
