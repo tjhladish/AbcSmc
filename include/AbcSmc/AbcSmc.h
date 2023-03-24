@@ -371,12 +371,6 @@ class AbcSmc {
 
         void _set_predictive_prior(const int t, const int next_pred_prior_size, const Col& distances);
 
-        void _filter_particles_simple(int t, Mat2D &X_orig, Mat2D &Y_orig, int pred_prior_size);
-        PLS_Model _filter_particles(
-            const size_t t, const Mat2D & X_orig, const Mat2D & Y_orig,
-            const size_t pred_prior_size, const bool verbose = true
-        );
-
         long double calculate_nrmse(vector<Col> posterior_mets);
 
         void set_resume(const bool res) { resume_flag = res; }

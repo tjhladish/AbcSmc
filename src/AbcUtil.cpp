@@ -444,7 +444,7 @@ namespace ABC {
         PLS::Model plsm(z_met.topRows(pls_training_set_size), z_par.topRows(pls_training_set_size));
 
         const size_t test_set_size = z_met.rows() - pls_training_set_size; // number of observations not in training set
-        auto em = plsm.error_NEW_DATA(z_met.bottomRows(test_set_size), z_par.bottomRows(test_set_size));
+        auto em = plsm.cv_NEW_DATA(z_met.bottomRows(test_set_size), z_par.bottomRows(test_set_size));
         auto num_components = PLS::optimal_num_components(em);
 
         size_t num_components_used = num_components.maxCoeff();
