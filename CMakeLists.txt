@@ -2,7 +2,7 @@ cmake_minimum_required( VERSION 3.24.2 )
 
 project( AbcSmc )
 
-set( CMAKE_CXX_STANDARD 20 )
+set( CMAKE_CXX_STANDARD 17 )
 set( CMAKE_CXX_FLAGS "-Wall -Wpedantic -O2 -fPIC" )
 
 add_subdirectory(lib/PLS ${CMAKE_BINARY_DIR}/PLS)

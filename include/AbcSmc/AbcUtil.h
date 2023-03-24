@@ -42,8 +42,6 @@ namespace ABC {
     //using namespace std;
     using namespace Eigen;
 
-    vector<string> split(const std::string& s, char c);
-
     std::string slurp(std::string filename);
     std::string get_nth_line(const std::string& filename, int N);
 
