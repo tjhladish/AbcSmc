@@ -5,7 +5,7 @@
 #include <concepts>
 #include <PLS/pls.h>
 
-template<typename NT>
-concept NumericType = std::is_integral_v<NT> or std::is_floating_point_v<NT>;
+// template<typename NT>
+// concept NumericType = std::is_integral_v<NT> or std::is_floating_point_v<NT>;
 
 #endif // ABCSMC_TYPEDEFS_H
