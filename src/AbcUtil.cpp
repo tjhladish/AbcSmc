@@ -1,5 +1,4 @@
 #include <limits>
-#include <compare>
 #include <AbcSmc/AbcUtil.h>
 #include <AbcSmc/AbcSmc.h>
 #include <gsl/gsl_multimin.h>
@@ -17,7 +16,6 @@ using std::ifstream;
 using std::pow;
 using std::pair;
 using std::make_pair;
-using std::partial_ordering;
 
 using namespace PLS;
 
@@ -86,32 +84,6 @@ namespace ABC {
         float_type _v = variance(data, _x);
         if (_v == 0) return 0; // Avoids nans.  If variance is 0, define skewness as 0
         return ((data.array() - _x).pow(3).sum() / data.size() ) / pow(_v, 1.5);
-    }
-
-    // Calculates the number of times the data series crosses the median
-    float_type median_crossings(const Col & data, const float_type m) {
-        if (data.size() < 2) return 0.0;
-        
-        size_t mc = 0;
- 
-        // current and next are like cursors that trace the data series
-        // this uses the <=> operator: (a <=> b) returns equivalent if a == b, less if a < b, and greater if a > b
-        partial_ordering current = data[0] <=> m;
-        if (current == partial_ordering::equivalent) mc++; // increment if we're starting at the median
-        for (auto pos : data) { // for each data point (n.b. the first pass here is a no-op: next == current)
-            partial_ordering next = pos <=> m;
-            if ((next != current) and (current != partial_ordering::equivalent)) mc++; // just crossed or touched the median
-            current = next;
-        }
-        return (static_cast<float_type>(mc)/(data.size() - 1.0));
-    }
-
-    float_type median_crossings(const Col & data) {
-        if (data.size() < 2) {
-            return 0;
-        } else {
-            return median_crossings(data, median(data));
-        }
     }
 
     float_type optimize_box_cox(const Col & data, const float lambda_min, const float lambda_max, const float step) {
@@ -449,7 +421,7 @@ namespace ABC {
     }
 
     std::vector<size_t> particle_ranking_PLS(
-        const Mat2D & X_orig, const Mat2D & Y_orig,
+        const Mat2D & metric_vals, const Mat2D & param_vals,
         const Row & target_values,
         const float_type training_fraction
     ) {
@@ -457,21 +429,21 @@ namespace ABC {
 
         // Box-Cox transform data -- TODO?
 
-        Row X_sim_means = X_orig.colwise().mean();
-        Row X_sim_stdev = colwise_stdev(X_orig, X_sim_means);
-        Mat2D X = colwise_z_scores( X_orig, X_sim_means, X_sim_stdev );
-        Mat2D Y = colwise_z_scores( Y_orig );
-        Row obs_met = z_scores(target_values, X_sim_means, X_sim_stdev);
+        Row met_means = metric_vals.colwise().mean();
+        Row met_stdev = colwise_stdev(metric_vals, met_means);
+        Mat2D z_met = colwise_z_scores( metric_vals, met_means, met_stdev );
+        Mat2D z_par = colwise_z_scores( param_vals );
+        Row obs_met = z_scores(target_values, met_means, met_stdev);
 
-        const size_t pls_training_set_size = round(X.rows() * training_fraction);
-        // @tjh TODO -- I think this may be a bug, and that ncomp should be equal to number of predictor variables (metrics in this case), not reponse variables
-        size_t ncomp = Y_orig.cols();             // It doesn't make sense to consider more components than model parameters
+        const size_t pls_training_set_size = round(z_met.rows() * training_fraction);
 
-        // assert: X / Y have matching order; X / Y are randomly ordered
-        PLS::Model plsm(X.topRows(pls_training_set_size), Y.topRows(pls_training_set_size), ncomp);
+        // contrary to expectations: metrics are the predictors, parameters are the response
+        // we're trying to find the representation of the metrics that explains most of what's going on in the parameters
+        // assert: met / par have matching order; met / par are randomly ordered (so not getting biased train/test split)
+        PLS::Model plsm(z_met.topRows(pls_training_set_size), z_par.topRows(pls_training_set_size));
 
-        const int test_set_size = X.rows() - pls_training_set_size; // number of observations not in training set
-        auto em = plsm.error<PLS::NEW_DATA>(X.bottomRows(test_set_size), Y.bottomRows(test_set_size));
+        const size_t test_set_size = z_met.rows() - pls_training_set_size; // number of observations not in training set
+        auto em = plsm.cv_NEW_DATA(z_met.bottomRows(test_set_size), z_par.bottomRows(test_set_size));
         auto num_components = PLS::optimal_num_components(em);
 
         size_t num_components_used = num_components.maxCoeff();
@@ -479,7 +451,7 @@ namespace ABC {
         // Calculate new, orthogonal metrics (==scores) using the pls model
         // Is casting as real always safe?
         Row   obs_scores = plsm.scores(obs_met, num_components_used).row(0).real();
-        Mat2D sim_scores = plsm.scores(X, num_components_used).real();
+        Mat2D sim_scores = plsm.scores(z_met, num_components_used).real();
         Col   distances  = euclidean(sim_scores, obs_scores);
 
         return ordered(distances);

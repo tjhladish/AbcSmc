@@ -63,10 +63,10 @@ run_%: demo/% %/config.json | output
 	./$^ --process --simulate -n 1000
 
 # except for the direct version
+# NB: currently non-functional
 run_direct: demo/direct
-	./$^ 10 44
-
-
+	# ./$^ 10 44
+	echo "not currently functional"
 
 clean:
 	rm -f $(addprefix abc_,$(DEMOS)) dice_game dice.so

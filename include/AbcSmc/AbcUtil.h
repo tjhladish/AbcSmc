@@ -39,8 +39,6 @@ namespace ABC {
     //using namespace std;
     using namespace Eigen;
 
-    vector<string> split(const std::string& s, char c);
-
     std::string slurp(std::string filename);
     std::string get_nth_line(const std::string& filename, int N);
 
@@ -58,10 +56,6 @@ namespace ABC {
     float_type max(const Col & data);
 
     float_type skewness(const Col & data);
-
-    float_type median_crossings(const Col & data, const float_type _median);
-
-    float_type median_crossings(const Col & data);
 
     float_type optimize_box_cox(const Col & data, const float lambda_min, const float lambda_max, const float step);
 
