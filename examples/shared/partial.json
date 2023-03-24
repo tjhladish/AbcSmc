@@ -1,0 +1,4 @@
+{
+    "shared"            : "bin/dice.so",
+    "database_filename" : "output/shared.sqlite"
+}

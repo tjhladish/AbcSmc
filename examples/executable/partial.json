@@ -1,0 +1,4 @@
+{
+    "executable"                    : "bin/dice_game",
+    "database_filename"             : "output/executable.sqlite"
+}

@@ -3,6 +3,21 @@ Sequential Monte Carlo Approximate Bayesian Computation with Partial Least Squar
 
 AbcSmc is a parameter estimation library implemented in C++ that has been developed to enable fitting complex stochastic models to disparate types of empirical data.  We use partial least squares to address problems arising from parameters and/or empirical metrics that co-vary or are unidentifiable (parameters) or uninformative (metrics).  Because of the long running times, often requiring many processor-core years of computation, AbcSmc is particularly well-suited to being used in high performance (e.g. cluster or supercomputer) environments. AbcSmc includes a convenient means of distributing and gathering work in HPC environments: the program pulls jobs from and writes output to a standardized SQL database, and implements a dynamic load balancing scheme to compensate for variable simulation run times and hardware failures. AbcSmc uses SQLite for the database, for portability of data.
 
+## Quick Start
+
+From a projects root folder:
+
+```
+git clone git@github.com:tjhladish/AbcSmc.git # get the repository
+cd AbcSmc                                     # enter the resulting directory 
+git submodule update --init --recursive       # pull down the associated submodules
+cmake -S . -B build                           # setup build folder
+cd build                                      # enter build folder
+make abc                                      # make the library
+cd ../examples                                # enter the example directory
+make run_sql; make run_sql; make run_sql      # 3 passes with the example dice game simulator
+```
+
 ## Peer-reviewed publications that have used AbcSmc:
 
 Hladish, T.J., C.A.B. Pearson, D.P. Rojas, K.B. Toh, P. Manrique-Saide, G.M. Vazquez-Prokopec, M.E. Halloran, I.M. Longini (2020) Designing effective control of dengue with combined interventions. Proc Natl Acad Sci U S A.  2020 Jan 23. pii: 201903496. [doi:10.1073/pnas.1903496117](https://doi.org/10.1073/pnas.1903496117)

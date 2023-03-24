@@ -1,4 +1,5 @@
 local.mk
 *.o
-
 *.a
+build
+.vscode
