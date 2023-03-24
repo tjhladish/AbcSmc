@@ -16,9 +16,9 @@ extern "C" std::vector<double> simulator(
     const unsigned long int rng_seed,
     const unsigned long int serial
 ) {
-    // seed the rng using sys time and the process id
-    gsl_rng_set(RNG, serial);
-    // NB: your simulator may use whatever rng you like
+    // seed the rng using the provided seed
+    gsl_rng_set(RNG, rng_seed);
+    // NB: your simulator may use whatever rng you like, seed it however you like, etc
 
     // a typical first step is to assign and cast parameters input to simulation-relevant variables
     const size_t num_dice  = static_cast<size_t>(parameters[0]); // number of dice
