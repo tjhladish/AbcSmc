@@ -2,6 +2,26 @@
 
 This directory contains examples for the different use cases / modes for the `AbcSmc` library.
 
+# Quick start
+
+Assuming that you have successfully installed the AbcSmc library:
+
+```
+cd examples       # get to this directory
+make run_shared   # build => run setup for the `shared` version of the simulation
+make run_shared   # run an SMC wave
+make run_shared   # ... and another
+# ...etc
+```
+
+There are a few demonstration uses of the library:
+ - `direct`: manually configure AbcSmc, then run (currently non-functional)
+ - `shared`: develop and compile your simulation binary, completely independently from AbcSmc, then have AbcSmc load it
+ - `executable`: specify your simulation as an executable command (again, can be totally unaware of AbcSmc), then have AbcSmc send inputs to it
+ - `integral`: compile your simulation alongside AbcSmc
+
+These are each present as a `main.cpp` in the correspondingly named folders.
+
 # Example Simulator
 
 Those examples are all motivated in terms of a particular core simulation: rolling $n$ dice, each with $m$ faces (labelled 1 to $m$), and observing the sum and standard deviation of the faces for a particular roll.
