@@ -251,8 +251,12 @@ Parameter * parse_parameter(
         } else {
             const float_type smax = mpar["par2"].asDouble();
             const float_type step = mpar.get("step", 1.0).asDouble();
-            for (float_type s = mpar["par1"].asDouble(); s <= smax; s += step) {
-                states.push_back(s);
+            if (step != 0) {
+                for (float_type s = mpar["par1"].asDouble(); s <= smax; s += step) {
+                    states.push_back(s);
+                }
+            } else {
+                states.push_back(mpar["par1"].asDouble());
             }
         }
         par = new PseudoPar(name, short_name, states);
