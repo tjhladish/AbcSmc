@@ -2,7 +2,7 @@
 #define ABCSMC_PARAMETER_H
 
 #include <string>
-#include <concepts> // let's us declare concepts for template constraints
+// #include <concepts> // let's us declare concepts for template constraints
 #include <gsl/gsl_rng.h>
 #include <math.h> // round
 #include <AbcSmc/ParRNG.h>
