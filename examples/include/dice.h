@@ -2,9 +2,9 @@
 #ifndef DICE_H
 #define DICE_H
 
+#include <gsl/gsl_rng.h>
 #include <gsl/gsl_statistics_double.h>
 #include <vector>
-#include "examples.h"
 
 using namespace std;
 
@@ -16,6 +16,7 @@ extern "C" std::vector<double> simulator(
     const unsigned long int rng_seed,
     const unsigned long int serial
 ) {
+    gsl_rng * RNG = gsl_rng_alloc(gsl_rng_taus2);
     // seed the rng using the provided seed
     gsl_rng_set(RNG, rng_seed);
     // NB: your simulator may use whatever rng you like, seed it however you like, etc
@@ -40,6 +41,8 @@ extern "C" std::vector<double> simulator(
     } else {
         metrics[1] = gsl_stats_sd(&results[0], 1, num_dice);
     }
+
+    gsl_rng_free(RNG);
 
     return metrics;
 };

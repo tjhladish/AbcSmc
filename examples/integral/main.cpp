@@ -1,6 +1,6 @@
 
 #include <AbcSmc/AbcSmc.h>
-#include "examples.h"
+#include <AbcSmc/Application.h>
 #include "dice.h" // simulator
 
 int main(int argc, char* argv[]) {

@@ -1,5 +1,5 @@
 #include <AbcSmc/AbcSmc.h>
-#include "examples.h"
+#include <AbcSmc/Application.h>
 
 int main(int argc, char* argv[]) {
 

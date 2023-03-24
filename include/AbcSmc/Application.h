@@ -1,14 +1,12 @@
 
-#ifndef EXAMPLES_H
-#define EXAMPLES_H
+#ifndef ABCSMC_APPLICATION_H
+#define ABCSMC_APPLICATION_H
 
 #include <iostream>
-#include <gsl/gsl_rng.h>
 #include <cstring>
 #include <unistd.h>
 
-const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
-
+// provides a standard usage message for running an ABC-SMC application
 void usage(const std::string cmd) {
     std::cerr << std::endl;
     std::cerr << "\tUsage: ./" << cmd << " config.json --process" << std::endl << std::endl;
@@ -91,4 +89,4 @@ void abc_loop(
     }
 };
 
-#endif // EXAMPLES_H
+#endif // ABCSMC_APPLICATION_H
