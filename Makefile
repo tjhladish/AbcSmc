@@ -1,5 +1,7 @@
 .FORCE:
 
+.FORCE:
+
 build: .FORCE
 	@cmake -S . -B $@ > /dev/null
 

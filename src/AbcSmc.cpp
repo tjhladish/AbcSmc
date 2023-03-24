@@ -40,7 +40,7 @@ bool file_exists(const char *fileName) {
     return infile.good();
 }
 
-template <NumericType T>
+template <typename T>
 vector<T> as_vector(const Json::Value & val) {
     vector<T> extracted_vals;
     if (val.isArray()) { for (const Json::Value & jv : val) {
@@ -421,7 +421,7 @@ Row AbcSmc::_to_model_space(
     Row model_space_pars = fitting_space_pars; // copy initially - all model_space_pars == fitting_space_pars
     for (size_t parIdx = 0; parIdx < fitting_space_pars.size(); ++parIdx) {
         const ABC::Parameter* mpar = _model_pars[parIdx];
-        if (_par_modification_map.contains(mpar)) { // ...if this is a modified par
+        if (_par_modification_map.count(mpar) == 1) { // ...if this is a modified par
             // transform => rescale => update upars
             model_space_pars[parIdx] = _par_rescale_map[mpar]->rescale(
                 _par_modification_map[mpar]->transform(fitting_space_pars[parIdx], fitting_space_pars)

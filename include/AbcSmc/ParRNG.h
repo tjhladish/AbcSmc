@@ -63,7 +63,7 @@ struct ParRNG {
 
 template<typename Par, typename RNG>
 size_t ParRNG<Par, RNG>::pseudo(const Par * p) {
-    assert(_pseudo.contains(p));
+    assert(_pseudo.count(p) == 1);
     auto ret = _pseudo[p];
     if (not lock) {
         if (ret.first < ret.second) { _pseudo[p].first++; lock = true; } else { _pseudo[p].first = 0; }
