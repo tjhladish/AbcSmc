@@ -77,10 +77,12 @@ void abc_loop(
     const size_t smcset = 0 // TODO find a good way to pass this
 ) {
 
+    bool verbose = false;
+
     if (args.do_all) {
         size_t set_count = abc->get_smc_iterations();
         for (size_t i = 0; i < set_count; ++i) {
-            abc_inner(abc, args, RNG, abc->get_num_particles(i, false), i);
+            abc_inner(abc, args, RNG, abc->get_num_particles(i, verbose), i);
         }
     } else {
         abc_inner(abc, args, RNG, args.buffer_size, smcset);

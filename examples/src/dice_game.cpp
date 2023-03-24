@@ -19,7 +19,10 @@ int main(int argc, char** argv) {
     double par1 = atof(argv[1]); // number of dice
     double par2 = atof(argv[2]); // number of sides on dice
 
-    std::vector<double> results = simulator({ par1, par2 }, time (NULL) * getpid(), 0);
+    const size_t seed = time (NULL) * getpid();
+    const size_t serial = 0; // this is for your bookkeeping purposes, and shouldn't affect simulator output
+
+    std::vector<double> results = simulator({ par1, par2 }, seed, serial);
     
     cout << results[0] << " " << results[1] << endl;
 
