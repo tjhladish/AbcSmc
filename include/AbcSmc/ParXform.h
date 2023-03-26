@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <cstddef>
-#include <AbcSmc/TypeDefs.h>
 
 namespace ABC {
 
