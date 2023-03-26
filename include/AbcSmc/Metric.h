@@ -18,6 +18,7 @@ namespace ABC {
             std::string short_name;
     };
 
+    // Type'd metric (as in, integer or float typed)
     template <typename NT>
     class TMetric : public Metric {
         public:
