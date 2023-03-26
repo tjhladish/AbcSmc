@@ -12,7 +12,7 @@ namespace ABC {
 // still an Abstract Base Class however!
 struct Prior : public Parameter {
     Prior(
-        const std::string & s, const std::string & ss,
+        const std::string &s, const std::string &ss,
         const float_type mv, const float_type sv
     ) : Parameter(s, ss), meanval(mv), sdval(sv) {}
 
@@ -45,11 +45,11 @@ struct Prior : public Parameter {
 
 struct GaussianPrior : public Prior {
     GaussianPrior(
-        const std::string & nm, const std::string & snm,
+        const std::string &nm, const std::string &snm,
         const float_type mn, const float_type sd
     ) : Prior(nm, snm, mn, sd) {}
     
-    float_type sample(PRNG & prng) const override { return gsl_ran_gaussian(prng.rng(), sdval) + meanval; };
+    float_type sample(PRNG &prng) const override { return gsl_ran_gaussian(prng.rng(), sdval) + meanval; };
 
     float_type likelihood(const float_type pval) const override {
         return gsl_ran_gaussian_pdf(pval - meanval, sdval);
@@ -60,7 +60,7 @@ struct GaussianPrior : public Prior {
 
 struct DiscreteUniformPrior : public Prior {
     DiscreteUniformPrior(
-        const std::string & nm, const std::string & snm,
+        const std::string &nm, const std::string &snm,
         const long min, const long max
     ) : Prior(
         nm, snm,
@@ -69,7 +69,7 @@ struct DiscreteUniformPrior : public Prior {
         assert(min < max);
     }
 
-    float_type sample(PRNG & prng) const override {
+    float_type sample(PRNG &prng) const override {
         return static_cast<float_type>(gsl_rng_uniform_int(prng.rng(), maxval - minval + 1) + minval);
     };
 
@@ -85,7 +85,7 @@ struct DiscreteUniformPrior : public Prior {
 
 struct ContinuousUniformPrior : public Prior {
     ContinuousUniformPrior(
-        const std::string & nm, const std::string & snm,
+        const std::string &nm, const std::string &snm,
         const float_type min, const float_type max
     ) : Prior(
         nm, snm,
@@ -95,7 +95,7 @@ struct ContinuousUniformPrior : public Prior {
         assert(min < max);
     }
 
-    float_type sample(PRNG & prng) const override {
+    float_type sample(PRNG &prng) const override {
         return gsl_rng_uniform(prng.rng())*(maxval-minval) + minval;
     };
 

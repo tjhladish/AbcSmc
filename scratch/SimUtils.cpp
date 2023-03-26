@@ -12,7 +12,7 @@ int _mc_pos(const float_type v, const float_type m) {
 }
 
 // Calculates the number of times the data series crosses the median
-float_type median_crossings(const Col & data, const float_type m) {
+float_type median_crossings(const Col &data, const float_type m) {
     int mc = 0;
     if (data.size() < 2) return mc;
 
@@ -29,7 +29,7 @@ float_type median_crossings(const Col & data, const float_type m) {
     return ((float_type) mc)/(data.size()-1);
 }
 
-float_type median_crossings(const Col & data) {
+float_type median_crossings(const Col &data) {
     if (data.size() < 2) {
         return 0;
     } else {
@@ -39,7 +39,7 @@ float_type median_crossings(const Col & data) {
 
 
 // Calculates the number of times the data series crosses the median
-// float_type median_crossings(const Col & data, const float_type m) {
+// float_type median_crossings(const Col &data, const float_type m) {
 //     if (data.size() < 2) return 0.0;
     
 //     size_t mc = 0;
@@ -56,7 +56,7 @@ float_type median_crossings(const Col & data) {
 //     return (static_cast<float_type>(mc)/(data.size() - 1.0));
 // }
 
-// float_type median_crossings(const Col & data) {
+// float_type median_crossings(const Col &data) {
 //     if (data.size() < 2) {
 //         return 0;
 //     } else {

@@ -3,7 +3,7 @@
 #include "AbcUtil.h"
 
 // Function to test
-bool test_colwise_z_scores(const Mat2D & test, const Mat2D & target) {
+bool test_colwise_z_scores(const Mat2D &test, const Mat2D &target) {
     Mat2D res = PLS::colwise_z_scores(test);
     return (target - res).array().square().sum() < 1e-6;
 }
@@ -20,7 +20,7 @@ void series_colwise_z_scores() {
     // TODO more test cases?
 }
 
-bool test_euclidean(const Mat2D & test, const Row & target, const Col & distref) {
+bool test_euclidean(const Mat2D &test, const Row &target, const Col &distref) {
     Col res = ABC::euclidean(test, target);
     return (res - distref).norm() < 1e-6;
 }

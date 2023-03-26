@@ -15,20 +15,20 @@ struct MockPar {
 
     const size_t mi;
     virtual bool isPosterior() const = 0;
-    virtual double sample(PRNG& rng) const = 0;
+    virtual double sample(PRNG &rng) const = 0;
     size_t max_index() const { return mi; }
 };
 
 struct MockPrior : MockPar {
     MockPrior() : MockPar(0) {}
-    double sample(PRNG& rng) const override { return gsl_rng_uniform(rng.rng()); }
+    double sample(PRNG &rng) const override { return gsl_rng_uniform(rng.rng()); }
     bool isPosterior() const override { return false; }
 };
 
 struct MockPseudo : MockPar {
-    MockPseudo(const std::vector<double> & vals) : MockPar(vals.size() - 1), vs(vals) {}
+    MockPseudo(const std::vector<double> &vals) : MockPar(vals.size() - 1), vs(vals) {}
     bool isPosterior() const override { return false; }
-    double sample(PRNG& rng) const override { return vs[rng.pseudo(this)]; }
+    double sample(PRNG &rng) const override { return vs[rng.pseudo(this)]; }
     private:
         const std::vector<double> vs;
 };
@@ -36,7 +36,7 @@ struct MockPseudo : MockPar {
 struct MockPost : MockPar {
     MockPost(const size_t max_rank) : MockPar(max_rank) {}
     bool isPosterior() const override { return true; }
-    double sample(PRNG& rng) const override { return static_cast<double>(rng.posterior()); }
+    double sample(PRNG &rng) const override { return static_cast<double>(rng.posterior()); }
 };
 
 int main() {

@@ -37,7 +37,7 @@ namespace ABC {
 template<typename Par, typename RNG>
 struct ParRNG {
     ParRNG(
-        RNG* rng, const vector<Par*> & mpars, const size_t posterior_size
+        RNG* rng, const vector<Par*> &mpars, const size_t posterior_size
     ) : _rng(rng), posteriorMaxIdx(posterior_size-1) {
         // this builds up the map of pseudo parameters => counters
         for (const Par * p : mpars) {                                 // for each parameter ...

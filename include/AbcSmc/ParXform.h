@@ -29,10 +29,10 @@ struct ParXform {
 
     ParXform(
         const transformer * u,
-        const std::vector<size_t> & fitting_space_add_idx = {},
-        const std::vector<size_t> & fitting_space_mul_idx = {},
-        const std::vector<size_t> & model_space_add_idx = {},
-        const std::vector<size_t> & model_space_mul_idx = {}
+        const std::vector<size_t> &fitting_space_add_idx = {},
+        const std::vector<size_t> &fitting_space_mul_idx = {},
+        const std::vector<size_t> &model_space_add_idx = {},
+        const std::vector<size_t> &model_space_mul_idx = {}
     ) : _u(u), _idx_fitting_space_addends(fitting_space_add_idx),
         _idx_fitting_space_factors(fitting_space_mul_idx),
         _idx_model_space_addends(model_space_add_idx),
@@ -44,7 +44,7 @@ struct ParXform {
     // this enables testing with simpler containers
     template <typename T>
     float_type transform(
-        const float_type & pval, const T & fitting_space_values
+        const float_type &pval, const T &fitting_space_values
     ) const {
         float_type tplus = 0.0, ttimes = 1.0, uplus = 0.0, utimes = 1.0;
         for (auto i : _idx_fitting_space_addends) { tplus += fitting_space_values[i]; }
@@ -65,7 +65,7 @@ struct ParXform {
 struct ParRescale {
     ParRescale(const float_type p1 = 0.0, const float_type p2 = 1.0) : par1(p1), par2(p2) {}
     const float_type par1, par2;
-    float_type rescale(const float_type & pval) const { return (par2 - par1)*pval + par1; }
+    float_type rescale(const float_type &pval) const { return (par2 - par1)*pval + par1; }
 };
 
 // TODO: options for simpler transformations / rescales
@@ -74,7 +74,7 @@ struct FunXform {
 
     template <typename T>
     float_type transform(
-        const float_type & pval, const T & /* fitting_space_values */
+        const float_type &pval, const T &/* fitting_space_values */
     ) const { return _u(pval); }
 
     private:
@@ -82,7 +82,7 @@ struct FunXform {
 };
 
 struct NonRescale {
-    float_type rescale(const float_type & pval) const { return pval; }
+    float_type rescale(const float_type &pval) const { return pval; }
 };
 
 }

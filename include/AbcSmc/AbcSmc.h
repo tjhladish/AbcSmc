@@ -54,7 +54,7 @@ class AbcSmc {
         // should be private
         void set_smc_iterations(const size_t n) { _num_smc_sets = n; }
         void set_pls_validation_training_fraction(const float_type f) {
-            assert((0 < f) & (f <= 1));
+            assert((0 < f) and (f <= 1));
             _pls_training_fraction = f;
         }
 
@@ -97,10 +97,10 @@ class AbcSmc {
         ) { _par_rescale_map[par] = par_rescale; }
 
         // should be private?
-        void set_filtering_type(const ABC::FILTER & ft) { _filtering = ft; }
+        void set_filtering_type(const ABC::FILTER &ft) { _filtering = ft; }
 
         // when Config class implemented, this goes there and yields a new AbcSmc
-        bool parse_config(const std::string & conf_filename);
+        bool parse_config(const std::string &conf_filename);
 
         // when Storage class implemented, this goes there
         bool build_database(const gsl_rng* RNG);
@@ -142,7 +142,7 @@ class AbcSmc {
         // the model itself; defaults to unset
         AbcSimFun * _simulator = new AbcSimUnset();
         // uses _par_*_maps to convert from fitting space to model space
-        Row _to_model_space(const Row & pars);
+        Row _to_model_space(const Row &pars);
         // expects _model_ space parameters
         bool _run_simulator(Row &par, Row &met, const size_t rng_seed, const size_t serial);
         // model metric containers / lookups
@@ -200,7 +200,7 @@ class AbcSmc {
         std::optional<std::string> _resume_directory;
         void set_resume(const bool res) { if (not res) _resume_directory.reset(); }
         bool resume() { return _resume_directory.has_value(); }
-        void set_resume_directory( const std::string & res_dir ) { _resume_directory.emplace(res_dir); }
+        void set_resume_directory( const std::string &res_dir ) { _resume_directory.emplace(res_dir); }
 
 };
 
