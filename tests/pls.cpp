@@ -3,11 +3,11 @@
 #include "pls.h"
 
 // Function to test
-bool test_order(const Col & test, const std::vector<size_t> & target) {
+bool test_order(const Col &test, const std::vector<size_t> &target) {
     auto res = ordered(test);
     bool same = true;
-    for (size_t i = 0; (i < test.size()) & same; i++) {
-        same = same && (res[i] == target[i]);
+    for (size_t i = 0; (i < test.size()) and same; i++) {
+        same = same and (res[i] == target[i]);
     }
     return same;
 }

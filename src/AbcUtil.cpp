@@ -29,7 +29,7 @@ namespace ABC {
     }
 
 
-    string get_nth_line(const std::string& filename, const size_t N) {
+    string get_nth_line(const std::string &filename, const size_t N) {
         ifstream in(filename.c_str());
 
         string s;
@@ -43,7 +43,7 @@ namespace ABC {
         return s;
     }
 
-    float_type median(const Col & data) {
+    float_type median(const Col &data) {
         assert(data.size() > 0);
         // copy & sort data
         vector<float_type> vdata(data.data(), data.data()+data.size());
@@ -61,11 +61,11 @@ namespace ABC {
         return median;
     }
 
-    float_type quantile(const Col & data, double q) {
+    float_type quantile(const Col &data, double q) {
         return ::quantile(as_vector(data), q);
     }
 
-    float_type variance(const Col & data, const float_type _mean) {
+    float_type variance(const Col &data, const float_type _mean) {
         if (data.size() < 2) {
             cerr << "WARNING: Variance called with " << data.size() << " data values. Returning 0." << endl;
             return 0;
@@ -74,19 +74,19 @@ namespace ABC {
         }
     }
 
-    float_type max(const Col & data) {
+    float_type max(const Col &data) {
         assert(data.size() > 0);
         return data.maxCoeff();
     }
 
-    float_type skewness(const Col & data) {
+    float_type skewness(const Col &data) {
         float_type _x = data.mean();
         float_type _v = variance(data, _x);
         if (_v == 0) return 0; // Avoids nans.  If variance is 0, define skewness as 0
         return ((data.array() - _x).pow(3).sum() / data.size() ) / pow(_v, 1.5);
     }
 
-    float_type optimize_box_cox(const Col & data, const float lambda_min, const float lambda_max, const float step) {
+    float_type optimize_box_cox(const Col &data, const float lambda_min, const float lambda_max, const float step) {
         float_type best_lambda = lambda_min;
         float_type min_skew = std::numeric_limits<float_type>::infinity();
         float_type skew;
@@ -104,13 +104,13 @@ namespace ABC {
         return best_lambda;
     }
 
-    float_type optimize_box_cox(const Col & data) {
+    float_type optimize_box_cox(const Col &data) {
         return optimize_box_cox(data, -5, 5, 0.1);
     }
 
     std::vector<size_t> gsl_rng_nonuniform_int(
         const gsl_rng* RNG, const size_t num_samples,
-        const Col & weights
+        const Col &weights
     ) {
         gsl_ran_discrete_t* gslweights = gsl_ran_discrete_preproc(weights.rows(), weights.data());
         std::vector<size_t> res(num_samples);
@@ -122,7 +122,7 @@ namespace ABC {
     Row gsl_ran_trunc_mv_normal(
         const gsl_rng* RNG,
         const vector<const Parameter*> _model_pars,
-        const Row & mu, const gsl_matrix* L
+        const Row &mu, const gsl_matrix* L
     ) {
         const size_t npar = _model_pars.size();
         Row par_values = Row::Zero(npar);
@@ -145,7 +145,7 @@ namespace ABC {
     Row gsl_ran_trunc_normal(
         const gsl_rng* RNG,
         const std::vector<const Parameter*> _model_pars,
-        const Row & mu, const Row & sigma_squared
+        const Row &mu, const Row &sigma_squared
     ) {
         Row sigma = sigma_squared.array().sqrt();
         Row res = Row::Zero(sigma.cols());
@@ -305,27 +305,27 @@ namespace ABC {
         return logistic_reg(data);
     }
 
-    vector<float_type> as_vector(const Row & data) {
+    vector<float_type> as_vector(const Row &data) {
         vector<float_type> vec(data.size());
         for (size_t i = 0; i < static_cast<size_t>(data.size()); i++) vec[i] = data[i];
         return vec;
     }
 
-    Row as_row(const vector<float_type> & data) {
+    Row as_row(const vector<float_type> &data) {
         Row row(data.size());
         for (size_t i = 0; i < data.size(); i++) row[i] = data[i];
         return row;
     }
 
-    Col euclidean(const Mat2D & sims, const Row & ref) {
+    Col euclidean(const Mat2D &sims, const Row &ref) {
         // for each row in sims, subtract the reference row
         // norm = sqrt(sum_i xi^2)
         return (sims.rowwise() - ref).rowwise().norm();
     }
 
     float_type calculate_nrmse(
-        const Mat2D & posterior_mets, // rows are posterior samples, columns are metrics
-        const Row & observed
+        const Mat2D &posterior_mets, // rows are posterior samples, columns are metrics
+        const Row &observed
     ) {
         assert(posterior_mets.cols() == observed.size());
 
@@ -345,7 +345,7 @@ namespace ABC {
     }
 
     template<typename RandomAccessible>
-    gsl_vector* to_gsl_v(const RandomAccessible & from) {
+    gsl_vector* to_gsl_v(const RandomAccessible &from) {
         gsl_vector* res = gsl_vector_alloc(from.size());
         for (size_t i = 0; i < from.size(); i++) {
             gsl_vector_set(res, i, from[i]);
@@ -353,7 +353,7 @@ namespace ABC {
         return res;
     }
 
-    gsl_matrix* to_gsl_m(const Mat2D & from){
+    gsl_matrix* to_gsl_m(const Mat2D &from){
         gsl_matrix* res = gsl_matrix_alloc(from.rows(), from.cols());
         for (size_t i = 0; i < from.rows(); i++) {
             for (size_t j = 0; j < from.cols(); j++) {
@@ -365,8 +365,8 @@ namespace ABC {
 
     Mat2D sample_posterior(
         const gsl_rng* RNG, const size_t num_samples,
-        const Col & weights,
-        const Mat2D & posterior
+        const Col &weights,
+        const Mat2D &posterior
     ) {
         return posterior( // from the posterior
             gsl_rng_nonuniform_int(RNG, num_samples, weights), // get a weighted-random draw of rows
@@ -376,9 +376,9 @@ namespace ABC {
 
     Mat2D sample_predictive_priors(
         const gsl_rng* RNG, const size_t num_samples,
-        const Col & weights, const Mat2D & parameter_prior,
-        const std::vector<const Parameter*> & pars,
-        const Row & doubled_variance
+        const Col &weights, const Mat2D &parameter_prior,
+        const std::vector<const Parameter*> &pars,
+        const Row &doubled_variance
     ) {
         const Mat2D sampled_pars = sample_posterior(RNG, num_samples, weights, parameter_prior);
         Mat2D noised_pars = Mat2D(sampled_pars.rows(), sampled_pars.cols());
@@ -390,8 +390,8 @@ namespace ABC {
 
     Mat2D sample_mvn_predictive_priors(
         const gsl_rng* RNG, const size_t num_samples,
-        const Col & weights, const Mat2D & parameter_prior,
-        const std::vector<const Parameter*> & pars,
+        const Col &weights, const Mat2D &parameter_prior,
+        const std::vector<const Parameter*> &pars,
         const gsl_matrix* L
     ) {
         // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
@@ -406,8 +406,8 @@ namespace ABC {
     // ranks predictors (X_orig) according to z-score distance
     // from the observed values (target_values)
     std::vector<size_t> particle_ranking_simple (
-        const Mat2D & X_orig, const Mat2D & /* Y_orig */,
-        const Row & target_values
+        const Mat2D &X_orig, const Mat2D &/* Y_orig */,
+        const Row &target_values
     ) {
         Row X_sim_means = X_orig.colwise().mean();
         Row X_sim_stdev = colwise_stdev(X_orig, X_sim_means);
@@ -421,8 +421,8 @@ namespace ABC {
     }
 
     std::vector<size_t> particle_ranking_PLS(
-        const Mat2D & metric_vals, const Mat2D & param_vals,
-        const Row & target_values,
+        const Mat2D &metric_vals, const Mat2D &param_vals,
+        const Row &target_values,
         const float_type training_fraction
     ) {
         assert((0 < training_fraction) and (training_fraction <= 1));
@@ -460,7 +460,7 @@ namespace ABC {
     // use with params[set_num-1] (i.e. prior set, n-1, when on set n)
     // should already be sliced to posterior - i.e. _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all)
     gsl_matrix* setup_mvn_sampler(
-        const Mat2D & params
+        const Mat2D &params
     ) {
         // ALLOCATE DATA STRUCTURES
         // variance-covariance matrix calculated from pred prior values
@@ -489,9 +489,9 @@ namespace ABC {
 
     Mat2D sample_priors(
         const gsl_rng* RNG, const size_t num_samples,
-        const Mat2D & posterior, // look up table for POSTERIOR type Parameters
-        const std::vector<const Parameter*> & mpars,
-        std::vector<size_t> & post_ranks // filled in by this
+        const Mat2D &posterior, // look up table for POSTERIOR type Parameters
+        const std::vector<const Parameter*> &mpars,
+        std::vector<size_t> &post_ranks // filled in by this
     ) {
         // setup sampling RNG to deal w/ mixture of prior, posterior, pseudo parameters
         ParRNG par_rng(RNG, mpars, posterior.rows());
@@ -525,7 +525,7 @@ namespace ABC {
 
     }
 
-    Row calculate_doubled_variance(const Mat2D & params) {
+    Row calculate_doubled_variance(const Mat2D &params) {
         vector<RunningStat> stats(params.cols());
         Row v2 = Row::Zero(params.cols());
         // TODO: turn this into Eigen column-wise operation?
@@ -537,19 +537,19 @@ namespace ABC {
     }
 
     Row weight_predictive_prior(
-        const std::vector<const Parameter*> & mpars,
-        const Mat2D & params
+        const std::vector<const Parameter*> &mpars,
+        const Mat2D &params
     ) {
         const float_type uniform_wt = 1.0/static_cast<double>(params.rows());
         return Col::Constant(params.rows(), uniform_wt);
     }
 
     Row weight_predictive_prior(
-        const std::vector<const Parameter*> & mpars,
-        const Mat2D & params,
-        const Mat2D & prev_params,
-        const Row & prev_weights,
-        const Row & prev_doubled_variance
+        const std::vector<const Parameter*> &mpars,
+        const Mat2D &params,
+        const Mat2D &prev_params,
+        const Row &prev_weights,
+        const Row &prev_doubled_variance
     ) {
         Col weight = Col::Zero(params.rows());
 

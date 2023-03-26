@@ -37,7 +37,7 @@ namespace ABC {
     
     class Parameter {
         public:
-            Parameter(const std::string & s, const std::string & ss, const size_t & mi = 0) :
+            Parameter(const std::string &s, const std::string &ss, const size_t &mi = 0) :
             name(s), short_name(ss), _state_size(mi) {
                 // TODO: sanitize short_name
             }
@@ -55,7 +55,7 @@ namespace ABC {
 
 
             // sample from the parameter; this side-effects the PRNG *not* the parameter
-            virtual float_type sample(PRNG & /* prng */) const = 0;
+            virtual float_type sample(PRNG &/* prng */) const = 0;
             // compute the likelihood of a value
             virtual float_type likelihood(const float_type /* pval */) const = 0;
 

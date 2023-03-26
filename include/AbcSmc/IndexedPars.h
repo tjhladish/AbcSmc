@@ -11,7 +11,7 @@ namespace ABC {
 // still an Abstract Base Class however!
 struct IndexedPar : public Parameter {
     IndexedPar(
-        const std::string & s, const std::string & ss,
+        const std::string &s, const std::string &ss,
         const size_t size
     ) : Parameter(s, ss, size) {
         assert(size > 0); // forbid empty-state indexed pars
@@ -31,13 +31,13 @@ struct IndexedPar : public Parameter {
 
 struct PseudoPar : public IndexedPar {
     PseudoPar(
-        const std::string & s, const std::string & ss,
-        const std::vector<float_type> & vals
+        const std::string &s, const std::string &ss,
+        const std::vector<float_type> &vals
     ) : IndexedPar(s, ss, vals.size()), states(vals) {}
 
     // TODO support other constructors?
 
-    float_type sample(PRNG & prng) const override { return states[prng.pseudo(this)]; }
+    float_type sample(PRNG &prng) const override { return states[prng.pseudo(this)]; }
 
     protected:
         const std::vector<float_type> states;
@@ -46,11 +46,11 @@ struct PseudoPar : public IndexedPar {
 
 struct PosteriorPar : public IndexedPar {
     PosteriorPar(
-        const std::string & s, const std::string & ss,
+        const std::string &s, const std::string &ss,
         const size_t size
     ) : IndexedPar(s, ss, size) {}
 
-    float_type sample(PRNG & rng) const override { return static_cast<float_type>(rng.posterior()); }
+    float_type sample(PRNG &prng) const override { return static_cast<float_type>(prng.posterior()); }
     bool isPosterior() const override { return true; }
 };
 
