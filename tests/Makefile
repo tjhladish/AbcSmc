@@ -4,7 +4,7 @@ default: test_all
 # make variable definitions
 CPP := g++
 
-CFLAGS := -O2 -Wall -std=c++20 --pedantic
+CFLAGS := -O2 -Wall -std=c++17 --pedantic
 SHAREDFLAGS := $(CFLAGS) -fPIC -shared -rdynamic -Wl,--no-as-needed
 
 MKFILE_PATH = $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
