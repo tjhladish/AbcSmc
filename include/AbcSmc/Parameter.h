@@ -6,7 +6,6 @@
 #include <gsl/gsl_rng.h>
 #include <math.h> // round
 #include <AbcSmc/ParRNG.h>
-#include <AbcSmc/TypeDefs.h>
 
 // Design goals `Parameter`s:
 //  - can be integral or floating point
@@ -50,7 +49,6 @@ namespace ABC {
             // these are the core methods that must be implemented by a Parameter
 
             // if this is an integral parameter, flatten it to the appropriate integer, then recast to double
-            // overriding this should be managed by mixin `TParameter`
             virtual float_type recast(const float_type pval) const = 0;
 
 
