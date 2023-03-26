@@ -271,15 +271,15 @@ Parameter * parse_parameter(
     return par;
 }
 
-Json::Value prepare(const string  &configfile) {
-    if (not file_exists(configfile.c_str())) {
-        cerr << "File does not exist: " << configfile << endl;
+Json::Value prepare(const string &configfilename) {
+    if (not file_exists(configfilename.c_str())) {
+        cerr << "File does not exist: " << configfilename << endl;
         exit(1);
     }
     // TODO - Make sure any existing database actually reflects what is expected in JSON, particularly that par and met tables are legit
     Json::Value par;   // will contain the par value after parsing.
     Json::Reader reader;
-    string json_data = slurp(configfile);
+    string json_data = slurp(configfilename);
 
     if ( !reader.parse( json_data, par ) ) {
         // report to the user the failure and their locations in the document.
