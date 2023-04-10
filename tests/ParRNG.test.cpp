@@ -16,7 +16,8 @@ struct MockPar {
     const size_t mi;
     virtual bool isPosterior() const = 0;
     virtual double sample(PRNG &rng) const = 0;
-    size_t max_index() const { return mi; }
+    size_t state_size() const { return mi; }
+    
 };
 
 struct MockPrior : MockPar {
@@ -48,7 +49,7 @@ int main() {
         prng.unlock();
         for (size_t parIdx = 0; parIdx < mps.size(); ++parIdx) {
             if (not mps[parIdx]->isPosterior()) {
-                if (mps[parIdx]->max_index() == 0) {
+                if (mps[parIdx]->state_size() == 0) {
                     cout << parIdx << " (prior): " << mps[parIdx]->sample(prng) << endl;
                 } else {
                     cout << parIdx << " (pseudo): " << mps[parIdx]->sample(prng) << endl;
