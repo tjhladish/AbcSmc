@@ -46,6 +46,7 @@ struct CLIArgs {
 
     string config_file;                  // based on config file ...
     std::vector<STEP> steps = {};        // ... do nothing by default
+    std::optional<size_t> seed;          // ... with an unspecified seed
     std::optional<size_t> buffer_size;   // ... for all available runs
     size_t verbose = 0;                  // ... quietly
 };
@@ -62,7 +63,7 @@ CLIArgs parse_args(const size_t argc, const char * argv[]);
 // - evaluate(a buffer size, a verbosity level) n.b.: the RNG for *simulation* should be provided by the simulator
 template<typename ABC>
 inline void run(
-    ABC* abc, const CLIArgs &args, const gsl_rng * RNG
+    ABC* abc, const CLIArgs &args
 ) {
 
     // this should set storage, set sizes, etc 
@@ -80,7 +81,7 @@ inline void run(
     for (auto step : args.steps) {
         switch(step) {
             case BUILD: abc->build(args.verbose); break;
-            case PROCESS: abc->process(RNG, args.verbose); break;
+            case PROCESS: abc->process(args.seed, args.verbose); break;
             case EVALUATE: abc->evaluate(
                 args.buffer_size, // if buffer_size is an empty option, should internally do everything available
                 args.verbose
