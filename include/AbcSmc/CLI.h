@@ -59,7 +59,7 @@ CLIArgs parse_args(const size_t argc, const char * argv[]);
 // Runs the ABC-SMC process, for some object that implements the ABCSMC *verbs*:
 // - parse(a string [configuration file path], a size_t [verbosity level])
 // - build(a verbosity level)
-// - process(a random number generator, a verbosity level) n.b. RNG needed here, because we need to sample prior
+// - process(a random number seed, a verbosity level) n.b. RNG needed here, because we need to sample prior
 // - evaluate(a buffer size, a verbosity level) n.b.: the RNG for *simulation* should be provided by the simulator
 template<typename ABC>
 inline void run(
