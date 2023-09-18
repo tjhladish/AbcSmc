@@ -5,7 +5,12 @@ AbcSmc is a parameter estimation library implemented in C++ that has been develo
 
 ## Quick Start
 
-From a projects root folder:
+Install the GNU Scientific Library (https://www.gnu.org/software/gsl/) if you don't already have it.  For example:
+```
+sudo apt install libgsl-dev                   # on Ubuntu
+```
+
+Then, from a projects root folder:
 
 ```
 git clone git@github.com:tjhladish/AbcSmc.git # get the repository
