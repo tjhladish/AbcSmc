@@ -149,7 +149,7 @@ namespace ABC {
     ) {
         Row sigma = sigma_squared.array().sqrt();
         Row res = Row::Zero(sigma.cols());
-        for (size_t parIdx = 0; parIdx < sigma.cols(); parIdx++) {
+        for (size_t parIdx = 0; parIdx < (unsigned) sigma.cols(); parIdx++) {
             // this manages normal noise, including finite retries; will fail to the *parameter* mean if it can't find a valid value
             res[parIdx] = _model_pars[parIdx]->noise(RNG, mu[parIdx], sigma[parIdx]);
             
@@ -335,7 +335,7 @@ namespace ABC {
         // tjh TODO: where does the fabs come from?
         Row expected = (observed.array().abs() + sim.array().abs()) / 2.0;
         // where sim == obs, set expected == 1 (precludes divide by zero, and otherwise doesn't matter)
-        for (size_t i = 0; i < expected.size(); ++i) { if (sim[i] == observed[i]) expected[i] = 1; }
+        for (size_t i = 0; i < (unsigned) expected.size(); ++i) { if (sim[i] == observed[i]) expected[i] = 1; }
 
         // delta = (sim - obs) / expected => each squared => collapse to mean => sqrt
         float_type res = ((sim - observed).array() / expected.array()).square().mean();
@@ -347,7 +347,7 @@ namespace ABC {
     template<typename RandomAccessible>
     gsl_vector* to_gsl_v(const RandomAccessible &from) {
         gsl_vector* res = gsl_vector_alloc(from.size());
-        for (size_t i = 0; i < from.size(); i++) {
+        for (size_t i = 0; i < (unsigned) from.size(); i++) {
             gsl_vector_set(res, i, from[i]);
         }
         return res;
@@ -355,8 +355,8 @@ namespace ABC {
 
     gsl_matrix* to_gsl_m(const Mat2D &from){
         gsl_matrix* res = gsl_matrix_alloc(from.rows(), from.cols());
-        for (size_t i = 0; i < from.rows(); i++) {
-            for (size_t j = 0; j < from.cols(); j++) {
+        for (size_t i = 0; i < (unsigned) from.rows(); i++) {
+            for (size_t j = 0; j < (unsigned) from.cols(); j++) {
                 gsl_matrix_set(res, i, j, from(i,j));
             }
         }
@@ -382,7 +382,7 @@ namespace ABC {
     ) {
         const Mat2D sampled_pars = sample_posterior(RNG, num_samples, weights, parameter_prior);
         Mat2D noised_pars = Mat2D(sampled_pars.rows(), sampled_pars.cols());
-        for (size_t sampIdx = 0; sampIdx < noised_pars.rows(); sampIdx++) {
+        for (size_t sampIdx = 0; sampIdx < (unsigned) noised_pars.rows(); sampIdx++) {
             noised_pars.row(sampIdx) = gsl_ran_trunc_normal(RNG, pars, sampled_pars.row(sampIdx), doubled_variance);
         }
         return noised_pars;
@@ -397,7 +397,7 @@ namespace ABC {
         // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
         const Mat2D sampled_pars = sample_posterior(RNG, num_samples, weights, parameter_prior);
         Mat2D noised_pars = Mat2D(sampled_pars.rows(), sampled_pars.cols());
-        for (size_t sampIdx = 0; sampIdx < noised_pars.rows(); sampIdx++) {
+        for (size_t sampIdx = 0; sampIdx < (unsigned) noised_pars.rows(); sampIdx++) {
             noised_pars.row(sampIdx) = gsl_ran_trunc_mv_normal(RNG, pars, sampled_pars.row(sampIdx), L);
         }
         return noised_pars;
@@ -472,7 +472,7 @@ namespace ABC {
         // calculate maximum likelihood estimate of variance-covariance matrix sigma_hat
         gsl_ran_multivariate_gaussian_vcov(posterior_par_vals, sigma_hat);
 
-        for (size_t parIdx = 0; parIdx < params.cols(); parIdx++) {
+        for (size_t parIdx = 0; parIdx < (unsigned) params.cols(); parIdx++) {
             // sampling is done using a kernel with a broader kernel than found in pred prior values
             const double doubled_variance = 2 * gsl_matrix_get(sigma_hat, parIdx, parIdx);
             gsl_matrix_set(sigma_hat, parIdx, parIdx, doubled_variance);
@@ -510,9 +510,9 @@ namespace ABC {
         if (post_indices.size()) { post_ranks.resize(num_samples); }
 
         // confirm posterior matrix columns == number of posterior parameters
-        assert(post_indices.size() == posterior.cols());
+        assert(post_indices.size() == (unsigned) posterior.cols());
 
-        for (size_t sampIdx = 0; sampIdx < par_samples.rows(); sampIdx++) { // for each sample to be drawn
+        for (size_t sampIdx = 0; sampIdx < (unsigned) par_samples.rows(); sampIdx++) { // for each sample to be drawn
             par_rng.unlock(); // allow the pseudo parameter to be incremented (if present, only the first one that qualifies)
             // for each non-posterior parameter
             for (size_t parIdx : nonpost_indices) { par_samples(sampIdx, parIdx) = mpars[parIdx]->sample(par_rng); }
@@ -529,7 +529,7 @@ namespace ABC {
         vector<RunningStat> stats(params.cols());
         Row v2 = Row::Zero(params.cols());
         // TODO: turn this into Eigen column-wise operation?
-        for (size_t parIdx = 0; parIdx < params.cols(); parIdx++) {
+        for (size_t parIdx = 0; parIdx < (unsigned) params.cols(); parIdx++) {
             stats[parIdx].Push(params.col(parIdx));
             v2[parIdx] = 2 * stats[parIdx].Variance();
         }
@@ -553,16 +553,16 @@ namespace ABC {
     ) {
         Col weight = Col::Zero(params.rows());
 
-        for (size_t post_rank = 0; post_rank < params.rows(); post_rank++) {
+        for (size_t post_rank = 0; post_rank < (unsigned) params.rows(); post_rank++) {
             double numerator = 1;
             double denominator = 0.0;
-            for (size_t parIdx = 0; parIdx < params.cols(); parIdx++) {
+            for (size_t parIdx = 0; parIdx < (unsigned) params.cols(); parIdx++) {
                 numerator *= mpars[parIdx]->likelihood( params(post_rank, parIdx) );
             }
 
-            for (size_t prev_post_rank = 0; prev_post_rank < prev_params.rows(); prev_post_rank++) {
+            for (size_t prev_post_rank = 0; prev_post_rank < (unsigned) prev_params.rows(); prev_post_rank++) {
                 double running_product = prev_weights[prev_post_rank]; // TODO: rowwise op?
-                for (size_t parIdx = 0; parIdx < prev_params.cols(); parIdx++) {
+                for (size_t parIdx = 0; parIdx < (unsigned) prev_params.cols(); parIdx++) {
                     double par_value = params(post_rank, parIdx);
                     double old_par_value = prev_params(prev_post_rank, parIdx);
                     double old_dv = prev_doubled_variance[parIdx];

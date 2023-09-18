@@ -108,7 +108,7 @@ void parse_iterations(
             ppfs.resize(max_set, ppfs.back());
             set_sizes_copy.resize(max_set, set_sizes_copy.back());
             pred_prior_sizes->resize(max_set);
-            for (size_t i = 0; i < max_set; ++i) { (*pred_prior_sizes)[i] = round(ppfs[i] * set_sizes_copy[i]); }
+            for (size_t i = 0; i < (unsigned) max_set; ++i) { (*pred_prior_sizes)[i] = round(ppfs[i] * set_sizes_copy[i]); }
         } else { // if (par.isMember("predictive_prior_size")) {
             *pred_prior_sizes = as_vector<size_t>(par["predictive_prior_size"]);
             const size_t max_set = max(pred_prior_sizes->size(), set_sizes->size());
@@ -421,9 +421,9 @@ bool AbcSmc::parse_config(const string  &conf_filename) {
 Row AbcSmc::_to_model_space(
     const Row  &fitting_space_pars
 ) {
-    assert( _model_pars.size() == fitting_space_pars.size() );
+    assert( _model_pars.size() == (unsigned) fitting_space_pars.size() );
     Row model_space_pars = fitting_space_pars; // copy initially - all model_space_pars == fitting_space_pars
-    for (size_t parIdx = 0; parIdx < fitting_space_pars.size(); ++parIdx) {
+    for (size_t parIdx = 0; parIdx < (unsigned) fitting_space_pars.size(); ++parIdx) {
         const ABC::Parameter* mpar = _model_pars[parIdx];
         if (_par_modification_map.count(mpar) == 1) { // ...if this is a modified par
             // transform => rescale => update upars
@@ -508,7 +508,7 @@ bool AbcSmc::process_database(
         
         db.Query("BEGIN EXCLUSIVE;").Next();
 
-        for (size_t i = 0; i < noised_pars.rows(); i++) {
+        for (size_t i = 0; i < (unsigned) noised_pars.rows(); i++) {
             const int serial = last_serial + 1 + i;
 
             QueryStr qstr;
