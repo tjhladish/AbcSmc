@@ -94,7 +94,7 @@ struct AbcFPtrMPI : AbcSimFun {
     // and we also override the non-MPI version, to throw an error, since we explicitly asked
     // for MPI support
     vector<float_type> operator()(
-        vector<float_type> pars, const unsigned long int seed, const unsigned long int serial
+        vector<float_type> /*pars*/, const unsigned long int /*seed*/, const unsigned long int /*serial*/
     ) const override {
         std::cerr << "ERROR: Explicitly constructed an MPI simulator, then called it without MPI arguments." << std::endl;
         exit(100);
