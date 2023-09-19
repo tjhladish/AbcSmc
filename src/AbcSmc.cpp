@@ -252,7 +252,8 @@ Parameter * parse_parameter(
             const float_type smax = mpar["par2"].asDouble();
             const float_type step = mpar.get("step", 1.0).asDouble();
             if (step != 0) {
-                for (float_type s = mpar["par1"].asDouble(); s <= smax; s += step) {
+                const double EPSILON = 0.0001;
+                for (float_type s = mpar["par1"].asDouble(); s <= smax + EPSILON * step; s += step) {
                     states.push_back(s);
                 }
             } else {
@@ -262,8 +263,8 @@ Parameter * parse_parameter(
         par = new PseudoPar(name, short_name, states);
     } else if (ptype_str == "POSTERIOR") {
         // TODO iota + stride?
-        const size_t maxIdx = mpar["par2"].asUInt64();
-        par = new PosteriorPar(name, short_name, maxIdx);
+        const size_t size = mpar["par2"].asUInt64() - mpar["par1"].asUInt64() + 1;
+        par = new PosteriorPar(name, short_name, size);
     } else {
         cerr << "Unknown parameter distribution type: " << ptype_str << ".  Aborting." << endl;
         exit(-205);
@@ -333,7 +334,7 @@ Mat2D slurp_posterior(
     return posterior;
 }
 
-bool AbcSmc::parse_config(const string  &conf_filename) {
+bool AbcSmc::parse_config(const string &conf_filename) {
     auto par = prepare(conf_filename);
 
     // if we use a posterior from an earlier ABC run to determine some of the parameter values, do we keep the rank?
@@ -350,15 +351,24 @@ bool AbcSmc::parse_config(const string  &conf_filename) {
     }
 
     // if we're retaining the posterior rank, we definitely have a posterior; otherwise, determine from parameters
-    bool anyPosterior = _retain_posterior_rank;
+    bool anyPosterior = false;
     // if all parameters are pseudo / posterior, we can compute the size of a run
     size_t pseudosize = 1;
+    size_t posterior_size = 0;
 
     for (const Json::Value  &mpar : model_par)  { // Iterates over the sequence elements.
-
         ABC::Parameter * par = parse_parameter(mpar);
-        anyPosterior = anyPosterior or par->isPosterior();
-        pseudosize *= par->state_size();
+        if (par->isPosterior()) {
+            if (posterior_size == 0) {
+                posterior_size = par->state_size();
+                anyPosterior = true;
+            } else {
+                assert(par->state_size() == posterior_size);
+            }
+        } else {
+            pseudosize *= par->state_size();
+        }
+
         add_next_parameter(par);
 
         if (mpar.isMember("untransform")) {
@@ -373,6 +383,7 @@ bool AbcSmc::parse_config(const string  &conf_filename) {
     }
 
     if (anyPosterior) {
+        pseudosize *= posterior_size;
         if (not par.isMember("posterior_database_filename")) {
             cerr << "Parameter specfied as type POSTERIOR, without previously specifying a posterior_database_filename.  Aborting." << endl;
             exit(-204);
