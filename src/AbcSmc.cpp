@@ -474,7 +474,7 @@ void AbcSmc::build(const size_t verbose) {
 
 }
 
-void AbcSmc::_populate(const gsl_rng* RNG, const size_t verbose) {
+bool AbcSmc::_populate(const gsl_rng* RNG, const size_t verbose) {
     // create the DB handle
     sqdb::Db db(_database_filename.c_str());
 
@@ -485,13 +485,17 @@ void AbcSmc::_populate(const gsl_rng* RNG, const size_t verbose) {
 
     db.BeginTransaction();
 
+    stringstream ss;
+    QueryStr qstr;
+
     for (size_t i = 0; i < num_particles; i++) {
         auto parrow = pars.row(i);      
         auto posterior_rank = _retain_posterior_rank ? posterior_ranks[i] : -1;  
 
-        QueryStr qstr;
-
-        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, %d, %d, %d, NULL, 'Q', %d, 0 );"), JOB_TABLE.c_str(), i, set_num, i, time(NULL), posterior_rank)).Next();
+        db.Query(qstr.Format(
+            SQDB_MAKE_TEXT("insert into %s values ( %d, %d, %d, %d, NULL, 'Q', %d, 0 );"),
+            JOB_TABLE.c_str(), i, set_num, i, time(NULL), posterior_rank
+        )).Next();
 
         Statement s = db.Query(("select last_insert_rowid() from " + JOB_TABLE + ";").c_str());
         s.Next();
@@ -516,7 +520,7 @@ void AbcSmc::_populate(const gsl_rng* RNG, const size_t verbose) {
 
 }
 
-void AbcSmc::_filter(const gsl_rng* RNG, const size_t verbose) {
+bool AbcSmc::_filter(const gsl_rng* RNG, const size_t verbose) {
     
     sqdb::Db db(_database_filename.c_str());
     _particle_parameters.clear();
@@ -610,11 +614,12 @@ void AbcSmc::_filter(const gsl_rng* RNG, const size_t verbose) {
     return true;
 }
 
-void process(const optional<size_t> rng_seed, const size_t verbose) {
-    auto seed = rng_seed.value_or(time(NULL)*getpid()); // use the provided value, or the current time and process id
+void AbcSmc::process(const size_t rng_seed, const size_t verbose) {
     gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
-    gsl_rng_set(RNG, seed);
+    gsl_rng_set(RNG, rng_seed);
     // check the AbcSmc object - are we doing setup OR filtering?
+    // operationalizing: check the database, if there are all complete jobs => _filter
+    // if there are no incomplete jobs => _populate
     const bool setup = false;
 
     if (setup) { // populate the database

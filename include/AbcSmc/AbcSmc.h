@@ -185,6 +185,9 @@ class AbcSmc {
 
 // interactions with storage:
 
+        bool _populate(const gsl_rng* RNG, const size_t verbose = 0);
+        bool _filter(const gsl_rng* RNG, const size_t verbose = 0);
+
         // TODO: replace this with storage object
         std::string _database_filename;
 
