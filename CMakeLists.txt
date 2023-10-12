@@ -1,8 +1,12 @@
-cmake_minimum_required( VERSION 3.16 )
+cmake_minimum_required(VERSION 3.16)
 
-project( AbcSmc )
+project(AbcSmc
+    VERSION 1.5.0
+    HOMEPAGE_URL "https://github.com/tjhladish/AbcSmc"
+    LANGUAGES CXX
+)
 
-set( CMAKE_CXX_STANDARD 17 )
+set( CMAKE_CXX_STANDARD_REQUIRED 17 )
 set( CMAKE_CXX_FLAGS "-Wall -Wpedantic -O2 -fPIC" )
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -23,6 +27,7 @@ add_library(abc STATIC
     src/AbcLog.cpp src/AbcMPI.cpp src/AbcSmc.cpp src/AbcUtil.cpp
     src/CLI.cpp
 )
+
 find_package(GSL REQUIRED) # the abc library objects depend on the GSL library
 target_link_libraries(abc pls sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE_DL_LIBS})
 # the abc library objects depend on pls, sqdb, jsoncpp, m (aka math.h), GSL, and dl (aka dl.h) libraries
@@ -31,3 +36,10 @@ target_link_libraries(abc pls sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE_DL_L
 target_include_directories(abc PUBLIC include src lib)
 
 add_subdirectory(examples)
+
+install(TARGETS abc
+  RUNTIME_DEPENDENCIES
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+)

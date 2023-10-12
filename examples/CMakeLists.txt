@@ -6,6 +6,8 @@ include_directories(include)
 
 # the demos all depend on abc
 
+find_package(GSL REQUIRED)
+
 add_library(dice SHARED src/dice.cpp)
 target_link_libraries(dice GSL::gsl GSL::gslcblas)
 
