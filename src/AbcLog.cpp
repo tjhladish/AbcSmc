@@ -4,9 +4,9 @@
 // and instead have the specific elements they need passed in as arguments
 
 void AbcLog::print_stats(
-    const std::string  &str1, const std::string  &str2,
+    const std::string &str1, const std::string &str2,
     const double val1, const double val2, const double delta, const double pct_chg,
-    const std::string  &tail, ostream &os
+    const std::string &tail, ostream &os
 ) {
     os << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2
                                                       << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
@@ -15,7 +15,7 @@ void AbcLog::print_stats(
 
 void AbcLog::_print_particle_table_header(
     AbcSmc * abc,
-    std::ostream  &os
+    std::ostream &os
 ) {
     for (size_t i = 0; i < abc->npar(); i++) { os << setw(WIDTH) << abc->_model_pars[i]->get_short_name(); } os << " | ";
     for (size_t i = 0; i < abc->nmet(); i++) { os << setw(WIDTH) << abc->_model_mets[i]->get_short_name(); } os << std::endl;
@@ -24,7 +24,7 @@ void AbcLog::_print_particle_table_header(
 void AbcLog::report_convergence_data(
     AbcSmc *abc,
     const size_t set_t,
-    std::ostream  &os
+    std::ostream &os
 ) {
     if( abc->_predictive_prior.size() <= set_t ) {
         os << "ERROR: attempting to report stats for set " << set_t << ", but data aren't available. " << std::endl
@@ -81,9 +81,9 @@ void AbcLog::report_convergence_data(
 void AbcLog::filtering_report(
     AbcSmc * abc,
     const size_t t,
-    const Mat2D  &posterior_pars, // rows = samples, by rank; cols = parameters, by order
-    const Mat2D  &posterior_mets, // rows = samples, by rank; cols = metrics, by order
-    std::ostream  &os
+    const Mat2D &posterior_pars, // rows = samples, by rank; cols = parameters, by order
+    const Mat2D &posterior_mets, // rows = samples, by rank; cols = metrics, by order
+    std::ostream &os
 ) {
     os << double_bar << std::endl << "Set " << t << std::endl << double_bar << std::endl;
 

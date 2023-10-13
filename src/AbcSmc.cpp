@@ -41,9 +41,9 @@ bool file_exists(const char *fileName) {
 }
 
 template <typename T>
-vector<T> as_vector(const Json::Value  &val) {
+vector<T> as_vector(const Json::Value &val) {
     vector<T> extracted_vals;
-    if (val.isArray()) { for (const Json::Value  &jv : val) {
+    if (val.isArray()) { for (const Json::Value &jv : val) {
         extracted_vals.push_back( jv.as<T>() ); // NB, jsoncpp handles cast failures
     } } else {
         extracted_vals.push_back( val.as<T>() );
@@ -52,7 +52,7 @@ vector<T> as_vector(const Json::Value  &val) {
 }
 
 void parse_iterations(
-    const Json::Value  &par, const size_t pseudosize,
+    const Json::Value &par, const size_t pseudosize,
     size_t * iterations,
     float_type * training_frac,
     vector<size_t> * set_sizes,
@@ -136,7 +136,7 @@ void parse_iterations(
   
 }
 
-Metric* parse_metric(const Json::Value  &mmet) {
+Metric* parse_metric(const Json::Value &mmet) {
     const string name = mmet["name"].asString();
     const string short_name = mmet.get("short_name", name).asString();
     const float_type val = mmet["value"].asDouble();
@@ -154,11 +154,11 @@ Metric* parse_metric(const Json::Value  &mmet) {
 }
 
 void parse_transform(
-    const Json::Value  &mparu,
+    const Json::Value &mparu,
     ParRescale ** pscale,
     ParXform ** pxform,
     transformer ** _untransform_func,
-    const std::map<const std::string, const size_t>  &par_name_idx
+    const std::map<const std::string, const size_t> &par_name_idx
 ) {
     if (mparu.type() == Json::ValueType::stringValue) {
         string ttype_str = mparu.asString();
@@ -184,7 +184,7 @@ void parse_transform(
             exit(-207);
         }
         *pscale = new ParRescale(mparu["min"].asDouble(), mparu["max"].asDouble());
-        *_untransform_func = [](const float_type  &t) { return ABC::logistic(t); };
+        *_untransform_func = [](const float_type &t) { return ABC::logistic(t); };
         //Json::ValueType mod_type = untransform["transformed_addend"].type();
         std::map<string, vector<size_t>> mod_map = {
             { "transformed_addend", {} },
@@ -192,9 +192,9 @@ void parse_transform(
             { "untransformed_addend", {} },
             { "untransformed_factor", {} }
         };
-        for (auto  &mod_type: mod_map) {
+        for (auto &mod_type: mod_map) {
             if (mparu.isMember(mod_type.first)) {
-                for (const Json::Value  &json_val: mparu[mod_type.first]) {
+                for (const Json::Value &json_val: mparu[mod_type.first]) {
                     const std::string par_name = json_val.asString();
                     mod_type.second.push_back(par_name_idx.at(par_name));
                 }
@@ -211,7 +211,7 @@ void parse_transform(
 }
 
 Parameter * parse_parameter(
-    const Json::Value  &mpar
+    const Json::Value &mpar
 ) {
     const string name = mpar["name"].asString();
     const string short_name = mpar.get("short_name", name).asString();
@@ -291,8 +291,8 @@ Json::Value prepare(const string &configfilename) {
 }
 
 Mat2D slurp_posterior(
-    const std::string  &_posterior_database_filename,
-    const std::vector<const ABC::Parameter *>  &_model_pars
+    const std::string &_posterior_database_filename,
+    const std::vector<const ABC::Parameter *> &_model_pars
 ) {
     // TODO - handle sql/sqlite errors
     // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
@@ -356,7 +356,7 @@ bool AbcSmc::parse_config(const string &conf_filename) {
     size_t pseudosize = 1;
     size_t posterior_size = 0;
 
-    for (const Json::Value  &mpar : model_par)  { // Iterates over the sequence elements.
+    for (const Json::Value &mpar : model_par)  { // Iterates over the sequence elements.
         ABC::Parameter * par = parse_parameter(mpar);
         if (par->isPosterior()) {
             if (posterior_size == 0) {
@@ -395,7 +395,7 @@ bool AbcSmc::parse_config(const string &conf_filename) {
         _posterior = slurp_posterior(par["posterior_database_filename"].asString(), _model_pars);
     }
 
-    for (const Json::Value  &mmet : par["metrics"]) { add_next_metric(parse_metric(mmet)); }
+    for (const Json::Value &mmet : par["metrics"]) { add_next_metric(parse_metric(mmet)); }
 
     parse_iterations(par, pseudosize, &_num_smc_sets, &_pls_training_fraction, &_smc_set_sizes, &_predictive_prior_sizes);
 
@@ -430,7 +430,7 @@ bool AbcSmc::parse_config(const string &conf_filename) {
 }
 
 Row AbcSmc::_to_model_space(
-    const Row  &fitting_space_pars
+    const Row &fitting_space_pars
 ) {
     assert( _model_pars.size() == (unsigned) fitting_space_pars.size() );
     Row model_space_pars = fitting_space_pars; // copy initially - all model_space_pars == fitting_space_pars
