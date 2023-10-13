@@ -66,8 +66,9 @@ inline void run(
     ABC* abc, const CLIArgs &args
 ) {
 
-    // this should set storage, set sizes, etc 
-    abc->parse(args.config_file, args.verbose);
+    // this should set storage, set sizes, etc
+//    this should be external to run: desire to have different configuration sources => different parse methods => yield one kind of abc object
+//    abc->parse(args.config_file, args.verbose);
 
     if (args.verbose > 0) {
         cerr << "Running ABC as: " << endl;
