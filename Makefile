@@ -3,7 +3,10 @@
 .FORCE:
 
 build: .FORCE
-	@cmake -S . -B $@ > /dev/null
+	mkdir -p $@ && cd $@ && cmake ..
+
+install: build
+	cd $^ && make install
 
 clean: .FORCE
 	git clean -ifdx -e .vscode

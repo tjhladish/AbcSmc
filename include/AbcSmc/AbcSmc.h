@@ -39,6 +39,12 @@ class AbcSmc {
         // default constructor - should be appropriate for `projection` mode
         AbcSmc() {};
 
+        // fundamental verbs for ABC-SMC
+        void parse(const std::string &config_file, const size_t verbose = 0);
+        void build(const size_t verbose = 0);
+        void process(const size_t rng_seed, const size_t verbose = 0);
+        void evaluate(const size_t buffer_size, const size_t verbose = 0);
+
         size_t get_smc_iterations() { return _num_smc_sets; }
 
         size_t get_smc_size_at(const size_t set_num) {
@@ -178,6 +184,9 @@ class AbcSmc {
         void calculate_predictive_prior_weights( const size_t set_num );
 
 // interactions with storage:
+
+        bool _populate(const gsl_rng* RNG, const size_t verbose = 0);
+        bool _filter(const gsl_rng* RNG, const size_t verbose = 0);
 
         // TODO: replace this with storage object
         std::string _database_filename;

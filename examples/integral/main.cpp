@@ -1,24 +1,22 @@
 
 #include <AbcSmc/AbcSmc.h>
-#include "examples.h"
+#include <AbcSmc/CLI.h>
 #include "dice.h" // simulator
 
-int main(int argc, char* argv[]) {
+using namespace ABC;
 
-    // convenience method for checking arguments / alerting usage; from examples.h
-    check_args("abc_sql", argc);
+int main(const size_t argc, const char* argv[]) {
 
     // convenience method for parsing arguments; from examples.h
-    CLIArgs args = parse_args("abc_sql", argc, argv);
+    CLIArgs args = ABC::parse_args(argc, argv);
 
-    AbcSmc* abc = new AbcSmc();
-    abc->parse_config(args.config_file);
-    abc->set_simulator(simulator);
     // simulator defined in dice.h and compiled into this executable
     // when using this approach, the simulator must be manually set
+    AbcSmc* abc = new AbcSmc();
+    abc->set_simulator(simulator);
 
     // convenience method for the core abc application loop; from examples.h
-    abc_loop(abc, args, RNG);
+    ABC::run(abc, args);
 
     return 0;
 }
