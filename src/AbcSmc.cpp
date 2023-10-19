@@ -139,16 +139,16 @@ void parse_iterations(
   
 }
 
-Metric* parse_metric(const Json::Value &mmet) {
+MetricPtr parse_metric(const Json::Value &mmet) {
     const string name = mmet["name"].asString();
     const string short_name = mmet.get("short_name", name).asString();
     const float_type val = mmet["value"].asDouble();
     const string ntype_str = mmet["num_type"].asString();
 
     if (ntype_str == "INT") {
-        return new ABC::TMetric<int>(name, short_name, val);
+        return std::make_shared<TMetric<int>>(name, short_name, val);
     } else if (ntype_str == "FLOAT") {
-        return new ABC::TMetric<float_type>(name, short_name, val);
+        return std::make_shared<TMetric<float_type>>(name, short_name, val);
     } else {
         cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
         exit(-209);
@@ -213,7 +213,7 @@ void parse_transform(
     }
 }
 
-Parameter * parse_parameter(
+const ParameterPtr parse_parameter(
     const Json::Value &mpar
 ) {
     const string name = mpar["name"].asString();
@@ -222,7 +222,7 @@ Parameter * parse_parameter(
     const string ptype_str = mpar["dist_type"].asString();
     const string ntype_str = mpar["num_type"].asString();
 
-    ABC::Parameter *par;
+    ParameterPtr par;
 
     if (not ((ntype_str == "INT") or (ntype_str == "FLOAT"))) {
         cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl;
@@ -233,11 +233,11 @@ Parameter * parse_parameter(
         if (ntype_str == "INT") {
             const long par1 = mpar["par1"].asInt64();
             const long par2 = mpar["par2"].asInt64();
-            par = new DiscreteUniformPrior(name, short_name, par1, par2);
+            par = std::make_shared<DiscreteUniformPrior>(name, short_name, par1, par2);
         } else {
             const float_type par1 = mpar["par1"].asDouble();
             const float_type par2 = mpar["par2"].asDouble();
-            par = new ContinuousUniformPrior(name, short_name, par1, par2);
+            par = std::make_shared<ContinuousUniformPrior>(name, short_name, par1, par2);
         }
     } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
         if (ntype_str == "INT") {
@@ -246,7 +246,7 @@ Parameter * parse_parameter(
         }
         const float_type par1 = mpar["par1"].asDouble();
         const float_type par2 = mpar["par2"].asDouble();
-        par = new GaussianPrior(name, short_name, par1, par2);
+        par = std::make_shared<GaussianPrior>(name, short_name, par1, par2);
     } else if (ptype_str == "PSEUDO") {
         std::vector<float_type> states;
         if (mpar.isMember("vals")) {
@@ -263,11 +263,11 @@ Parameter * parse_parameter(
                 states.push_back(mpar["par1"].asDouble());
             }
         }
-        par = new PseudoPar(name, short_name, states);
+        par = std::make_shared<PseudoPar>(name, short_name, states);
     } else if (ptype_str == "POSTERIOR") {
         // TODO iota + stride?
         const size_t size = mpar["par2"].asUInt64() - mpar["par1"].asUInt64() + 1;
-        par = new PosteriorPar(name, short_name, size);
+        par = std::make_shared<PosteriorPar>(name, short_name, size);
     } else {
         cerr << "Unknown parameter distribution type: " << ptype_str << ".  Aborting." << endl;
         exit(-205);
@@ -293,9 +293,44 @@ Json::Value prepare(const string &configfilename) {
     return par;
 }
 
-const Mat2D slurp_posterior(
+bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
+    // Note that retval here is whether tables exist, rather than whether
+    // db transaction was successful.  A failed transaction will throw
+    // an exception and exit.
+    bool tables_exist = true;
+    try {
+        for(string table_name: table_names) {
+            string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
+            //cerr << "Attempting: " << query_str << endl;
+            Statement s = db.Query( query_str.c_str() );
+            s.Next();
+            const int count = s.GetField(0);
+            if (count < 1) {
+                cerr << "Table " << table_name << " does not exist in database.\n";
+                tables_exist = false;
+            }
+        }
+    } catch (const Exception &e) {
+        cerr << "CAUGHT E: ";
+        cerr << e.GetErrorMsg() << endl;
+        cerr << "Failed while checking whether the following tables exist:";
+        for(string table_name: table_names) cerr << " " << table_name;
+        cerr << endl;
+        exit(-212);
+    } catch (const exception &e) {
+        cerr << "CAUGHT e: ";
+        cerr << e.what() << endl;
+        cerr << "Failed while checking whether the following tables exist:";
+        for(string table_name: table_names) cerr << " " << table_name;
+        cerr << endl;
+        exit(-213);
+    }
+    return tables_exist;
+}
+
+Mat2D slurp_posterior(
     const std::string &_posterior_database_filename,
-    const std::vector<const ABC::Parameter *> &_model_pars
+    const ParameterVec &_model_pars
 ) {
     // TODO - handle sql/sqlite errors
     // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
@@ -308,7 +343,7 @@ const Mat2D slurp_posterior(
 
     int num_posterior_pars = 0; // num of cols
     string posterior_strings = "";
-    for (const ABC::Parameter * p: _model_pars) {
+    for (auto p: _model_pars) {
         if (p->isPosterior()) {
             ++num_posterior_pars;
             if (posterior_strings != "") {
@@ -338,8 +373,10 @@ const Mat2D slurp_posterior(
 }
 
 AbcSmc::AbcSmc() {
-    
+    _met_vals = std::make_unique<Row>();
 };
+
+AbcSmc::~AbcSmc() {};
 
 bool AbcSmc::parse_config(const string &conf_filename) {
     auto par = prepare(conf_filename);
@@ -364,7 +401,7 @@ bool AbcSmc::parse_config(const string &conf_filename) {
     size_t posterior_size = 0;
 
     for (const Json::Value &mpar : model_par)  { // Iterates over the sequence elements.
-        ABC::Parameter * par = parse_parameter(mpar);
+        const ParameterPtr par = parse_parameter(mpar);
         if (par->isPosterior()) {
             if (posterior_size == 0) {
                 posterior_size = par->state_size();
@@ -400,9 +437,14 @@ bool AbcSmc::parse_config(const string &conf_filename) {
             exit(-203);
         }
         _posterior = std::make_unique<const Mat2D>(slurp_posterior(par["posterior_database_filename"].asString(), _model_pars));
+    } else {
+        _posterior = std::make_unique<const Mat2D>();
     }
 
-    for (const Json::Value &mmet : par["metrics"]) { add_next_metric(parse_metric(mmet)); }
+    for (const Json::Value &mmet : par["metrics"]) {
+        auto met = parse_metric(mmet);
+        add_next_metric(met);
+    }
 
     parse_iterations(par, pseudosize, &_num_smc_sets, &_pls_training_fraction, &_smc_set_sizes, &_predictive_prior_sizes);
 
@@ -436,11 +478,14 @@ bool AbcSmc::parse_config(const string &conf_filename) {
     return true;
 }
 
-const ABC::Metric * const AbcSmc::add_next_metric(const ABC::Metric * const m) {
-    _model_mets.push_back(m);
+void AbcSmc::add_next_metric(const MetricPtr m) {
+    _model_mets.push_back(std::shared_ptr<const Metric>(m));
     _met_vals->resize(_model_mets.size());
     _met_vals->operator[](_model_mets.size()-1) = m->get_obs_val();
-    return m;
+}
+
+void AbcSmc::add_next_parameter(const ParameterPtr p) {
+    _model_pars.push_back(p);
 }
 
 Row AbcSmc::_to_model_space(
@@ -449,7 +494,7 @@ Row AbcSmc::_to_model_space(
     assert( _model_pars.size() == (unsigned) fitting_space_pars.size() );
     Row model_space_pars = fitting_space_pars; // copy initially - all model_space_pars == fitting_space_pars
     for (size_t parIdx = 0; parIdx < (unsigned) fitting_space_pars.size(); ++parIdx) {
-        const ABC::Parameter* mpar = _model_pars[parIdx];
+        auto mpar = _model_pars[parIdx];
         if (_par_modification_map.count(mpar) == 1) { // ...if this is a modified par
             // transform => rescale => update upars
             model_space_pars[parIdx] = _par_rescale_map[mpar]->rescale(
@@ -783,43 +828,6 @@ bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
     ss.clear();
     return db_success;
 }
-
-
-bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
-    // Note that retval here is whether tables exist, rather than whether
-    // db transaction was successful.  A failed transaction will throw
-    // an exception and exit.
-    bool tables_exist = true;
-    try {
-        for(string table_name: table_names) {
-            string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
-            //cerr << "Attempting: " << query_str << endl;
-            Statement s = db.Query( query_str.c_str() );
-            s.Next();
-            const int count = s.GetField(0);
-            if (count < 1) {
-                cerr << "Table " << table_name << " does not exist in database.\n";
-                tables_exist = false;
-            }
-        }
-    } catch (const Exception &e) {
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed while checking whether the following tables exist:";
-        for(string table_name: table_names) cerr << " " << table_name;
-        cerr << endl;
-        exit(-212);
-    } catch (const exception &e) {
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed while checking whether the following tables exist:";
-        for(string table_name: table_names) cerr << " " << table_name;
-        cerr << endl;
-        exit(-213);
-    }
-    return tables_exist;
-}
-
 
 bool AbcSmc::build_database(const gsl_rng* RNG) {
 

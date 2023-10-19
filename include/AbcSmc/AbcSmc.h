@@ -16,16 +16,10 @@
 #include <AbcSmc/Metric.h>
 #include <AbcSmc/ParXform.h>
 
-class AbcLog; // forward declaration of AbcLog; see AbcLog.h
-
 namespace ABC {
     enum FILTER { PLS, SIMPLE };
     enum NOISE { INDEPENDENT, MULTIVARIATE };
-}
-
-// TODO stuff that needs to live in AbcStorage
-bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
-
+    class AbcLog; // forward declaration of AbcLog; see AbcLog.h
 
 // An `AbcSmc` manages the interaction of the several stateful components
 // of an ABC SMC PLS analysis.
@@ -39,6 +33,8 @@ class AbcSmc {
     public:
         // default constructor - should be appropriate for `projection` mode
         AbcSmc();
+        // default destructor - has to be defined where Eigen is available
+        ~AbcSmc();
 
         size_t get_smc_iterations() { return _num_smc_sets; }
 
@@ -72,28 +68,29 @@ class AbcSmc {
         // TODO: Metric and Parameter management should be private?
         // if the moving to the "Configuration" class approach, could still have a manual configuration
         // class / methods on that building class, and not expose this on AbcSmc
-        const ABC::Metric * const add_next_metric(const ABC::Metric * const m);
+        void add_next_metric(const MetricPtr m);
 
         // TODO model_pars => map<string, Parameter*>, check for duplicate names
-        const ABC::Parameter * const add_next_parameter(const ABC::Parameter * const p) {
-            _model_pars.push_back(p);
-            return p;
-        }
+        void add_next_parameter(const ParameterPtr p);
+        //  {
+        //     _model_pars.push_back(p);
+        //     return p;
+        // }
 
         // should be private?
         void add_modification_map(
-            const ABC::Parameter * const par,
-            const ABC::ParXform * const xform
+            const ParameterPtr par,
+            const ParXform * const xform
         ) { _par_modification_map[par] = xform; };
 
         // should be private?
         void add_par_rescale(
-            const ABC::Parameter * const par,
-            const ABC::ParRescale * const par_rescale
+            const ParameterPtr par,
+            const ParRescale * const par_rescale
         ) { _par_rescale_map[par] = par_rescale; }
 
         // should be private?
-        void set_filtering_type(const ABC::FILTER &ft) { _filtering = ft; }
+        void set_filtering_type(const FILTER &ft) { _filtering = ft; }
 
         // when Config class implemented, this goes there and yields a new AbcSmc
         bool parse_config(const std::string &conf_filename);
@@ -127,9 +124,9 @@ class AbcSmc {
 // CORE numerical bits:
 
         // model parameter containers / transformations
-        std::vector<const ABC::Parameter*> _model_pars;
-        map<const ABC::Parameter*, const ABC::ParXform* > _par_modification_map;
-        map<const ABC::Parameter*, const ABC::ParRescale* > _par_rescale_map;
+        ParameterVec _model_pars;
+        map<const ParameterPtr, const ParXform* > _par_modification_map;
+        map<const ParameterPtr, const ParRescale* > _par_rescale_map;
         
         // if there are POSTERIOR parameters, must be set during construction: they source values from this
         // otherwise, empty
@@ -142,7 +139,7 @@ class AbcSmc {
         // expects _model_ space parameters
         bool _run_simulator(Row &par, Row &met, const size_t rng_seed, const size_t serial);
         // model metric containers / lookups
-        std::vector<const ABC::Metric*> _model_mets;
+        MetricVec _model_mets;
         std::unique_ptr<Row> _met_vals;
 
         bool _retain_posterior_rank;
@@ -151,8 +148,8 @@ class AbcSmc {
 // SMC / ABC / PLS management:
 
         // how do we decide which particles to keep (Filtering) and how to propose new particles (Noise)?
-        ABC::FILTER _filtering = ABC::FILTER::PLS;
-        ABC::NOISE _noise = ABC::NOISE::INDEPENDENT;
+        FILTER _filtering = FILTER::PLS;
+        NOISE _noise = NOISE::INDEPENDENT;
 
         // TODO: desire a container that works exactly like a vector,
         // but with the same values from the end of the vector until some larger size
@@ -187,7 +184,7 @@ class AbcSmc {
         bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
 
 // mpi cruft
-        ABC::MPI_par *_mp;
+        MPI_par *_mp;
         void _particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_orig, const gsl_rng* RNG);
         void _particle_worker_mpi(const size_t seed, const size_t serial);
 
@@ -200,4 +197,5 @@ class AbcSmc {
 
 };
 
+} // namespace ABC
 #endif

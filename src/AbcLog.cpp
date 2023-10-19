@@ -1,6 +1,22 @@
 #include <AbcSmc/AbcLog.h>
 #include <Eigen/Dense>
 
+using namespace std;
+
+namespace ABC {
+
+const int WIDTH = 12;
+const string double_bar = "=========================================================================================";
+
+void _print_particle_table_header(
+    const ParameterVec pars,
+    const MetricVec mets,
+    std::ostream &os
+) {
+    for (auto par : pars) { os << setw(WIDTH) << par->get_short_name(); } os << " | ";
+    for (auto met : mets) { os << setw(WIDTH) << met->get_short_name(); } os << std::endl;
+}
+
 // TODO: longer term goal is to have these *not* have an AbcSmc argument
 // and instead have the specific elements they need passed in as arguments
 
@@ -11,15 +27,6 @@ void AbcLog::print_stats(
 ) {
     os << "    " + str1 + ", " + str2 + "  ( delta, % ): "  << setw(WIDTH) << val1 << ", " << setw(WIDTH) << val2
                                                       << " ( " << setw(WIDTH) << delta << ", " << setw(WIDTH) << pct_chg  << "% )\n" + tail;
-}
-
-
-void AbcLog::_print_particle_table_header(
-    AbcSmc * abc,
-    std::ostream &os
-) {
-    for (size_t i = 0; i < abc->npar(); i++) { os << setw(WIDTH) << abc->_model_pars[i]->get_short_name(); } os << " | ";
-    for (size_t i = 0; i < abc->nmet(); i++) { os << setw(WIDTH) << abc->_model_mets[i]->get_short_name(); } os << std::endl;
 }
 
 void AbcLog::report_convergence_data(
@@ -48,7 +55,7 @@ void AbcLog::report_convergence_data(
         os << "Convergence data for predictive priors:\n";
     }
     for (size_t parIdx = 0; parIdx < abc->_model_pars.size(); parIdx++) {
-        const ABC::Parameter* par = abc->_model_pars[parIdx];
+        const ParameterPtr par = abc->_model_pars[parIdx];
         const double current_stdev = sqrt((*(abc->_doubled_variance[set_t]))[parIdx]/2.0);
         const double prior_mean = par->get_mean();
         const double prior_mean_delta = current_means[parIdx] - prior_mean;
@@ -89,23 +96,23 @@ void AbcLog::filtering_report(
     os << double_bar << std::endl << "Set " << t << std::endl << double_bar << std::endl;
 
     os << "Observed:" << std::endl;
-    AbcLog::_print_particle_table_header(abc, os);
+    _print_particle_table_header(abc->_model_pars, abc->_model_mets, os);
     for (size_t i = 0; i < static_cast<size_t>(posterior_pars.cols()); i++) { os << setw(WIDTH) << "---"; } os << " | ";
     for (auto modmet : abc->_model_mets) { os << setw(WIDTH) << modmet->get_obs_val(); } os << std::endl;
 
     os << "Normalized RMSE for metric means (lower is better):  " << ABC::calculate_nrmse(posterior_mets, *(abc->_met_vals)) << std::endl;
     os << "Posterior means:" << std::endl;
-    AbcLog::_print_particle_table_header(abc, os);
+    _print_particle_table_header(abc->_model_pars, abc->_model_mets, os);
     for (auto meanpar : posterior_pars.colwise().mean()) { os << setw(WIDTH) << meanpar; } os << " | ";
     for (auto meanmet : posterior_mets.colwise().mean()) { os << setw(WIDTH) << meanmet; } os << std::endl;
 
     os << "Posterior medians:" << std::endl;
-    AbcLog::_print_particle_table_header(abc, os);
+    _print_particle_table_header(abc->_model_pars, abc->_model_mets, os);
     for (auto parcol : posterior_pars.colwise()) { os << setw(WIDTH) << ABC::median(parcol); } os << " | ";
     for (auto metcol : posterior_mets.colwise()) { os << setw(WIDTH) << ABC::median(metcol); } os << std::endl;
 
     os << "Best five:" << std::endl;
-    AbcLog::_print_particle_table_header(abc, os);
+    _print_particle_table_header(abc->_model_pars, abc->_model_mets, os);
     auto partop = posterior_pars.topRows(5);
     auto mettop = posterior_mets.topRows(5);
     for (size_t q = 0; q < 5; q++) {
@@ -114,7 +121,7 @@ void AbcLog::filtering_report(
     }
 
     os << "Worst five:" << std::endl;
-    AbcLog::_print_particle_table_header(abc, os);
+    _print_particle_table_header(abc->_model_pars, abc->_model_mets, os);
     auto parbot = posterior_pars.bottomRows(5);
     auto metbot = posterior_mets.bottomRows(5);
     for (size_t q = 0; q < 5; q++) {
@@ -123,3 +130,5 @@ void AbcLog::filtering_report(
     }
 
 }
+
+} // namespace AbcLog, ABC

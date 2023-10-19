@@ -6,6 +6,7 @@
 #include <gsl/gsl_rng.h>
 #include <cstring>
 #include <unistd.h>
+#include <memory>
 
 const gsl_rng* RNG = gsl_rng_alloc(gsl_rng_taus2);
 
@@ -56,7 +57,7 @@ CLIArgs parse_args(std::string cmd, int argc, char* argv[]) {
 
 template<typename ABC>
 inline void abc_inner(
-    ABC * abc, const CLIArgs &args, const gsl_rng * RNG, const size_t buffer_size,
+    const std::shared_ptr<ABC> abc, const CLIArgs &args, const gsl_rng * RNG, const size_t buffer_size,
     const size_t smcset = 0 // TODO find a good way to pass this
 ) {
 
@@ -73,7 +74,7 @@ inline void abc_inner(
 
 template<typename ABC>
 void abc_loop(
-    ABC * abc, CLIArgs &args, const gsl_rng * RNG,
+    const std::shared_ptr<ABC> abc, CLIArgs &args, const gsl_rng * RNG,
     const size_t smcset = 0 // TODO find a good way to pass this
 ) {
 

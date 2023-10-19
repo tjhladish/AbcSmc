@@ -123,7 +123,7 @@ namespace ABC {
 
     Row gsl_ran_trunc_mv_normal(
         const gsl_rng* RNG,
-        const vector<const Parameter*> _model_pars,
+        const ParameterVec &_model_pars,
         const Row &mu, const gsl_matrix* L
     ) {
         const size_t npar = _model_pars.size();
@@ -146,7 +146,7 @@ namespace ABC {
 
     Row gsl_ran_trunc_normal(
         const gsl_rng* RNG,
-        const std::vector<const Parameter*> _model_pars,
+        const ParameterVec &_model_pars,
         const Row &mu, const Row &sigma_squared
     ) {
         Row sigma = sigma_squared.array().sqrt();
@@ -379,7 +379,7 @@ namespace ABC {
     Mat2D sample_predictive_priors(
         const gsl_rng* RNG, const size_t num_samples,
         const Col &weights, const Mat2D &parameter_prior,
-        const std::vector<const Parameter*> &pars,
+        const ParameterVec &pars,
         const Row &doubled_variance
     ) {
         const Mat2D sampled_pars = sample_posterior(RNG, num_samples, weights, parameter_prior);
@@ -393,7 +393,7 @@ namespace ABC {
     Mat2D sample_mvn_predictive_priors(
         const gsl_rng* RNG, const size_t num_samples,
         const Col &weights, const Mat2D &parameter_prior,
-        const std::vector<const Parameter*> &pars,
+        const ParameterVec &pars,
         const gsl_matrix* L
     ) {
         // SELECT PARTICLE FROM PRED PRIOR TO USE AS EXPECTED VALUE OF NEW SAMPLE
@@ -492,7 +492,7 @@ namespace ABC {
     Mat2D sample_priors(
         const gsl_rng* RNG, const size_t num_samples,
         const Mat2D &posterior, // look up table for POSTERIOR type Parameters
-        const std::vector<const Parameter*> &mpars,
+        const ParameterVec &mpars,
         std::vector<size_t> &post_ranks // filled in by this
     ) {
         // setup sampling RNG to deal w/ mixture of prior, posterior, pseudo parameters
@@ -539,7 +539,7 @@ namespace ABC {
     }
 
     std::shared_ptr<Col> weight_predictive_prior(
-        const std::vector<const Parameter*> &mpars,
+        const ParameterVec &mpars,
         const Mat2D &params
     ) {
         const float_type uniform_wt = 1.0/static_cast<double>(params.rows());
@@ -549,7 +549,7 @@ namespace ABC {
     }
 
     std::shared_ptr<Col> weight_predictive_prior(
-        const std::vector<const Parameter*> &mpars,
+        const ParameterVec &mpars,
         const Mat2D &params,
         const Mat2D &prev_params,
         const Col &prev_weights,

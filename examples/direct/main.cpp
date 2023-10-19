@@ -1,6 +1,7 @@
 #include <AbcSmc/AbcSmc.h>
 
 using namespace std;
+using namespace ABC;
 
 // this version of a main program demonstrates:
 //  - using the AbcSmc class without a configuration file

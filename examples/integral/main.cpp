@@ -3,6 +3,8 @@
 #include "examples.h"
 #include "dice.h" // simulator
 
+using namespace ABC;
+
 int main(int argc, char* argv[]) {
 
     // convenience method for checking arguments / alerting usage; from examples.h
@@ -11,7 +13,7 @@ int main(int argc, char* argv[]) {
     // convenience method for parsing arguments; from examples.h
     CLIArgs args = parse_args("abc_sql", argc, argv);
 
-    AbcSmc* abc = new AbcSmc();
+    auto abc = std::make_shared<AbcSmc>();
     abc->parse_config(args.config_file);
     abc->set_simulator(simulator);
     // simulator defined in dice.h and compiled into this executable
