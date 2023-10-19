@@ -140,7 +140,7 @@ class AbcSmc {
         bool _run_simulator(Row &par, Row &met, const size_t rng_seed, const size_t serial);
         // model metric containers / lookups
         MetricVec _model_mets;
-        std::unique_ptr<Row> _met_vals;
+        const std::unique_ptr<Row> _met_vals;
 
         bool _retain_posterior_rank;
 

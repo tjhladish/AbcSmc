@@ -372,9 +372,7 @@ Mat2D slurp_posterior(
     return posterior;
 }
 
-AbcSmc::AbcSmc() {
-    _met_vals = std::make_unique<Row>();
-};
+AbcSmc::AbcSmc() : _met_vals(new Row()) {};
 
 AbcSmc::~AbcSmc() {};
 
@@ -649,15 +647,14 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             break;
             //return false;
         }
-        _particle_parameters.push_back(std::make_shared<Mat2D>(completed_set_size, npar()) );
-        _particle_metrics.push_back( std::make_shared<Mat2D>(completed_set_size, nmet() ) );
-
+        _particle_parameters.push_back(std::make_shared<Mat2D>(completed_set_size, npar()));
+        _particle_metrics.push_back(std::make_shared<Mat2D>(completed_set_size, nmet()));
         // join all three tables for rows with smcSet = t, slurp and store values
         string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
                             + "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE + " P where J.serial = M.serial and J.serial = P.serial "
                             + "and J.smcSet = " + to_string((long long) t) + ";";
 
-        serials.push_back( vector<int>(completed_set_size) );
+        serials.push_back( vector<int>(completed_set_size, 0) );
 
         Statement s2 = db.Query( select_str.c_str() );
 
@@ -673,9 +670,9 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             assert(particle_counter == particle_idx);
             serials[t][particle_counter] = serial;
             if (posterior_rank > -1) posterior_pairs.push_back(make_pair( posterior_rank, particle_idx ) );
-            for(size_t i = offset; i < offset + npar(); i++) (_particle_parameters[t])->operator()(particle_counter,i-offset) = (double) s2.GetField(i);
+            for(size_t i = offset; i < offset + npar(); i++) (_particle_parameters[t])->operator()(particle_counter, i-offset) = (double) s2.GetField(i);
             offset += npar();
-            for(size_t i = offset; i < offset + nmet(); i++) (_particle_metrics[t])->operator()(particle_counter,i-offset) = (double) s2.GetField(i);
+            for(size_t i = offset; i < offset + nmet(); i++) (_particle_metrics[t])->operator()(particle_counter, i-offset) = (double) s2.GetField(i);
             particle_counter++;
         }
 
