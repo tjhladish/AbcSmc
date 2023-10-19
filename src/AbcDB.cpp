@@ -1,4 +1,5 @@
 
+#include <filesystem> // exists
 #include <iostream>
 #include <cstdio>
 #include <cstring>
@@ -7,8 +8,11 @@
 #include <fstream>
 #include <chrono>
 #include <algorithm> // all_of
-
 #include <assert.h>
+
+#include <Eigen/Dense>
+#include "sqdb.h"
+
 #include <AbcSmc/AbcDB.h>
 
 // need a positive int that is very unlikely
@@ -41,7 +45,6 @@ const string UPAR_TABLE = "upar";
     exit(-213); \
 }
 
-// 
 // @param db, the target database
 // @param table_names, a vector of table names to check for existence
 // @param verbose, the verbosity level for output
@@ -49,9 +52,9 @@ const string UPAR_TABLE = "upar";
 // @return true if all tables exist, false otherwise
 // @throws if any sql/sqlite errors occur
 bool _db_tables_exist(
-    sqdb::Db &db,
+    Db &db,
     const std::vector<std::string> &table_names,
-    const size_t verbose
+    const size_t verbose = 0
 ) {
     bool tables_exist = true;
     QueryStr qstr;
@@ -75,7 +78,18 @@ bool _db_tables_exist(
 }
 
 
-std::vector<std::vector<double>> read_posterior(
+namespace ABC {
+    AbcDB::AbcDB(const std::string & path) : 
+        _db_name(path), _db(new Db(_db_name.c_str())) {
+        _file_exists = std::filesystem::exists(_db_name);
+        _db_setup = _file_exists && _db_tables_exist(*_db, {JOB_TABLE, PAR_TABLE, MET_TABLE});
+    };
+    
+    
+
+}
+
+Mat2D read_posterior(
     const std::string &_posterior_database_filename,
     const std::vector<std::string> &_model_pars
 ) {

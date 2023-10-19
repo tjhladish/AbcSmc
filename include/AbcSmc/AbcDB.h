@@ -2,22 +2,26 @@
 #define _ABCSMC_ABCDB_H_
 
 #include <string>
-#include <filesystem>
 #include <vector>
 #include <sstream>
-#include <gsl/gsl_rng.h>
-#include "sqdb.h"
+#include <PLS/types.h>
+#include <memory>
 
-// predeclare Eigen3 element
-class Row;
-class Mat2D;
+// forward declaring sqdb::Db
+namespace sqdb {
+    class Db;
+}
+
+namespace ABC {
 
 class AbcDB {
 
     public:
-        AbcDB(const std::string & path) : _db_name(path) {
-            _file_exists = std::filesystem::exists(_db_name);
-        };
+        AbcDB(const std::string & path);
+        //  : _db_name(path) {
+        //     _file_exists = std::filesystem::exists(_db_name);
+        //     _db(_db_name.c_str());
+        // };
 
         // when Storage class implemented, this goes there
         bool setup();
@@ -63,13 +67,15 @@ class AbcDB {
 
     private:
         const std::string _db_name;
+        const std::unique_ptr<sqdb::Db> _db;
         bool _file_exists;
         bool _db_setup;
-        sqdb::Db _db;
 
         bool _db_execute_stringstream(std::stringstream &ss);
         bool _db_execute_strings(std::vector<std::string> &update_buffer);
 
 };
+
+} // namespace ABC
 
 #endif // _ABCSMC_ABCDB_H_
