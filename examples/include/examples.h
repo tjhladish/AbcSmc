@@ -77,7 +77,7 @@ void abc_loop(
     const size_t smcset = 0 // TODO find a good way to pass this
 ) {
 
-    bool verbose = false;
+//    bool verbose = false;
 
     if (args.do_all) {
         size_t set_count = abc->get_smc_iterations();

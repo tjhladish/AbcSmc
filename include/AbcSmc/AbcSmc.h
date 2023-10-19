@@ -6,11 +6,12 @@
 #include <map>
 #include <optional>
 #include <vector>
+
 #include <AbcSmc/AbcUtil.h>
 #include "sqdb.h"
 #include <json/json.h>
 #include <AbcSmc/AbcSim.h>
-#include <PLS/pls.h>
+#include <PLS/types.h>
 #include <AbcSmc/Parameter.h>
 #include <AbcSmc/Metric.h>
 #include <AbcSmc/ParXform.h>
@@ -37,7 +38,7 @@ bool _db_tables_exist(sqdb::Db &db, std::vector<string> table_names);
 class AbcSmc {
     public:
         // default constructor - should be appropriate for `projection` mode
-        AbcSmc() {};
+        AbcSmc();
 
         size_t get_smc_iterations() { return _num_smc_sets; }
 
@@ -71,12 +72,7 @@ class AbcSmc {
         // TODO: Metric and Parameter management should be private?
         // if the moving to the "Configuration" class approach, could still have a manual configuration
         // class / methods on that building class, and not expose this on AbcSmc
-        const ABC::Metric * const add_next_metric(const ABC::Metric * const m) {
-            _model_mets.push_back(m);
-            _met_vals.resize(_model_mets.size());
-            _met_vals[_model_mets.size()-1] = m->get_obs_val();
-            return m;
-        }
+        const ABC::Metric * const add_next_metric(const ABC::Metric * const m);
 
         // TODO model_pars => map<string, Parameter*>, check for duplicate names
         const ABC::Parameter * const add_next_parameter(const ABC::Parameter * const p) {
@@ -122,8 +118,8 @@ class AbcSmc {
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
 
-        std::vector< Mat2D > get_particle_parameters() { return _particle_parameters; }
-        std::vector< Mat2D > get_particle_metrics()    { return _particle_metrics; }
+        std::vector<std::shared_ptr<Mat2D>> get_particle_parameters() { return _particle_parameters; }
+        std::vector<std::shared_ptr<Mat2D>> get_particle_metrics()    { return _particle_metrics; }
 
     private:
         friend AbcLog;
@@ -137,7 +133,7 @@ class AbcSmc {
         
         // if there are POSTERIOR parameters, must be set during construction: they source values from this
         // otherwise, empty
-        Mat2D _posterior = Mat2D::Zero(0, 0);
+        std::unique_ptr<const Mat2D> _posterior;
         
         // the model itself; defaults to unset
         AbcSimFun * _simulator = new AbcSimUnset();
@@ -147,7 +143,7 @@ class AbcSmc {
         bool _run_simulator(Row &par, Row &met, const size_t rng_seed, const size_t serial);
         // model metric containers / lookups
         std::vector<const ABC::Metric*> _model_mets;
-        Row _met_vals;
+        std::unique_ptr<Row> _met_vals;
 
         bool _retain_posterior_rank;
 
@@ -169,11 +165,11 @@ class AbcSmc {
         // everything we know the about the SMC
         // vectors indexed by SMC set; row corresponds to particle, col to parameter/metric =>
         // a Col is about particle features, a Row is about parameter or metric features
-        std::vector< std::vector<size_t> > _predictive_prior; // vector of row indices for particle metrics and parameters; from storage, generally 0 to n-1; arbitrary from simulation
-        std::vector< Mat2D > _particle_metrics; // from storage, these are generally in order of posterior rank; from simulation, they are in order of serial
-        std::vector< Mat2D > _particle_parameters; // ibid
-        std::vector<Col> _weights; // ordered by predictive prior
-        std::vector<Row> _doubled_variance;
+        std::vector<std::vector<size_t>> _predictive_prior; // vector of row indices for particle metrics and parameters; from storage, generally 0 to n-1; arbitrary from simulation
+        std::vector<std::shared_ptr<Mat2D>> _particle_metrics; // from storage, these are generally in order of posterior rank; from simulation, they are in order of serial
+        std::vector<std::shared_ptr<Mat2D>> _particle_parameters; // ibid
+        std::vector<std::shared_ptr<Col>> _weights; // ordered by predictive prior
+        std::vector<std::shared_ptr<Row>> _doubled_variance;
 
         void calculate_predictive_prior_weights( const size_t set_num );
 

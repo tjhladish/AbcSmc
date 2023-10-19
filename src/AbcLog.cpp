@@ -1,4 +1,5 @@
 #include <AbcSmc/AbcLog.h>
+#include <Eigen/Dense>
 
 // TODO: longer term goal is to have these *not* have an AbcSmc argument
 // and instead have the specific elements they need passed in as arguments
@@ -32,11 +33,11 @@ void AbcLog::report_convergence_data(
         exit(-214);
     }
 
-    Mat2D par_values = abc->_particle_parameters[set_t](abc->_predictive_prior[set_t], Eigen::placeholders::all);
+    Mat2D par_values = abc->_particle_parameters[set_t]->operator()(abc->_predictive_prior[set_t], Eigen::placeholders::all);
     Row current_means = par_values.colwise().mean();
     Row last_means;
     if (set_t > 0) { // if there was a previous set, also extract last_means
-        Mat2D last_par_values = abc->_particle_parameters[set_t-1](abc->_predictive_prior[set_t-1], Eigen::placeholders::all);
+        Mat2D last_par_values = abc->_particle_parameters[set_t-1]->operator()(abc->_predictive_prior[set_t-1], Eigen::placeholders::all);
         last_means = last_par_values.colwise().mean();
     }
 
@@ -48,7 +49,7 @@ void AbcLog::report_convergence_data(
     }
     for (size_t parIdx = 0; parIdx < abc->_model_pars.size(); parIdx++) {
         const ABC::Parameter* par = abc->_model_pars[parIdx];
-        const double current_stdev = sqrt(abc->_doubled_variance[set_t][parIdx]/2.0);
+        const double current_stdev = sqrt((*(abc->_doubled_variance[set_t]))[parIdx]/2.0);
         const double prior_mean = par->get_mean();
         const double prior_mean_delta = current_means[parIdx] - prior_mean;
         const double prior_mean_pct_chg = prior_mean != 0 ? 100 * prior_mean_delta / prior_mean : INFINITY;
@@ -70,7 +71,7 @@ void AbcLog::report_convergence_data(
         print_stats("Prior", "current", prior_stdev, current_stdev, prior_stdev_delta, prior_stdev_pct_chg, "\n", os);
 
         if (set_t != 0) {
-            double last_stdev = sqrt(abc->_doubled_variance[set_t-1][parIdx]/2.0);
+            double last_stdev = sqrt((*(abc->_doubled_variance[set_t-1]))[parIdx]/2.0);
             double delta = current_stdev - last_stdev;
             double pct_chg = last_stdev != 0 ? 100 * delta / last_stdev : INFINITY;
             print_stats("Last", " current", last_stdev, current_stdev, delta, pct_chg, "\n", os);
@@ -92,7 +93,7 @@ void AbcLog::filtering_report(
     for (size_t i = 0; i < static_cast<size_t>(posterior_pars.cols()); i++) { os << setw(WIDTH) << "---"; } os << " | ";
     for (auto modmet : abc->_model_mets) { os << setw(WIDTH) << modmet->get_obs_val(); } os << std::endl;
 
-    os << "Normalized RMSE for metric means (lower is better):  " << ABC::calculate_nrmse(posterior_mets, abc->_met_vals) << std::endl;
+    os << "Normalized RMSE for metric means (lower is better):  " << ABC::calculate_nrmse(posterior_mets, *(abc->_met_vals)) << std::endl;
     os << "Posterior means:" << std::endl;
     AbcLog::_print_particle_table_header(abc, os);
     for (auto meanpar : posterior_pars.colwise().mean()) { os << setw(WIDTH) << meanpar; } os << " | ";

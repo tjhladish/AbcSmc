@@ -1,8 +1,10 @@
 #include <limits>
+
 #include <AbcSmc/AbcUtil.h>
 #include <AbcSmc/AbcSmc.h>
 #include <gsl/gsl_multimin.h>
 #include <gsl/gsl_sf_gamma.h>
+#include <PLS/pls.h>
 #include <AbcSmc/RunningStat.h>
 #include <Eigen/Dense>
 
@@ -525,33 +527,35 @@ namespace ABC {
 
     }
 
-    Row calculate_doubled_variance(const Mat2D &params) {
+    std::shared_ptr<Row> calculate_doubled_variance(const Mat2D &params) {
         vector<RunningStat> stats(params.cols());
-        Row v2 = Row::Zero(params.cols());
+        auto v2 = std::make_shared<Row>(params.cols());
         // TODO: turn this into Eigen column-wise operation?
         for (size_t parIdx = 0; parIdx < (unsigned) params.cols(); parIdx++) {
             stats[parIdx].Push(params.col(parIdx));
-            v2[parIdx] = 2 * stats[parIdx].Variance();
+            (*v2)[parIdx] = 2 * stats[parIdx].Variance();
         }
         return v2;
     }
 
-    Row weight_predictive_prior(
+    std::shared_ptr<Col> weight_predictive_prior(
         const std::vector<const Parameter*> &mpars,
         const Mat2D &params
     ) {
         const float_type uniform_wt = 1.0/static_cast<double>(params.rows());
-        return Col::Constant(params.rows(), uniform_wt);
+        auto res = std::make_shared<Col>(params.rows());
+        res->setConstant(uniform_wt);
+        return res;
     }
 
-    Row weight_predictive_prior(
+    std::shared_ptr<Col> weight_predictive_prior(
         const std::vector<const Parameter*> &mpars,
         const Mat2D &params,
         const Mat2D &prev_params,
-        const Row &prev_weights,
+        const Col &prev_weights,
         const Row &prev_doubled_variance
     ) {
-        Col weight = Col::Zero(params.rows());
+        auto weight = std::make_shared<Col>(params.rows());
 
         for (size_t post_rank = 0; post_rank < (unsigned) params.rows(); post_rank++) {
             double numerator = 1;
@@ -577,10 +581,10 @@ namespace ABC {
                 denominator += running_product;
             }
 
-            weight[post_rank] = numerator / denominator;
+            (*weight)[post_rank] = numerator / denominator;
         }
 
-        weight.normalize();
+        weight->normalize();
 
         return weight;
     }

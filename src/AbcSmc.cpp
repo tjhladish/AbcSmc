@@ -7,6 +7,7 @@
 #include <fstream>
 #include <chrono>
 #include <algorithm> // all_of
+#include <memory> // unique_ptr / shared_ptr
 
 #include <AbcSmc/RunningStat.h>
 #include <AbcSmc/AbcSmc.h>
@@ -14,6 +15,8 @@
 #include <AbcSmc/AbcLog.h>
 #include <AbcSmc/Priors.h>
 #include <AbcSmc/IndexedPars.h>
+
+#include <Eigen/Dense>
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -290,7 +293,7 @@ Json::Value prepare(const string &configfilename) {
     return par;
 }
 
-Mat2D slurp_posterior(
+const Mat2D slurp_posterior(
     const std::string &_posterior_database_filename,
     const std::vector<const ABC::Parameter *> &_model_pars
 ) {
@@ -333,6 +336,10 @@ Mat2D slurp_posterior(
 
     return posterior;
 }
+
+AbcSmc::AbcSmc() {
+    
+};
 
 bool AbcSmc::parse_config(const string &conf_filename) {
     auto par = prepare(conf_filename);
@@ -392,7 +399,7 @@ bool AbcSmc::parse_config(const string &conf_filename) {
             cerr << "Cannot use posterior parameters with multiple SMC sets.  Aborting." << endl;
             exit(-203);
         }
-        _posterior = slurp_posterior(par["posterior_database_filename"].asString(), _model_pars);
+        _posterior = std::make_unique<const Mat2D>(slurp_posterior(par["posterior_database_filename"].asString(), _model_pars));
     }
 
     for (const Json::Value &mmet : par["metrics"]) { add_next_metric(parse_metric(mmet)); }
@@ -427,6 +434,13 @@ bool AbcSmc::parse_config(const string &conf_filename) {
     }
 
     return true;
+}
+
+const ABC::Metric * const AbcSmc::add_next_metric(const ABC::Metric * const m) {
+    _model_mets.push_back(m);
+    _met_vals->resize(_model_mets.size());
+    _met_vals->operator[](_model_mets.size()-1) = m->get_obs_val();
+    return m;
 }
 
 Row AbcSmc::_to_model_space(
@@ -490,12 +504,12 @@ bool AbcSmc::process_database(
         switch (_noise) {
             case NOISE::MULTIVARIATE: {
                 gsl_matrix* L = setup_mvn_sampler(
-                    _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all)
+                    (*(_particle_parameters)[next_set-1])(_predictive_prior[next_set-1], Eigen::placeholders::all)
                 );
                 noised_pars = ABC::sample_mvn_predictive_priors(
                     RNG, num_particles, 
-                    _weights[next_set-1],
-                    _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                    *(_weights[next_set-1]),
+                    (*(_particle_parameters[next_set-1]))(_predictive_prior[next_set-1], Eigen::placeholders::all),
                     _model_pars,
                     L
                 );
@@ -506,10 +520,10 @@ bool AbcSmc::process_database(
             case NOISE::INDEPENDENT: {
                 noised_pars = ABC::sample_predictive_priors(
                     RNG, num_particles, 
-                    _weights[next_set-1],
-                    _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                    *(_weights[next_set-1]),
+                    (*(_particle_parameters[next_set-1]))(_predictive_prior[next_set-1], Eigen::placeholders::all),
                     _model_pars,
-                    _doubled_variance[next_set-1]
+                    *(_doubled_variance[next_set-1])
                 );
                 if (verbose) std::cerr << "Populating next set using INDEPENDENT noising of parameters." << std::endl;
                 break;
@@ -590,8 +604,8 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             break;
             //return false;
         }
-        _particle_parameters.push_back( Mat2D::Zero( completed_set_size, npar() ) );
-        _particle_metrics.push_back( Mat2D::Zero( completed_set_size, nmet() ) );
+        _particle_parameters.push_back(std::make_shared<Mat2D>(completed_set_size, npar()) );
+        _particle_metrics.push_back( std::make_shared<Mat2D>(completed_set_size, nmet() ) );
 
         // join all three tables for rows with smcSet = t, slurp and store values
         string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
@@ -614,9 +628,9 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             assert(particle_counter == particle_idx);
             serials[t][particle_counter] = serial;
             if (posterior_rank > -1) posterior_pairs.push_back(make_pair( posterior_rank, particle_idx ) );
-            for(size_t i = offset; i < offset + npar(); i++) _particle_parameters[t](particle_counter,i-offset) = (double) s2.GetField(i);
+            for(size_t i = offset; i < offset + npar(); i++) (_particle_parameters[t])->operator()(particle_counter,i-offset) = (double) s2.GetField(i);
             offset += npar();
-            for(size_t i = offset; i < offset + nmet(); i++) _particle_metrics[t](particle_counter,i-offset) = (double) s2.GetField(i);
+            for(size_t i = offset; i < offset + nmet(); i++) (_particle_metrics[t])->operator()(particle_counter,i-offset) = (double) s2.GetField(i);
             particle_counter++;
         }
 
@@ -633,10 +647,10 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             // filtering: rank all particles according to fitting scheme
             switch(_filtering) {
                 case FILTER::PLS: { _predictive_prior.push_back(
-                    particle_ranking_PLS(_particle_metrics[t], _particle_parameters[t], _met_vals, _pls_training_fraction)
+                    particle_ranking_PLS(*(_particle_metrics[t]), *(_particle_parameters[t]), *_met_vals, _pls_training_fraction)
                 ); break; }
                 case FILTER::SIMPLE: { _predictive_prior.push_back(
-                    particle_ranking_simple(_particle_metrics[t], _particle_parameters[t], _met_vals )
+                    particle_ranking_simple(*(_particle_metrics[t]), *(_particle_parameters[t]), *_met_vals )
                 ); break; }
                 default: std::cerr << "ERROR: Unsupported filtering method: " << _filtering << std::endl; return false;
             }
@@ -645,8 +659,8 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             const size_t next_pred_prior_size = get_pred_prior_size_at(t);
             _predictive_prior.back().resize(next_pred_prior_size);
 
-            auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
-            auto posterior_mets = _particle_metrics[t](_predictive_prior[t], Eigen::placeholders::all);
+            auto posterior_pars = (_particle_parameters[t])->operator()(_predictive_prior[t], Eigen::placeholders::all);
+            auto posterior_mets = (_particle_metrics[t])->operator()(_predictive_prior[t], Eigen::placeholders::all);
 
             AbcLog::filtering_report(this, t, posterior_pars, posterior_mets);
 
@@ -840,7 +854,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     const size_t set_num = 0;
     const size_t num_particles = get_smc_size_at(set_num);
     std::vector<size_t> posterior_ranks = {};
-    Mat2D pars = sample_priors(RNG, num_particles, _posterior, _model_pars, posterior_ranks);
+    Mat2D pars = sample_priors(RNG, num_particles, *_posterior, _model_pars, posterior_ranks);
 
     db.Query("BEGIN EXCLUSIVE;").Next();
 
@@ -1040,26 +1054,26 @@ bool AbcSmc::simulate_next_particles(
 
 void AbcSmc::calculate_predictive_prior_weights(const size_t set_num) {
     assert(_doubled_variance.size() == set_num); // current length of doubled variance == index of previous set
+
+    auto setview = (_particle_parameters[set_num])->operator()(_predictive_prior[set_num], Eigen::placeholders::all);
     _doubled_variance.push_back(
-        ABC::calculate_doubled_variance(
-            _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all)
-        )
+        ABC::calculate_doubled_variance(setview)
     );
 
     if (set_num == 0) {
         _weights.push_back(
             ABC::weight_predictive_prior(
-                _model_pars, _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all)
+                _model_pars, setview
             )
         );
     } else if ( set_num > 0 ) {
         _weights.push_back(
             ABC::weight_predictive_prior(
                 _model_pars,
-                _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all),
-                _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
-                _weights[set_num - 1],
-                _doubled_variance[set_num -1]
+                setview,
+                (_particle_parameters[set_num-1])->operator()(_predictive_prior[set_num-1], Eigen::placeholders::all),
+                *(_weights[set_num - 1]),
+                *(_doubled_variance[set_num -1])
             )
         );
     }
@@ -1073,14 +1087,14 @@ void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_ori
     Row par_row;
     if (t == 0) {
         std::vector<size_t> dump(_num_particles);
-        Y_orig = sample_priors(RNG, _num_particles, _posterior, _model_pars, dump);
+        Y_orig = sample_priors(RNG, _num_particles, *_posterior, _model_pars, dump);
     } else {
         Y_orig = ABC::sample_predictive_priors(
             RNG, _num_particles, 
-            _weights[t-1],
-            _particle_parameters[t-1](_predictive_prior[t-1], Eigen::placeholders::all),
+            *(_weights[t-1]),
+            (_particle_parameters[t-1])->operator()(_predictive_prior[t-1], Eigen::placeholders::all),
             _model_pars,
-            _doubled_variance[t-1]
+            *(_doubled_variance[t-1])
         );
     }
 

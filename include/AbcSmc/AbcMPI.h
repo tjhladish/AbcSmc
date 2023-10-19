@@ -2,7 +2,7 @@
 #ifndef ABC_MPI_H
 #define ABC_MPI_H
 
-#include <PLS/pls.h> // for data types
+#include <PLS/types.h> // for data types
 #include <AbcSmc/AbcSim.h> // for AbcSimFun type
 #include <AbcSmc/AbcMPIPar.h> // for the MPI_par struct
 
