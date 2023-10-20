@@ -1,6 +1,8 @@
 #include <AbcSmc/AbcSmc.h>
 #include "examples.h"
 
+using namespace ABC;
+
 int main(int argc, char* argv[]) {
 
     // convenience method for checking arguments / alerting usage; from examples.h
@@ -9,7 +11,7 @@ int main(int argc, char* argv[]) {
     // convenience method for parsing arguments; from examples.h
     CLIArgs args = parse_args("abc_exec", argc, argv);
 
-    AbcSmc* abc = new AbcSmc();
+    auto abc = std::make_shared<AbcSmc>();
     abc->parse_config(args.config_file);
     // simulator should be set from config file - no need to invoke abc->set_simulator()
     // the simulator file is specified with the "executable" key in the exec.json file.

@@ -6,6 +6,8 @@
 #include <vector>
 #include <assert.h>
 #include <iomanip>
+#include <memory>
+
 #include <gsl/gsl_rng.h>
 #include <gsl/gsl_randist.h>
 #include <gsl/gsl_vector.h>
@@ -15,7 +17,7 @@
 #include "ranker.h"
 #include <math.h>
 
-#include <PLS/pls.h>
+#include <PLS/types.h>
 #include <AbcSmc/Parameter.h>
 
 using namespace std;
@@ -37,7 +39,7 @@ namespace ABC {
     };
 
     //using namespace std;
-    using namespace Eigen;
+    //using namespace Eigen;
 
     std::string slurp(std::string filename);
     std::string get_nth_line(const std::string &filename, int N);
@@ -79,7 +81,7 @@ namespace ABC {
 
     Row gsl_ran_trunc_normal(
         const gsl_rng* RNG,
-        const std::vector<const Parameter*> _model_pars,
+        const ParameterVec &_model_pars,
         const Row &mu, const Row &sigma_squared
     );
 
@@ -121,7 +123,7 @@ namespace ABC {
     Mat2D sample_predictive_priors(
         const gsl_rng* RNG, const size_t num_samples,
         const Col &weights, const Mat2D &parameter_prior,
-        const std::vector<const Parameter*> &pars,
+        const ParameterVec &pars,
         const Row &doubled_variance
     );
 
@@ -132,14 +134,14 @@ namespace ABC {
     Mat2D sample_mvn_predictive_priors(
         const gsl_rng* RNG, const size_t num_samples,
         const Col &weights, const Mat2D &parameter_prior,
-        const std::vector<const Parameter*> &pars,
+        const ParameterVec &pars,
         const gsl_matrix* L
     );
 
     Mat2D sample_priors(
         const gsl_rng* RNG, const size_t num_samples,
         const Mat2D &posterior, // look up table for POSTERIOR type Parameters
-        const std::vector<const Parameter*> &mpars,
+        const ParameterVec &mpars,
         std::vector<size_t> &posterior_ranks // filled in by this
     );
 
@@ -154,20 +156,20 @@ namespace ABC {
         const float_type training_fraction
     );
 
-    Row weight_predictive_prior(
-        const std::vector<const Parameter*> &mpars,
+    std::shared_ptr<Col> weight_predictive_prior(
+        const ParameterVec &mpars,
         const Mat2D &params
     );
 
-    Row weight_predictive_prior(
-        const std::vector<const Parameter*> &mpars,
+    std::shared_ptr<Col> weight_predictive_prior(
+        const ParameterVec &mpars,
         const Mat2D &params,
         const Mat2D &prev_params,
-        const Row &prev_weights,
+        const Col &prev_weights,
         const Row &prev_doubled_variance
     );
 
-    Row calculate_doubled_variance(
+    std::shared_ptr<Row> calculate_doubled_variance(
         const Mat2D &params
     );
 

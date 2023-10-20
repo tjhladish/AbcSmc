@@ -2,6 +2,7 @@
 #define ABCSMC_PARAMETER_H
 
 #include <string>
+#include <memory>
 // #include <concepts> // let's us declare concepts for template constraints
 #include <gsl/gsl_rng.h>
 #include <math.h> // round
@@ -30,11 +31,13 @@
 namespace ABC { 
     class Parameter;
     typedef ParRNG<const Parameter, const gsl_rng> PRNG;
+    typedef std::shared_ptr<const Parameter> ParameterPtr;
+    typedef std::vector<ParameterPtr> ParameterVec;
 }
 
 namespace ABC {
     
-    class Parameter {
+    class Parameter : public std::enable_shared_from_this<Parameter> {
         public:
             Parameter(const std::string &s, const std::string &ss, const size_t &mi = 0) :
             name(s), short_name(ss), _state_size(mi) {

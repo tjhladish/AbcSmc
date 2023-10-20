@@ -9,7 +9,21 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(CMAKE_INSTALL_MESSAGE LAZY)
 
-add_subdirectory(lib/PLS ${CMAKE_BINARY_DIR}/PLS)
+find_package(PLS)
+
+if (NOT PLS_FOUND)
+  message(WARNING "PLS 2.0.0+ not found; installing from source...")
+  include(FetchContent)
+  FetchContent_Declare(
+    PLS
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/pls
+    GIT_REPOSITORY https://github.com/tjhladish/pls.git
+  )
+  FetchContent_MakeAvailable(PLS)
+else()
+  message(STATUS "PLS found: ${PLS_VERSION}")
+endif()
+
 add_subdirectory(lib/CCRC32 ${CMAKE_BINARY_DIR}/CCRC32)
 add_subdirectory(lib/sqdb ${CMAKE_BINARY_DIR}/sqdb)
 
@@ -22,11 +36,17 @@ add_library(abc STATIC
     $<TARGET_OBJECTS:CCRC32> $<TARGET_OBJECTS:sqdb> $<TARGET_OBJECTS:sqlite3>
     src/AbcLog.cpp src/AbcMPI.cpp src/AbcSmc.cpp src/AbcUtil.cpp
 )
+
 find_package(GSL REQUIRED) # the abc library objects depend on the GSL library
-target_link_libraries(abc pls sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE_DL_LIBS})
+target_link_libraries(abc PLS::PLS sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE_DL_LIBS})
 # the abc library objects depend on pls, sqdb, jsoncpp, m (aka math.h), GSL, and dl (aka dl.h) libraries
 
 # look in these directories for header files, also make them available to other projects that link to abc
 target_include_directories(abc PUBLIC include src lib)
 
 add_subdirectory(examples)
+
+install(TARGETS abc
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)

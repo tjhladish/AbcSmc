@@ -7,6 +7,7 @@
 #include <fstream>
 #include <chrono>
 #include <algorithm> // all_of
+#include <memory> // unique_ptr / shared_ptr
 
 #include <AbcSmc/RunningStat.h>
 #include <AbcSmc/AbcSmc.h>
@@ -14,6 +15,8 @@
 #include <AbcSmc/AbcLog.h>
 #include <AbcSmc/Priors.h>
 #include <AbcSmc/IndexedPars.h>
+
+#include <Eigen/Dense>
 
 // need a positive int that is very unlikely
 // to be less than the number of particles
@@ -136,16 +139,16 @@ void parse_iterations(
   
 }
 
-Metric* parse_metric(const Json::Value &mmet) {
+MetricPtr parse_metric(const Json::Value &mmet) {
     const string name = mmet["name"].asString();
     const string short_name = mmet.get("short_name", name).asString();
     const float_type val = mmet["value"].asDouble();
     const string ntype_str = mmet["num_type"].asString();
 
     if (ntype_str == "INT") {
-        return new ABC::TMetric<int>(name, short_name, val);
+        return std::make_shared<TMetric<int>>(name, short_name, val);
     } else if (ntype_str == "FLOAT") {
-        return new ABC::TMetric<float_type>(name, short_name, val);
+        return std::make_shared<TMetric<float_type>>(name, short_name, val);
     } else {
         cerr << "Unknown metric numeric type: " << ntype_str << ".  Aborting." << endl;
         exit(-209);
@@ -210,7 +213,7 @@ void parse_transform(
     }
 }
 
-Parameter * parse_parameter(
+const ParameterPtr parse_parameter(
     const Json::Value &mpar
 ) {
     const string name = mpar["name"].asString();
@@ -219,7 +222,7 @@ Parameter * parse_parameter(
     const string ptype_str = mpar["dist_type"].asString();
     const string ntype_str = mpar["num_type"].asString();
 
-    ABC::Parameter *par;
+    ParameterPtr par;
 
     if (not ((ntype_str == "INT") or (ntype_str == "FLOAT"))) {
         cerr << "Unknown parameter numeric type: " << ntype_str << ".  Aborting." << endl;
@@ -230,11 +233,11 @@ Parameter * parse_parameter(
         if (ntype_str == "INT") {
             const long par1 = mpar["par1"].asInt64();
             const long par2 = mpar["par2"].asInt64();
-            par = new DiscreteUniformPrior(name, short_name, par1, par2);
+            par = std::make_shared<DiscreteUniformPrior>(name, short_name, par1, par2);
         } else {
             const float_type par1 = mpar["par1"].asDouble();
             const float_type par2 = mpar["par2"].asDouble();
-            par = new ContinuousUniformPrior(name, short_name, par1, par2);
+            par = std::make_shared<ContinuousUniformPrior>(name, short_name, par1, par2);
         }
     } else if (ptype_str == "NORMAL" or ptype_str == "GAUSSIAN") {
         if (ntype_str == "INT") {
@@ -243,7 +246,7 @@ Parameter * parse_parameter(
         }
         const float_type par1 = mpar["par1"].asDouble();
         const float_type par2 = mpar["par2"].asDouble();
-        par = new GaussianPrior(name, short_name, par1, par2);
+        par = std::make_shared<GaussianPrior>(name, short_name, par1, par2);
     } else if (ptype_str == "PSEUDO") {
         std::vector<float_type> states;
         if (mpar.isMember("vals")) {
@@ -260,11 +263,11 @@ Parameter * parse_parameter(
                 states.push_back(mpar["par1"].asDouble());
             }
         }
-        par = new PseudoPar(name, short_name, states);
+        par = std::make_shared<PseudoPar>(name, short_name, states);
     } else if (ptype_str == "POSTERIOR") {
         // TODO iota + stride?
         const size_t size = mpar["par2"].asUInt64() - mpar["par1"].asUInt64() + 1;
-        par = new PosteriorPar(name, short_name, size);
+        par = std::make_shared<PosteriorPar>(name, short_name, size);
     } else {
         cerr << "Unknown parameter distribution type: " << ptype_str << ".  Aborting." << endl;
         exit(-205);
@@ -290,9 +293,44 @@ Json::Value prepare(const string &configfilename) {
     return par;
 }
 
+bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
+    // Note that retval here is whether tables exist, rather than whether
+    // db transaction was successful.  A failed transaction will throw
+    // an exception and exit.
+    bool tables_exist = true;
+    try {
+        for(string table_name: table_names) {
+            string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
+            //cerr << "Attempting: " << query_str << endl;
+            Statement s = db.Query( query_str.c_str() );
+            s.Next();
+            const int count = s.GetField(0);
+            if (count < 1) {
+                cerr << "Table " << table_name << " does not exist in database.\n";
+                tables_exist = false;
+            }
+        }
+    } catch (const Exception &e) {
+        cerr << "CAUGHT E: ";
+        cerr << e.GetErrorMsg() << endl;
+        cerr << "Failed while checking whether the following tables exist:";
+        for(string table_name: table_names) cerr << " " << table_name;
+        cerr << endl;
+        exit(-212);
+    } catch (const exception &e) {
+        cerr << "CAUGHT e: ";
+        cerr << e.what() << endl;
+        cerr << "Failed while checking whether the following tables exist:";
+        for(string table_name: table_names) cerr << " " << table_name;
+        cerr << endl;
+        exit(-213);
+    }
+    return tables_exist;
+}
+
 Mat2D slurp_posterior(
     const std::string &_posterior_database_filename,
-    const std::vector<const ABC::Parameter *> &_model_pars
+    const ParameterVec &_model_pars
 ) {
     // TODO - handle sql/sqlite errors
     // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
@@ -305,7 +343,7 @@ Mat2D slurp_posterior(
 
     int num_posterior_pars = 0; // num of cols
     string posterior_strings = "";
-    for (const ABC::Parameter * p: _model_pars) {
+    for (auto p: _model_pars) {
         if (p->isPosterior()) {
             ++num_posterior_pars;
             if (posterior_strings != "") {
@@ -334,6 +372,10 @@ Mat2D slurp_posterior(
     return posterior;
 }
 
+AbcSmc::AbcSmc() : _met_vals(new Row()) {};
+
+AbcSmc::~AbcSmc() {};
+
 bool AbcSmc::parse_config(const string &conf_filename) {
     auto par = prepare(conf_filename);
 
@@ -357,7 +399,7 @@ bool AbcSmc::parse_config(const string &conf_filename) {
     size_t posterior_size = 0;
 
     for (const Json::Value &mpar : model_par)  { // Iterates over the sequence elements.
-        ABC::Parameter * par = parse_parameter(mpar);
+        const ParameterPtr par = parse_parameter(mpar);
         if (par->isPosterior()) {
             if (posterior_size == 0) {
                 posterior_size = par->state_size();
@@ -392,10 +434,15 @@ bool AbcSmc::parse_config(const string &conf_filename) {
             cerr << "Cannot use posterior parameters with multiple SMC sets.  Aborting." << endl;
             exit(-203);
         }
-        _posterior = slurp_posterior(par["posterior_database_filename"].asString(), _model_pars);
+        _posterior = std::make_unique<const Mat2D>(slurp_posterior(par["posterior_database_filename"].asString(), _model_pars));
+    } else {
+        _posterior = std::make_unique<const Mat2D>();
     }
 
-    for (const Json::Value &mmet : par["metrics"]) { add_next_metric(parse_metric(mmet)); }
+    for (const Json::Value &mmet : par["metrics"]) {
+        auto met = parse_metric(mmet);
+        add_next_metric(met);
+    }
 
     parse_iterations(par, pseudosize, &_num_smc_sets, &_pls_training_fraction, &_smc_set_sizes, &_predictive_prior_sizes);
 
@@ -429,13 +476,23 @@ bool AbcSmc::parse_config(const string &conf_filename) {
     return true;
 }
 
+void AbcSmc::add_next_metric(const MetricPtr m) {
+    _model_mets.push_back(std::shared_ptr<const Metric>(m));
+    _met_vals->resize(_model_mets.size());
+    _met_vals->operator[](_model_mets.size()-1) = m->get_obs_val();
+}
+
+void AbcSmc::add_next_parameter(const ParameterPtr p) {
+    _model_pars.push_back(p);
+}
+
 Row AbcSmc::_to_model_space(
     const Row &fitting_space_pars
 ) {
     assert( _model_pars.size() == (unsigned) fitting_space_pars.size() );
     Row model_space_pars = fitting_space_pars; // copy initially - all model_space_pars == fitting_space_pars
     for (size_t parIdx = 0; parIdx < (unsigned) fitting_space_pars.size(); ++parIdx) {
-        const ABC::Parameter* mpar = _model_pars[parIdx];
+        auto mpar = _model_pars[parIdx];
         if (_par_modification_map.count(mpar) == 1) { // ...if this is a modified par
             // transform => rescale => update upars
             model_space_pars[parIdx] = _par_rescale_map[mpar]->rescale(
@@ -490,12 +547,12 @@ bool AbcSmc::process_database(
         switch (_noise) {
             case NOISE::MULTIVARIATE: {
                 gsl_matrix* L = setup_mvn_sampler(
-                    _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all)
+                    (*(_particle_parameters)[next_set-1])(_predictive_prior[next_set-1], Eigen::placeholders::all)
                 );
                 noised_pars = ABC::sample_mvn_predictive_priors(
                     RNG, num_particles, 
-                    _weights[next_set-1],
-                    _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                    *(_weights[next_set-1]),
+                    (*(_particle_parameters[next_set-1]))(_predictive_prior[next_set-1], Eigen::placeholders::all),
                     _model_pars,
                     L
                 );
@@ -506,10 +563,10 @@ bool AbcSmc::process_database(
             case NOISE::INDEPENDENT: {
                 noised_pars = ABC::sample_predictive_priors(
                     RNG, num_particles, 
-                    _weights[next_set-1],
-                    _particle_parameters[next_set-1](_predictive_prior[next_set-1], Eigen::placeholders::all),
+                    *(_weights[next_set-1]),
+                    (*(_particle_parameters[next_set-1]))(_predictive_prior[next_set-1], Eigen::placeholders::all),
                     _model_pars,
-                    _doubled_variance[next_set-1]
+                    *(_doubled_variance[next_set-1])
                 );
                 if (verbose) std::cerr << "Populating next set using INDEPENDENT noising of parameters." << std::endl;
                 break;
@@ -590,15 +647,14 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             break;
             //return false;
         }
-        _particle_parameters.push_back( Mat2D::Zero( completed_set_size, npar() ) );
-        _particle_metrics.push_back( Mat2D::Zero( completed_set_size, nmet() ) );
-
+        _particle_parameters.push_back(std::make_shared<Mat2D>(completed_set_size, npar()));
+        _particle_metrics.push_back(std::make_shared<Mat2D>(completed_set_size, nmet()));
         // join all three tables for rows with smcSet = t, slurp and store values
         string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
                             + "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE + " P where J.serial = M.serial and J.serial = P.serial "
                             + "and J.smcSet = " + to_string((long long) t) + ";";
 
-        serials.push_back( vector<int>(completed_set_size) );
+        serials.push_back( vector<int>(completed_set_size, 0) );
 
         Statement s2 = db.Query( select_str.c_str() );
 
@@ -614,9 +670,9 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             assert(particle_counter == particle_idx);
             serials[t][particle_counter] = serial;
             if (posterior_rank > -1) posterior_pairs.push_back(make_pair( posterior_rank, particle_idx ) );
-            for(size_t i = offset; i < offset + npar(); i++) _particle_parameters[t](particle_counter,i-offset) = (double) s2.GetField(i);
+            for(size_t i = offset; i < offset + npar(); i++) (_particle_parameters[t])->operator()(particle_counter, i-offset) = (double) s2.GetField(i);
             offset += npar();
-            for(size_t i = offset; i < offset + nmet(); i++) _particle_metrics[t](particle_counter,i-offset) = (double) s2.GetField(i);
+            for(size_t i = offset; i < offset + nmet(); i++) (_particle_metrics[t])->operator()(particle_counter, i-offset) = (double) s2.GetField(i);
             particle_counter++;
         }
 
@@ -633,10 +689,10 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             // filtering: rank all particles according to fitting scheme
             switch(_filtering) {
                 case FILTER::PLS: { _predictive_prior.push_back(
-                    particle_ranking_PLS(_particle_metrics[t], _particle_parameters[t], _met_vals, _pls_training_fraction)
+                    particle_ranking_PLS(*(_particle_metrics[t]), *(_particle_parameters[t]), *_met_vals, _pls_training_fraction)
                 ); break; }
                 case FILTER::SIMPLE: { _predictive_prior.push_back(
-                    particle_ranking_simple(_particle_metrics[t], _particle_parameters[t], _met_vals )
+                    particle_ranking_simple(*(_particle_metrics[t]), *(_particle_parameters[t]), *_met_vals )
                 ); break; }
                 default: std::cerr << "ERROR: Unsupported filtering method: " << _filtering << std::endl; return false;
             }
@@ -645,8 +701,8 @@ bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &s
             const size_t next_pred_prior_size = get_pred_prior_size_at(t);
             _predictive_prior.back().resize(next_pred_prior_size);
 
-            auto posterior_pars = _particle_parameters[t](_predictive_prior[t], Eigen::placeholders::all);
-            auto posterior_mets = _particle_metrics[t](_predictive_prior[t], Eigen::placeholders::all);
+            auto posterior_pars = (_particle_parameters[t])->operator()(_predictive_prior[t], Eigen::placeholders::all);
+            auto posterior_mets = (_particle_metrics[t])->operator()(_predictive_prior[t], Eigen::placeholders::all);
 
             AbcLog::filtering_report(this, t, posterior_pars, posterior_mets);
 
@@ -770,43 +826,6 @@ bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
     return db_success;
 }
 
-
-bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
-    // Note that retval here is whether tables exist, rather than whether
-    // db transaction was successful.  A failed transaction will throw
-    // an exception and exit.
-    bool tables_exist = true;
-    try {
-        for(string table_name: table_names) {
-            string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
-            //cerr << "Attempting: " << query_str << endl;
-            Statement s = db.Query( query_str.c_str() );
-            s.Next();
-            const int count = s.GetField(0);
-            if (count < 1) {
-                cerr << "Table " << table_name << " does not exist in database.\n";
-                tables_exist = false;
-            }
-        }
-    } catch (const Exception &e) {
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed while checking whether the following tables exist:";
-        for(string table_name: table_names) cerr << " " << table_name;
-        cerr << endl;
-        exit(-212);
-    } catch (const exception &e) {
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed while checking whether the following tables exist:";
-        for(string table_name: table_names) cerr << " " << table_name;
-        cerr << endl;
-        exit(-213);
-    }
-    return tables_exist;
-}
-
-
 bool AbcSmc::build_database(const gsl_rng* RNG) {
 
     // create the DB handle
@@ -840,7 +859,7 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     const size_t set_num = 0;
     const size_t num_particles = get_smc_size_at(set_num);
     std::vector<size_t> posterior_ranks = {};
-    Mat2D pars = sample_priors(RNG, num_particles, _posterior, _model_pars, posterior_ranks);
+    Mat2D pars = sample_priors(RNG, num_particles, *_posterior, _model_pars, posterior_ranks);
 
     db.Query("BEGIN EXCLUSIVE;").Next();
 
@@ -1040,26 +1059,26 @@ bool AbcSmc::simulate_next_particles(
 
 void AbcSmc::calculate_predictive_prior_weights(const size_t set_num) {
     assert(_doubled_variance.size() == set_num); // current length of doubled variance == index of previous set
+
+    auto setview = (_particle_parameters[set_num])->operator()(_predictive_prior[set_num], Eigen::placeholders::all);
     _doubled_variance.push_back(
-        ABC::calculate_doubled_variance(
-            _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all)
-        )
+        ABC::calculate_doubled_variance(setview)
     );
 
     if (set_num == 0) {
         _weights.push_back(
             ABC::weight_predictive_prior(
-                _model_pars, _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all)
+                _model_pars, setview
             )
         );
     } else if ( set_num > 0 ) {
         _weights.push_back(
             ABC::weight_predictive_prior(
                 _model_pars,
-                _particle_parameters[set_num](_predictive_prior[set_num], Eigen::placeholders::all),
-                _particle_parameters[set_num-1](_predictive_prior[set_num-1], Eigen::placeholders::all),
-                _weights[set_num - 1],
-                _doubled_variance[set_num -1]
+                setview,
+                (_particle_parameters[set_num-1])->operator()(_predictive_prior[set_num-1], Eigen::placeholders::all),
+                *(_weights[set_num - 1]),
+                *(_doubled_variance[set_num -1])
             )
         );
     }
@@ -1073,14 +1092,14 @@ void AbcSmc::_particle_scheduler_mpi(const size_t t, Mat2D &X_orig, Mat2D &Y_ori
     Row par_row;
     if (t == 0) {
         std::vector<size_t> dump(_num_particles);
-        Y_orig = sample_priors(RNG, _num_particles, _posterior, _model_pars, dump);
+        Y_orig = sample_priors(RNG, _num_particles, *_posterior, _model_pars, dump);
     } else {
         Y_orig = ABC::sample_predictive_priors(
             RNG, _num_particles, 
-            _weights[t-1],
-            _particle_parameters[t-1](_predictive_prior[t-1], Eigen::placeholders::all),
+            *(_weights[t-1]),
+            (_particle_parameters[t-1])->operator()(_predictive_prior[t-1], Eigen::placeholders::all),
             _model_pars,
-            _doubled_variance[t-1]
+            *(_doubled_variance[t-1])
         );
     }
 

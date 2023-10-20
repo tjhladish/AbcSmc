@@ -37,7 +37,7 @@ struct PseudoPar : public IndexedPar {
 
     // TODO support other constructors?
 
-    float_type sample(PRNG &prng) const override { return states[prng.pseudo(this)]; }
+    float_type sample(PRNG &prng) const override { return states[prng.pseudo(shared_from_this())]; }
 
     protected:
         const std::vector<float_type> states;
