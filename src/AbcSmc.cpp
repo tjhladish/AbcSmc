@@ -16,6 +16,7 @@
 #include <AbcSmc/Priors.h>
 #include <AbcSmc/IndexedPars.h>
 
+#include <json/json.h>
 #include <Eigen/Dense>
 
 // need a positive int that is very unlikely
@@ -503,15 +504,46 @@ Row AbcSmc::_to_model_space(
     return model_space_pars;
 }
 
+// TODO figure out the smarter Eigen-y version of this
+Mat2D AbcSmc::_to_model_space(
+    const Mat2D &fitting_space_pars
+) {
+    assert( _model_pars.size() == (unsigned) fitting_space_pars.cols() );
+    Mat2D model_space_pars = fitting_space_pars; // copy initially - all model_space_pars == fitting_space_pars
+    for (size_t parIdx = 0; parIdx < (unsigned) fitting_space_pars.cols(); ++parIdx) {
+        auto mpar = _model_pars[parIdx];
+        if (_par_modification_map.count(mpar) == 1) { // ...if this is a modified par
+            for (size_t rowIdx = 0; rowIdx < (unsigned) fitting_space_pars.rows(); ++rowIdx) {
+                // transform => rescale => update upars
+                model_space_pars(rowIdx, parIdx) = _par_rescale_map[mpar]->rescale(
+                    _par_modification_map[mpar]->transform(fitting_space_pars(rowIdx, parIdx), fitting_space_pars.row(rowIdx))
+                );
+            }
+        }
+    }
+    return model_space_pars;
+}
+
 // Build DB if it doesn't exist;
 // If it does exist but more sets are needed, filter particles and sample for next set;
 // If the specified number of sets already exist, exit gracefully
 bool AbcSmc::process_database(
     const gsl_rng* RNG,
-    const bool verbose
+    const size_t verbose
 ) {
 
-    if (build_database(RNG)) return true; // if DB doesn't exist, create it and exit
+    // if this is the initial build
+    if (build(verbose)) {
+        // need to insert the initial job set
+        Mat2D pars = sample_priors(
+            RNG, get_smc_size_at(0), *_posterior, _model_pars,
+            posterior_ranks
+        );
+        Mat2D upars;
+        if (true) { upars = _to_model_space(pars); }
+        
+        return insert_pars(pars, upars, verbose);
+    }
 
     sqdb::Db db(_database_filename.c_str());
     _particle_parameters.clear();
@@ -534,9 +566,6 @@ bool AbcSmc::process_database(
     cerr << endl << endl;
 
     if (_num_smc_sets > next_set) {
-
-        //ss << "insert into sets values ( 0, 'Q'"; for (int j = 0; j < npar(); j++) ss << ", NULL"; ss << ");";
-        //_db_execute_stringstream(db, ss);
 
         stringstream ss;
         const size_t num_particles = get_smc_size_at(next_set);
@@ -826,70 +855,19 @@ bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
     return db_success;
 }
 
-bool AbcSmc::build_database(const gsl_rng* RNG) {
+bool AbcSmc::build(
+    const size_t verbose
+) {
 
-    // create the DB handle
-    sqdb::Db db(_database_filename.c_str());
+    // is storage *already* setup?
+    if (_storage.is_setup()) return false;
 
-    // create the tables if they don't exist; if they already exist, this function is a no-op
-    stringstream ss;
-    if ( !_db_tables_exist(db, {JOB_TABLE}) and !_db_tables_exist(db, {PAR_TABLE}) and !_db_tables_exist(db, {MET_TABLE}) ) {
-        db.Query("BEGIN EXCLUSIVE;").Next();
-        ss << "create table " << JOB_TABLE << " ( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration real, status text, posterior int, attempts int );";
-        _db_execute_stringstream(db, ss);
+    return _storage.setup(
+        _model_pars, _model_mets,
+        not _par_modification_map.empty(),
+        verbose
+    );
 
-        ss << "create index idx1 on " << JOB_TABLE << " (status, attempts);";
-        _db_execute_stringstream(db, ss);
-
-        ss << "create table " << PAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
-        _db_execute_stringstream(db, ss);
-
-        if (_par_modification_map.size()) {
-            ss << "create table " << UPAR_TABLE << " ( serial int primary key, seed blob, " << _build_sql_create_par_string("") << ");";
-            _db_execute_stringstream(db, ss);
-        }
-
-        ss << "create table " << MET_TABLE << " ( serial int primary key, " << _build_sql_create_met_string("") << ");";
-        _db_execute_stringstream(db, ss);
-        db.CommitTransaction();
-    } else {
-        return false;
-    }
-
-    const size_t set_num = 0;
-    const size_t num_particles = get_smc_size_at(set_num);
-    std::vector<size_t> posterior_ranks = {};
-    Mat2D pars = sample_priors(RNG, num_particles, *_posterior, _model_pars, posterior_ranks);
-
-    db.Query("BEGIN EXCLUSIVE;").Next();
-
-    for (size_t i = 0; i < num_particles; i++) {
-        auto parrow = pars.row(i);      
-        auto posterior_rank = _retain_posterior_rank ? posterior_ranks[i] : -1;  
-
-        QueryStr qstr;
-
-        db.Query(qstr.Format(SQDB_MAKE_TEXT("insert into %s values ( %d, %d, %d, %d, NULL, 'Q', %d, 0 );"), JOB_TABLE.c_str(), i, set_num, i, time(NULL), posterior_rank)).Next();
-
-        Statement s = db.Query(("select last_insert_rowid() from " + JOB_TABLE + ";").c_str());
-        s.Next();
-        const int rowid = ((int) s.GetField(0)) - 1; // indexing should start at 0
-
-        const unsigned long int seed = gsl_rng_get(RNG); // seed for particle
-        ss << "insert into " << PAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << parrow[j]; ss << " );";
-        _db_execute_stringstream(db, ss);
-
-        if (_par_modification_map.size()) {
-            const Row upars = _to_model_space(parrow);
-            ss << "insert into " << UPAR_TABLE << " values ( " << rowid << ", '" << seed << "'"; for (size_t j = 0; j < npar(); j++)  ss << ", " << upars[j]; ss << " );";
-            _db_execute_stringstream(db, ss);
-        }
-
-        ss << "insert into " << MET_TABLE << " values ( " << rowid; for (size_t j = 0; j < nmet(); j++) ss << ", NULL"; ss << " );";
-        _db_execute_stringstream(db, ss);
-    }
-    db.CommitTransaction();
-    return true;
 }
 
 

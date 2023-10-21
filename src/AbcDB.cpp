@@ -45,6 +45,21 @@ const string UPAR_TABLE = "upar";
     exit(-213); \
 }
 
+bool _db_execute_stringstream(
+    Db &db, stringstream &ss
+) {
+    bool db_success = false;
+    SQDB_TRYBLOCK(
+        {
+            db_success = db.Query(ss.str().c_str()).Next();
+            ss.str(string());
+            ss.clear();
+        },
+        "Failed query:" << std::endl << ss.str()
+    )
+    return db_success;
+}
+
 // @param db, the target database
 // @param table_names, a vector of table names to check for existence
 // @param verbose, the verbosity level for output
@@ -77,15 +92,129 @@ bool _db_tables_exist(
     return tables_exist;
 }
 
+string _build_sql_create_par_string(const ABC::ParameterVec &pars) {
+    stringstream ss;
+    for (auto par : pars) { ss << par->get_short_name() << " real, "; }
+    // TODO delete the ss last two chars
+    return ss.str();
+}
+
+string _build_sql_create_met_string(const ABC::MetricVec &mets) {
+    stringstream ss;
+    for (auto met : mets) { ss << met->get_short_name() << " real, "; }
+    // TODO delete the ss last two chars
+    return ss.str();
+}
 
 namespace ABC {
-    AbcDB::AbcDB(const std::string & path) : 
-        _db_name(path), _db(new Db(_db_name.c_str())) {
-        _file_exists = std::filesystem::exists(_db_name);
-        _db_setup = _file_exists && _db_tables_exist(*_db, {JOB_TABLE, PAR_TABLE, MET_TABLE});
-    };
+
+AbcDB::AbcDB(const std::string & path) : 
+    _db_name(path), _db(new Db(_db_name.c_str())) {
+    _file_exists = std::filesystem::exists(_db_name);
+    _db_setup = _file_exists && _db_tables_exist(*_db, {JOB_TABLE, PAR_TABLE, MET_TABLE});
+};
     
-    
+bool AbcDB::setup(
+    const ParameterVec &pars,
+    const MetricVec &mets,
+    const bool has_transforms,
+    const size_t verbose
+) {
+    if (not _db_tables_exist(db, {JOB_TABLE, PAR_TABLE, MET_TABLE})) {
+        stringstream ss;
+        _db->Query("BEGIN EXCLUSIVE;").Next();
+
+        ss << "create table " << JOB_TABLE << " ( serial int primary key asc, smcSet int, particleIdx int, startTime int, duration real, status text, posterior int, attempts int );";
+        _db_execute_stringstream(*_db, ss);
+
+        ss << "create index idx1 on " << JOB_TABLE << " (status, attempts);";
+        _db_execute_stringstream(*_db, ss);
+
+        ss << "create table " << PAR_TABLE <<
+            " ( serial int primary key, seed blob, " <<
+            _build_sql_create_par_string(pars) << ");";
+
+        _db_execute_stringstream(*_db, ss);
+
+        if (has_transforms) {
+            ss << "create table " << UPAR_TABLE <<
+                " ( serial int primary key, seed blob, " <<
+                _build_sql_create_par_string(pars) << ");";
+            
+            _db_execute_stringstream(*_db, ss);
+        }
+
+        ss << "create table " << MET_TABLE << " ( serial int primary key, " <<
+            _build_sql_create_met_string(mets) << ");";
+        _db_execute_stringstream(*_db, ss);
+
+        _db->CommitTransaction();
+        _db_setup = true;
+    } else {
+        return _db_setup;
+    }
+}
+
+bool AbcDB::write_parameters(
+    const Mat2D &pars,
+    const Mat2D &upars,
+    const std::vector<size_t> &seeds,
+    const size_t set_num,
+    const size_t verbose
+) {
+
+    assert(_db_setup);
+
+    if (verbose > 0) {
+        std::cerr << std::setprecision(PREC);
+    }
+
+     // TODO - get last serial from DB
+    const size_t last_serial = 0;
+
+    QueryStr qstr;
+
+    _db->BeginTransaction();
+
+    for (size_t i = 0; i < pars.rows(); i++) {
+        const int serial = last_serial + 1 + i;
+        auto par_row = pars.row(i);
+
+        ss << "insert into " << JOB_TABLE << " values ( " << serial << ", "
+                                            << set_num << ", "
+                                            << i << ", "
+                                            << time(NULL)
+                                            << ", NULL, 'Q', -1, 0 );";
+
+        _db_execute_stringstream(*_db, ss);
+
+        ss << "insert into " << PAR_TABLE << " values ( " << 
+            serial << ", '" << seeds[i] << "'";
+            for (auto par : par_row) ss << ", " << par;
+            ss << " );";
+
+        _db_execute_stringstream(*_db, ss);
+
+        if (upars.size() > 0) {
+            auto upar_row = upars.row(i);
+            ss << "insert into " << UPAR_TABLE << " values ( " << 
+                serial << ", '" << seeds[i] << "'";
+                for (auto upar : upar_row) ss << ", " << upar;
+                ss << " );";
+            _db_execute_stringstream(*_db, ss);
+        }
+
+        ss << "insert into " << MET_TABLE << " values ( " << serial << " );";
+        //cerr << "attempting: " << ss.str() << endl;
+        _db_execute_stringstream(*_db, ss);
+    }
+
+    _db->CommitTransaction();
+
+    return true;
+}
+
+
 
 }
 
@@ -135,68 +264,6 @@ Mat2D read_posterior(
 }
 
 // 
-bool AbcDB::write_parameters(
-    const std::vector<std::vector<double>&> &noised_pars,
-    const std::vector<std::vector<double>&> &noised_upars,
-    const std::vector<size_t> &seeds,
-    const size_t set_num,
-    const size_t verbose
-) {
-
-    assert(_db_setup);
-
-    if (verbose > 0) {
-        std::cerr << std::setprecision(PREC);
-    }
-
-     // TODO - get last serial from DB
-    const size_t last_serial = 0;
-
-    QueryStr qstr;
-
-    _db.BeginTransaction();
-
-    for (size_t i = 0; i < noised_pars.size(); i++) {
-        const int serial = last_serial + 1 + i;
-
-        ss << "insert into " << JOB_TABLE << " values ( " << serial << ", "
-                                            << set_num << ", "
-                                            << i << ", "
-                                            << time(NULL)
-                                            << ", NULL, 'Q', -1, 0 );";
-
-        _db_execute_stringstream(ss);
-
-        auto pars = noised_pars[i];
-
-        ss << "insert into " << PAR_TABLE << " values ( " << 
-            serial << ", '" << seeds[i] << "'";
-            for (size_t j = 0; j < pars.size(); j++) ss << ", " << pars[j];
-            ss << " );";
-
-        _db_execute_stringstream(ss);
-
-        if (noised_upars.size()) {
-            auto upars = noised_upars[i];
-            ss << "insert into " << UPAR_TABLE << " values ( " << 
-                serial << ", '" << seeds[i] << "'";
-                for (size_t j = 0; j < upars.size(); j++)  ss << ", " << upars[j];
-                ss << " );";
-            //cerr << "attempting: " << ss.str() << endl;
-            _db_execute_stringstream(ss);
-        }
-
-        ss << "insert into " << MET_TABLE << " values ( " << serial << " );";
-        //cerr << "attempting: " << ss.str() << endl;
-        _db_execute_stringstream(ss);
-    }
-
-    db.CommitTransaction();
-        
-
-    return true;
-}
-
 // Read in existing sets and do particle filtering as appropriate
 bool AbcDB::read_SMC_sets(
     std::vector<std::vector<size_t>> &serials,
@@ -321,21 +388,6 @@ bool AbcDB::read_SMC_sets(
     return true;
 }
 
-string _build_sql_create_par_string( string tag = "" ) {
-    stringstream ss;
-    for (size_t i = 0; i < npar()-1; i++) { ss << _model_pars[i]->get_short_name() << tag << " real, "; }
-    ss << _model_pars.back()->get_short_name() << tag << " real ";
-    return ss.str();
-}
-
-string _build_sql_create_met_string( string tag = "" ) {
-    stringstream ss;
-    for (size_t i = 0; i < nmet()-1; i++) { ss << _model_mets[i]->get_short_name() << tag << " real, "; }
-    ss << _model_mets.back()->get_short_name() << tag << " real ";
-    return ss.str();
-}
-
-
 string AbcSmc::_build_sql_select_par_string( string tag = "" ) {
     stringstream ss;
     for (size_t i = 0; i<npar()-1; i++) { ss << "P." << _model_pars[i]->get_short_name() << tag << ", "; }
@@ -351,55 +403,9 @@ string AbcSmc::_build_sql_select_met_string() {
     return ss.str();
 }
 
-
-bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
-    bool db_success = false;
-    try {
-        db.Query("BEGIN EXCLUSIVE;").Next();
-        for (size_t i = 0; i < update_buffer.size(); ++i) {
-            db.Query(update_buffer[i].c_str()).Next();
-        }
-        db_success = true;
-        db.CommitTransaction();
-    } catch (const Exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed query:" << endl;
-        for (size_t i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
-    } catch (const exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed query:" << endl;
-        for (size_t i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
-    }
-    return db_success;
-}
-
-
-bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
-    // We don't need BEGIN EXCLUSIVE here because the calling function has already done it
-    bool db_success = false;
-    try {
-        db_success = db.Query(ss.str().c_str()).Next();
-    } catch (const Exception &e) {
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed query:" << endl;
-        cerr << ss.str() << endl;
-    } catch (const exception &e) {
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed query:" << endl;
-        cerr << ss.str() << endl;
-    }
-    ss.str(string());
-    ss.clear();
-    return db_success;
-}
-
-bool AbcSmc::build_database(const gsl_rng* RNG) {
+bool AbcSmc::build_database(
+    const gsl_rng* RNG
+) {
 
     // create the DB handle
     sqdb::Db db(_database_filename.c_str());

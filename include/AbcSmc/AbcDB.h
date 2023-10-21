@@ -4,8 +4,11 @@
 #include <string>
 #include <vector>
 #include <sstream>
-#include <PLS/types.h>
 #include <memory>
+
+#include <PLS/types.h>
+#include <AbcSmc/Parameter.h>
+#include <AbcSmc/Metric.h>
 
 // forward declaring sqdb::Db
 namespace sqdb {
@@ -23,11 +26,22 @@ class AbcDB {
         //     _db(_db_name.c_str());
         // };
 
-        // when Storage class implemented, this goes there
-        bool setup();
+        bool is_setup() const { return _db_setup; }
+        bool has_work() const;
+
+        // @param verbose: level of verbosity to use during setup
+        // @return true if storage is ready to receive / provide data
+        // n.b. repeated invocations should not cause overwrites
+        bool setup(
+            const ParameterVec &pars,
+            const MetricVec &mets,
+            const bool has_transforms,
+            const size_t verbose = 0
+        );
 
         void read_SMC_sets(
-            std::vector<std::vector<size_t>> &serials,
+            std::vector<std::vector<size_t>> &serials,        // when Storage class implemented, this goes there
+
             std::vector<Mat2D> &parameters,
             std::vector<Mat2D> &metrics,
             const std::vector<size_t> &which_sets = {}
@@ -52,7 +66,11 @@ class AbcDB {
         );
 
         bool write_parameters(
-            const size_t verbose = 0
+            const Mat2D &pars,
+            const Mat2D &upars,
+            const std::vector<size_t> &seeds,
+            const size_t set_num,
+            const size_t verbose
         );
 
         std::vector<std::vector<double>> read_posterior(
@@ -71,7 +89,6 @@ class AbcDB {
         bool _file_exists;
         bool _db_setup;
 
-        bool _db_execute_stringstream(std::stringstream &ss);
         bool _db_execute_strings(std::vector<std::string> &update_buffer);
 
 };

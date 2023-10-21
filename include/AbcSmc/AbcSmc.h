@@ -8,8 +8,7 @@
 #include <vector>
 
 #include <AbcSmc/AbcUtil.h>
-#include "sqdb.h"
-#include <json/json.h>
+#include <AbcSmc/AbcDB.h>
 #include <AbcSmc/AbcSim.h>
 #include <PLS/types.h>
 #include <AbcSmc/Parameter.h>
@@ -36,9 +35,9 @@ class AbcSmc {
         // default destructor - has to be defined where Eigen is available
         ~AbcSmc();
 
-        size_t get_smc_iterations() { return _num_smc_sets; }
+        size_t get_smc_iterations() const { return _num_smc_sets; }
 
-        size_t get_smc_size_at(const size_t set_num) {
+        size_t get_smc_size_at(const size_t set_num) const {
             if (set_num >= _num_smc_sets) throw std::out_of_range("set_num out of range");
             return (set_num < _smc_set_sizes.size()) ? _smc_set_sizes[set_num] : _smc_set_sizes.back();
         }
@@ -62,20 +61,14 @@ class AbcSmc {
         void set_simulator(AbcSimBase * simulator) { set_simulation(new AbcFPtrBase(simulator)); }
         void set_simulator(std::string soname) { set_simulation(new AbcFPtrBase(soname.c_str())); }
 
-        void set_database_filename( std::string name ) { _database_filename = name; }
         void set_retain_posterior_rank( const bool retain_rank ) { _retain_posterior_rank = retain_rank; }
 
         // TODO: Metric and Parameter management should be private?
         // if the moving to the "Configuration" class approach, could still have a manual configuration
         // class / methods on that building class, and not expose this on AbcSmc
         void add_next_metric(const MetricPtr m);
-
         // TODO model_pars => map<string, Parameter*>, check for duplicate names
         void add_next_parameter(const ParameterPtr p);
-        //  {
-        //     _model_pars.push_back(p);
-        //     return p;
-        // }
 
         // should be private?
         void add_modification_map(
@@ -95,22 +88,29 @@ class AbcSmc {
         // when Config class implemented, this goes there and yields a new AbcSmc
         bool parse_config(const std::string &conf_filename);
 
-        // when Storage class implemented, this goes there
-        bool build_database(const gsl_rng* RNG);
-
-        bool process_database(const gsl_rng* RNG, const bool verbose = false);
-        bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
-
-        bool fetch_particle_parameters(
-            sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
-            vector<int> &serial, vector<Row> &par_mat, vector<unsigned long int> &seeds,
-            const bool verbose = false
+        // @param verbose the verbosity level
+        //
+        // @return true if the storage is built *by this call*;
+        // false if already built OR if there is an error
+        bool build(
+            const size_t verbose
         );
-        bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
 
-        bool simulate_next_particles(const int n = 1, const int serial_req = -1, const int posterior_req = -1); // defaults to running next particle
-        bool simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
-        bool simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
+        // when Storage class implemented, these disappear
+//        bool build_database(const gsl_rng* RNG);
+//        void set_database_filename( std::string name ) { _database_filename = name; }
+        bool process_database(const gsl_rng* RNG, const size_t verbose = 0);
+//        bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
+        // bool fetch_particle_parameters(
+        //     sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
+        //     vector<int> &serial, vector<Row> &par_mat, vector<unsigned long int> &seeds,
+        //     const bool verbose = false
+        // );
+//        bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
+
+//        bool simulate_next_particles(const int n = 1, const int serial_req = -1, const int posterior_req = -1); // defaults to running next particle
+//        bool simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
+//        bool simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
 
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
@@ -120,7 +120,7 @@ class AbcSmc {
 
     private:
         friend AbcLog;
-        
+        AbcDB _storage;
 // CORE numerical bits:
 
         // model parameter containers / transformations
@@ -136,6 +136,7 @@ class AbcSmc {
         AbcSimFun * _simulator = new AbcSimUnset();
         // uses _par_*_maps to convert from fitting space to model space
         Row _to_model_space(const Row &pars);
+        Mat2D _to_model_space(const Mat2D &pars);
         // expects _model_ space parameters
         bool _run_simulator(Row &par, Row &met, const size_t rng_seed, const size_t serial);
         // model metric containers / lookups
