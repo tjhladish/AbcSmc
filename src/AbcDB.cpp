@@ -15,19 +15,9 @@
 
 #include <AbcSmc/AbcDB.h>
 
-// need a positive int that is very unlikely
-// to be less than the number of particles
-#define STOP_TAG 10000000
-
-using std::vector;
-using std::string;
-using std::stringstream;
-using std::ofstream;
-using std::setw;
-
+using namespace std;
 using namespace sqdb;
 
-const int PREC = 5;
 const string JOB_TABLE  = "job";
 const string MET_TABLE  = "met";
 const string PAR_TABLE  = "par";
@@ -120,7 +110,7 @@ bool AbcDB::setup(
     const bool has_transforms,
     const size_t verbose
 ) {
-    if (not _db_tables_exist(db, {JOB_TABLE, PAR_TABLE, MET_TABLE})) {
+    if (not _db_tables_exist(*_db, {JOB_TABLE, PAR_TABLE, MET_TABLE})) {
         stringstream ss;
         _db->Query("BEGIN EXCLUSIVE;").Next();
 
@@ -160,14 +150,11 @@ bool AbcDB::write_parameters(
     const Mat2D &upars,
     const std::vector<size_t> &seeds,
     const size_t set_num,
+    const vector<size_t> &posterior_ranks,
     const size_t verbose
 ) {
 
     assert(_db_setup);
-
-    if (verbose > 0) {
-        std::cerr << std::setprecision(PREC);
-    }
 
      // TODO - get last serial from DB
     const size_t last_serial = 0;
@@ -179,12 +166,11 @@ bool AbcDB::write_parameters(
     for (size_t i = 0; i < pars.rows(); i++) {
         const int serial = last_serial + 1 + i;
         auto par_row = pars.row(i);
+        auto post_rank = posterior_ranks.size() == 0 ? -1 : posterior_ranks[i];
 
-        ss << "insert into " << JOB_TABLE << " values ( " << serial << ", "
-                                            << set_num << ", "
-                                            << i << ", "
-                                            << time(NULL)
-                                            << ", NULL, 'Q', -1, 0 );";
+        ss << "insert into " << JOB_TABLE << " values ( " << 
+            serial << ", " << set_num << ", " << i << ", " << time(NULL) <<
+            ", NULL, 'Q', " << post_rank << ", 0 );";
 
         _db_execute_stringstream(*_db, ss);
 
@@ -214,68 +200,22 @@ bool AbcDB::write_parameters(
     return true;
 }
 
-
-
-}
-
-Mat2D read_posterior(
-    const std::string &_posterior_database_filename,
-    const std::vector<std::string> &_model_pars
-) {
-    // TODO - handle sql/sqlite errors
-    // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
-
-    // determine dimensions of results we're going to read in
-    sqdb::Db post_db(_posterior_database_filename.c_str());
-    Statement posterior_query = post_db.Query(("select count(*) from " + JOB_TABLE + " where posterior > -1;").c_str());
-    posterior_query.Next();
-    const int posterior_size = posterior_query.GetField(0); // num of rows
-
-    int num_posterior_pars = 0; // num of cols
-    string posterior_strings = "";
-    for (auto col_name : _model_pars) {
-        ++num_posterior_pars;
-        if (posterior_strings != "") {
-            posterior_strings += ", ";
-        }
-        posterior_strings += col_name;
-    }
-
-    auto posterior = std::vector<std::vector<double>>(
-        posterior_size, // number of rows
-        std::vector<double>(num_posterior_pars)
-    );
-
-    // Identify table to pull parameter values from
-    string post_par_table = _db_tables_exist(post_db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
-    stringstream ss;
-    ss << "select " << posterior_strings << " from " << post_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial and posterior > -1;";
-    posterior_query = post_db.Query(ss.str().c_str());
-
-    int r = 0;
-    while(posterior_query.Next()) {
-        for (int c = 0; c < num_posterior_pars; ++c) {
-            posterior[r][c] = static_cast<double>(posterior_query.GetField(c));
-        }
-        ++r;
-    }
-
-    return posterior;
-}
-
-// 
-// Read in existing sets and do particle filtering as appropriate
 bool AbcDB::read_SMC_sets(
-    std::vector<std::vector<size_t>> &serials,
-    std::vector<std::vector<size_t>> &parameters,
-    std::vector<std::vector<size_t>> &metrics
+    std::vector<std::vector<int>> &serials,
+    std::vector<std::shared_ptr<Mat2D>> &parameters,
+    std::vector<std::shared_ptr<Mat2D>> &metrics,
+    const std::vector<size_t> &which_sets
 ) {
 
     assert(_db_setup);
 
     // make sure set t is a completed set
+    // TODO WHERE smcSet IN (...)
     QueryStr qstr;
-    Statement s = db.Query(("select smcSet, count(*), COUNT(case status when 'D' then 1 else null end) from " + JOB_TABLE + " group by smcSet order by smcSet;").c_str());
+    Statement s = db.Query((
+        "select smcSet, count(*), COUNT(case status when 'D' then 1 else null end) from " + 
+        JOB_TABLE + " group by smcSet order by smcSet;"
+    ).c_str());
     
     serials.clear();
     parameters.clear();
@@ -290,25 +230,18 @@ bool AbcDB::read_SMC_sets(
             cerr << "ERROR: Failed to read SMC set from database because not all particles are complete in set " << t << "\n";
             return false;
         }
-        const int json_set_size = get_smc_size_at(t);
-        if (set_size != json_set_size) {
-            cerr << "ERROR:\tSet size for one or more sets does not agree between configuration file and database:" << endl
-                 << "\tSet " << t << " in configuration file has size " << json_set_size << " vs size " << set_size << " in database." << endl;
-//                 << "\tNB: You may want to edit the configuration file to have an array of set sizes that reflect what is already in the database." << endl;
-            set_size_test_success = false;
-            break;
-            //return false;
-        }
 
-        _particle_parameters.push_back( Mat2D::Zero( completed_set_size, npar() ) );
-        _particle_metrics.push_back( Mat2D::Zero( completed_set_size, nmet() ) );
+        parameters.push_back( std::make_shared<Mat2D>(completed_set_size, npar()) );
+        metrics.push_back( std::make_shared<Mat2D>( completed_set_size, nmet() ) );
 
         // join all three tables for rows with smcSet = t, slurp and store values
-        string select_str = "select J.serial, J.particleIdx, J.posterior, " + _build_sql_select_par_string("") + ", " + _build_sql_select_met_string()
-                            + "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE + " P where J.serial = M.serial and J.serial = P.serial "
-                            + "and J.smcSet = " + to_string((long long) t) + ";";
+        string select_str = "select J.serial, J.particleIdx, J.posterior, " +
+            _build_sql_select_par_string("") + ", " + _build_sql_select_met_string() +
+            "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE +
+            " P where J.serial = M.serial and J.serial = P.serial " +
+            "and J.smcSet = " + to_string((long long) t) + ";";
 
-        serials.push_back( vector<size_t>(completed_set_size) );
+        serials.push_back( vector<int>(completed_set_size) );
 
         Statement s2 = db.Query( select_str.c_str() );
 
@@ -388,7 +321,11 @@ bool AbcDB::read_SMC_sets(
     return true;
 }
 
-string AbcSmc::_build_sql_select_par_string( string tag = "" ) {
+
+}
+
+
+string _build_sql_select_par_string( string tag = "" ) {
     stringstream ss;
     for (size_t i = 0; i<npar()-1; i++) { ss << "P." << _model_pars[i]->get_short_name() << tag << ", "; }
     ss << "P." << _model_pars.back()->get_short_name() << tag << " ";
@@ -560,4 +497,49 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
     }
 
     return db_success;
+}
+
+Mat2D read_posterior(
+    const std::string &_posterior_database_filename,
+    const std::vector<std::string> &_model_pars
+) {
+    // TODO - handle sql/sqlite errors
+    // TODO - if "posterior" database doesn't actually have posterior values, this will fail silently
+
+    // determine dimensions of results we're going to read in
+    sqdb::Db post_db(_posterior_database_filename.c_str());
+    Statement posterior_query = post_db.Query(("select count(*) from " + JOB_TABLE + " where posterior > -1;").c_str());
+    posterior_query.Next();
+    const int posterior_size = posterior_query.GetField(0); // num of rows
+
+    int num_posterior_pars = 0; // num of cols
+    string posterior_strings = "";
+    for (auto col_name : _model_pars) {
+        ++num_posterior_pars;
+        if (posterior_strings != "") {
+            posterior_strings += ", ";
+        }
+        posterior_strings += col_name;
+    }
+
+    auto posterior = std::vector<std::vector<double>>(
+        posterior_size, // number of rows
+        std::vector<double>(num_posterior_pars)
+    );
+
+    // Identify table to pull parameter values from
+    string post_par_table = _db_tables_exist(post_db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
+    stringstream ss;
+    ss << "select " << posterior_strings << " from " << post_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial and posterior > -1;";
+    posterior_query = post_db.Query(ss.str().c_str());
+
+    int r = 0;
+    while(posterior_query.Next()) {
+        for (int c = 0; c < num_posterior_pars; ++c) {
+            posterior[r][c] = static_cast<double>(posterior_query.GetField(c));
+        }
+        ++r;
+    }
+
+    return posterior;
 }

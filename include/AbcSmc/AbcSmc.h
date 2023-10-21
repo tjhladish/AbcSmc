@@ -100,7 +100,7 @@ class AbcSmc {
 //        bool build_database(const gsl_rng* RNG);
 //        void set_database_filename( std::string name ) { _database_filename = name; }
         bool process_database(const gsl_rng* RNG, const size_t verbose = 0);
-//        bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
+        bool load_SMC_sets(std::vector<std::vector<int> > &serials);
         // bool fetch_particle_parameters(
         //     sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
         //     vector<int> &serial, vector<Row> &par_mat, vector<unsigned long int> &seeds,

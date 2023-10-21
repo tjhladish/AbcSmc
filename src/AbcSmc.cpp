@@ -534,27 +534,30 @@ bool AbcSmc::process_database(
 
     // if this is the initial build
     if (build(verbose)) {
+        std::vector<size_t> posterior_ranks = {};
         // need to insert the initial job set
+        const size_t setnum = 0;
         Mat2D pars = sample_priors(
-            RNG, get_smc_size_at(0), *_posterior, _model_pars,
+            RNG, get_smc_size_at(setnum), *_posterior, _model_pars,
             posterior_ranks
         );
         Mat2D upars;
         if (true) { upars = _to_model_space(pars); }
-        
-        return insert_pars(pars, upars, verbose);
-    }
+        vector<size_t> seeds;
 
-    sqdb::Db db(_database_filename.c_str());
-    _particle_parameters.clear();
-    _particle_metrics.clear();
-    _weights.clear();
-    _predictive_prior.clear();
+        return _storage.write_parameters(pars, upars, seeds, setnum, posterior_ranks, verbose);
+    } else {
+        _particle_parameters.clear();
+        _particle_metrics.clear();
+        _weights.clear();
+        _predictive_prior.clear();
+        vector< vector<int> > serials;
+
+    }
 
     cerr << std::setprecision(PREC);
 
-    vector< vector<int> > serials;
-    if (not read_SMC_sets_from_database(db, serials)) return false; // slurp sets & do particle filtering (identify pred prior) if needed
+    if (not load_SMC_sets(serials)) return false; // slurp sets & do particle filtering (identify pred prior) if needed
     const size_t next_set = serials.size();
     assert(next_set > 0);
     const size_t last_set = next_set - 1; // this set number
@@ -645,7 +648,10 @@ bool AbcSmc::process_database(
 }
 
 // Read in existing sets and do particle filtering as appropriate
-bool AbcSmc::read_SMC_sets_from_database (sqdb::Db &db, vector< vector<int> > &serials) {
+bool AbcSmc::load_SMC_sets(vector< vector<int> > &serials) {
+    _storage.read_SMC_sets(
+        serials, _particle_parameters, _particle_metrics
+    );
     // make sure database looks intact
     if ( not _db_tables_exist(db, {JOB_TABLE, PAR_TABLE, MET_TABLE}) ) {
         cerr << "ERROR: Failed to read SMC set from database because one or more tables are missing.\n";

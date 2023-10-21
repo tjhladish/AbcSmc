@@ -39,18 +39,17 @@ class AbcDB {
             const size_t verbose = 0
         );
 
-        void read_SMC_sets(
-            std::vector<std::vector<size_t>> &serials,        // when Storage class implemented, this goes there
-
-            std::vector<Mat2D> &parameters,
-            std::vector<Mat2D> &metrics,
+        bool read_SMC_sets(
+            std::vector<std::vector<int>> &serials,
+            std::vector<std::shared_ptr<Mat2D>> &parameters,
+            std::vector<std::shared_ptr<Mat2D>> &metrics,
             const std::vector<size_t> &which_sets = {}
         );
 
-        void read_SMC_set(
-            std::vector<std::vector<size_t>> &serials,
-            std::vector<std::vector<size_t>> &parameters,
-            std::vector<std::vector<size_t>> &metrics,
+        bool read_SMC_set(
+            std::vector<std::vector<int>> &serials,
+            std::vector<std::shared_ptr<Mat2D>> &parameters,
+            std::vector<std::shared_ptr<Mat2D>> &metrics,
             const size_t set_id
         ) {
             read_SMC_sets(serials, parameters, metrics, {set_id});
@@ -70,6 +69,7 @@ class AbcDB {
             const Mat2D &upars,
             const std::vector<size_t> &seeds,
             const size_t set_num,
+            const vector<size_t> &posterior_ranks,
             const size_t verbose
         );
 
