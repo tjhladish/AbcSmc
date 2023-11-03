@@ -51,16 +51,18 @@ class AbcDB {
             std::vector<std::shared_ptr<Mat2D>> &parameters,
             std::vector<std::shared_ptr<Mat2D>> &metrics,
             const size_t set_id
-        ) {
-            read_SMC_sets(serials, parameters, metrics, {set_id});
-        };
+        );
 
         bool read_parameters(
-            std::stringstream &select_pars_ss,
-            std::stringstream &update_jobs_ss,
+            const size_t set_num,
+            std::vector<Row> &par_mat,
+            const vector<size_t> &posterior_ranks,
+            const bool verbose = false
+        );
+
+        bool read_parameters(
             std::vector<int> &serial,
             std::vector<Row> &par_mat,
-            std::vector<size_t> &seeds,
             const bool verbose = false
         );
 
@@ -73,14 +75,18 @@ class AbcDB {
             const size_t verbose
         );
 
-        std::vector<std::vector<double>> read_posterior(
+        Mat2D read_posterior(
             const std::string &posterior_name,
             const std::vector<std::string> &_model_pars
         );
 
-        bool write_metrics(
+        bool read_metrics(
             const std::vector<std::string> &update_metrics_strings,
             const std::vector<std::string> &update_jobs_strings
+        );
+
+        bool write_metrics(
+            const Mat2D &mets
         );
 
     private:

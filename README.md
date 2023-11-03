@@ -35,3 +35,20 @@ Hladish, T.J., C.A.B. Pearson, D.L. Chao, D.P. Rojas, G.L. Recchia, H. Gómez-Da
 
 ## License
 AbcSmc is licensed under GPLv3 (or later, at your discretion); see license [here](LICENSE).
+
+## SQL Schema
+
+AbcSmc uses an SQL database as the backend for simulation runs, with three
+fundamental tables: `job`, `par`, and `met`. For convenience, when models use
+distinct fitting versus model spaces, a `upar` table is also defined.
+
+All tables share a primary key `serial`.
+
+The `job` table records simulation set id, particle id within a set,
+posterior rank, and then HPC job information start time, status, and attempts.
+
+The `par` table has the seed for a run, then a field for each simulation parameter.
+The `upar` table has the same fields, but the values correspond to the transformed
+ones.
+
+The `met` table has a field for each metric.

@@ -82,14 +82,14 @@ bool _db_tables_exist(
     return tables_exist;
 }
 
-string _build_sql_create_par_string(const ABC::ParameterVec &pars) {
+string _create_par(const ABC::ParameterVec &pars) {
     stringstream ss;
     for (auto par : pars) { ss << par->get_short_name() << " real, "; }
     // TODO delete the ss last two chars
     return ss.str();
 }
 
-string _build_sql_create_met_string(const ABC::MetricVec &mets) {
+string _create_met(const ABC::MetricVec &mets) {
     stringstream ss;
     for (auto met : mets) { ss << met->get_short_name() << " real, "; }
     // TODO delete the ss last two chars
@@ -98,12 +98,31 @@ string _build_sql_create_met_string(const ABC::MetricVec &mets) {
 
 namespace ABC {
 
+bool AbcDB::read_SMC_sets(
+    std::vector<std::vector<int>> &serials,
+    std::vector<std::shared_ptr<Mat2D>> &parameters,
+    std::vector<std::shared_ptr<Mat2D>> &metrics,
+    const std::vector<size_t> &which_sets = {}
+) {
+
+    return true;
+}
+
+bool AbcDB::read_SMC_set(
+    std::vector<std::vector<int>> &serials,
+    std::vector<std::shared_ptr<Mat2D>> &parameters,
+    std::vector<std::shared_ptr<Mat2D>> &metrics,
+    const size_t set_id
+) {
+    return read_SMC_sets(serials, parameters, metrics, { set_id });
+};
+
 AbcDB::AbcDB(const std::string & path) : 
     _db_name(path), _db(new Db(_db_name.c_str())) {
     _file_exists = std::filesystem::exists(_db_name);
     _db_setup = _file_exists && _db_tables_exist(*_db, {JOB_TABLE, PAR_TABLE, MET_TABLE});
 };
-    
+
 bool AbcDB::setup(
     const ParameterVec &pars,
     const MetricVec &mets,
@@ -122,14 +141,14 @@ bool AbcDB::setup(
 
         ss << "create table " << PAR_TABLE <<
             " ( serial int primary key, seed blob, " <<
-            _build_sql_create_par_string(pars) << ");";
+            _create_par(pars) << ");";
 
         _db_execute_stringstream(*_db, ss);
 
         if (has_transforms) {
             ss << "create table " << UPAR_TABLE <<
                 " ( serial int primary key, seed blob, " <<
-                _build_sql_create_par_string(pars) << ");";
+                _create_par(pars) << ");";
             
             _db_execute_stringstream(*_db, ss);
         }
@@ -212,6 +231,18 @@ bool AbcDB::read_SMC_sets(
     // make sure set t is a completed set
     // TODO WHERE smcSet IN (...)
     QueryStr qstr;
+    Statement introspect = db.Query("SELECT sql FROM sqlite_master WHERE tbl_name == 'par';");
+    introspect.Next();
+    string pardef = introspect.GetField(0);
+    // count the number of commas in pardef - 1
+    const size_t npar = 0;
+
+    introspect = db.Query("SELECT sql FROM sqlite_master WHERE tbl_name == 'met';");
+    introspect.Next();
+    string metdef = introspect.GetField(0);
+    // count number of commas in metdef
+    const size_t nmet = 0;
+
     Statement s = db.Query((
         "select smcSet, count(*), COUNT(case status when 'D' then 1 else null end) from " + 
         JOB_TABLE + " group by smcSet order by smcSet;"
@@ -231,19 +262,33 @@ bool AbcDB::read_SMC_sets(
             return false;
         }
 
-        parameters.push_back( std::make_shared<Mat2D>(completed_set_size, npar()) );
-        metrics.push_back( std::make_shared<Mat2D>( completed_set_size, nmet() ) );
-
-        // join all three tables for rows with smcSet = t, slurp and store values
-        string select_str = "select J.serial, J.particleIdx, J.posterior, " +
-            _build_sql_select_par_string("") + ", " + _build_sql_select_met_string() +
-            "from " + JOB_TABLE + " J, " + MET_TABLE + " M, " + PAR_TABLE +
-            " P where J.serial = M.serial and J.serial = P.serial " +
-            "and J.smcSet = " + to_string((long long) t) + ";";
-
         serials.push_back( vector<int>(completed_set_size) );
+        parameters.push_back( std::make_shared<Mat2D>(completed_set_size, npar) );
+        metrics.push_back( std::make_shared<Mat2D>( completed_set_size, nmet) );
+    }
 
-        Statement s2 = db.Query( select_str.c_str() );
+    for (size_t set_idx = 0; set_idx < which_sets.size(); set_idx++) {
+        const auto smcSet = which_sets[set_idx];
+        // join all three tables for rows with smcSet = t, slurp and store values
+        string select_str = "select J.particleIdx, J.posterior, " +
+            _build_sql_select_par_string("") + ", " + _build_sql_select_met_string() +
+            "from " + JOB_TABLE + " J JOIN " + MET_TABLE + " M USING(serial) JOIN " + PAR_TABLE +
+            " P USING (serial) and J.smcSet = " + to_string((long long) smcSet) + ";";
+
+        Statement setquery = db.Query( select_str.c_str() );
+        size_t particle_idx = 0;
+        while (setquery.Next()) {
+            size_t check_p_idx = setquery.GetField(1);
+            assert(particle_idx == check_p_idx);
+            const int posterior_rank = setquery.GetField(2);
+            serials[set_idx][particle_idx] = setquery.GetField(0);
+            particle_idx++;
+        }
+    }
+
+
+
+        
 
         int particle_counter = 0;
         vector<std::pair<int, int> > posterior_pairs;
@@ -367,7 +412,7 @@ bool AbcSmc::build_database(
 
         ss << "create table " << MET_TABLE << " ( serial int primary key, " << _build_sql_create_met_string("") << ");";
         _db_execute_stringstream(db, ss);
-        db.CommitTransaction();
+        db->CommitTransaction();
     } else {
         return false;
     }
