@@ -8,7 +8,7 @@
 #include <vector>
 
 #include <AbcSmc/AbcUtil.h>
-#include <AbcSmc/AbcDB.h>
+#include <AbcSmc/AbcDB.h> // provides AbcDB object
 #include <AbcSmc/AbcSim.h>
 #include <PLS/types.h>
 #include <AbcSmc/Parameter.h>
@@ -108,9 +108,26 @@ class AbcSmc {
         // );
 //        bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
 
-//        bool simulate_next_particles(const int n = 1, const int serial_req = -1, const int posterior_req = -1); // defaults to running next particle
-//        bool simulate_particle_by_serial(const int serial_req) { return simulate_next_particles(1, serial_req, -1); }
-//        bool simulate_particle_by_posterior_idx(const int posterior_req) { return simulate_next_particles(1, -1, posterior_req); }
+        // Run available particles
+        //
+        // @param n: the maximum number of particles to run; if negative, run all available work
+        // @param keep_going: if true, keep running if a particle fails
+        // @param bulk: if true, run all particles before writing to storage
+        // @param verbose: level of verbosity to use
+        bool simulate(
+            const int n = 1,
+            const bool keep_going = false, const bool bulk = false, const size_t verbose = 0
+        );
+        
+        bool simulate_serials(
+            const std::vector<int> &serial_ids,
+            const bool keep_going = false, const bool bulk = false, const size_t verbose = 0
+        );
+
+        bool simulate_posterior(
+            const std::vector<size_t> &posterior_ids = {}, const int smc_set = -1,
+            const bool keep_going = false, const bool bulk = false, const size_t verbose = 0
+        );
 
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
@@ -120,7 +137,7 @@ class AbcSmc {
 
     private:
         friend AbcLog;
-        AbcDB _storage;
+        std::unique_ptr<AbcDB> _storage;
 // CORE numerical bits:
 
         // model parameter containers / transformations
@@ -132,8 +149,17 @@ class AbcSmc {
         // otherwise, empty
         std::unique_ptr<const Mat2D> _posterior;
         
-        // the model itself; defaults to unset
+        // the model itself + internal execution; defaults to unset
         AbcSimFun * _simulator = new AbcSimUnset();
+        bool _do_work(
+            const Mat2D &pars,
+            const Coli &serials,
+            const Colsz &seeds,
+            const bool keep_going,
+            const bool bulk,
+            const size_t verbose
+        );
+
         // uses _par_*_maps to convert from fitting space to model space
         Row _to_model_space(const Row &pars);
         Mat2D _to_model_space(const Mat2D &pars);
@@ -144,7 +170,6 @@ class AbcSmc {
         const std::unique_ptr<Row> _met_vals;
 
         bool _retain_posterior_rank;
-
 
 // SMC / ABC / PLS management:
 
@@ -170,19 +195,6 @@ class AbcSmc {
         std::vector<std::shared_ptr<Row>> _doubled_variance;
 
         void calculate_predictive_prior_weights( const size_t set_num );
-
-// interactions with storage:
-
-        // TODO: replace this with storage object
-        std::string _database_filename;
-
-        string _build_sql_select_par_string(string tag);
-        string _build_sql_select_met_string();
-        string _build_sql_create_par_string(string tag);
-        string _build_sql_create_met_string(string tag);
-
-        bool _db_execute_stringstream(sqdb::Db &db, stringstream &ss);
-        bool _db_execute_strings(sqdb::Db &db, std::vector<std::string> &update_buffer);
 
 // mpi cruft
         MPI_par *_mp;

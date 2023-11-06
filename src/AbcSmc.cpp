@@ -969,79 +969,100 @@ bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metric
 
 bool AbcSmc::simulate_next_particles(
     const int n, const int serial_req, const int posterior_req
-) { // defaults are 1, -1, -1
-    bool verbose = n == 1;
-    assert(n == 1 or (serial_req == -1 and posterior_req == -1));
-    assert(serial_req == -1 or posterior_req == -1);
-//bool AbcSmc::simulate_database(const int smc_set, const int particle_id) {
-    sqdb::Db db(_database_filename.c_str());
-    string model_par_table = _db_tables_exist(db, {UPAR_TABLE}) ? UPAR_TABLE : PAR_TABLE;
-    vector<Row> par_mat;  //( n, Row(npar()) ); -- expected size, if n rows are available
-    vector<Row> met_mat;  //( n, Row(nmet()) );
+) {
+    return false;
+}
 
-    stringstream select_ss;
-    string limit = n == -1 ? "" : "limit " + to_string(n);
-    select_ss << "select J.serial, P.seed, " << _build_sql_select_par_string("");
-    select_ss << "from " << model_par_table << " P, " << JOB_TABLE << " J where P.serial = J.serial ";
-    // Do already running jobs as well, if there are not enough queued jobs
-    // This is because we are seeing jobs fail/time out for extrinsic reasons on the stuporcomputer
-    if (serial_req > -1) {
-        select_ss << "and J.serial = " << serial_req << ";";
-    } else if (posterior_req > -1) {
-        select_ss << "and smcSet = (select max(smcSet) from job where posterior > -1) and posterior = " << posterior_req << ";";
-    } else {
-        select_ss << "and (J.status = 'Q' or J.status = 'R') order by J.status, J.attempts " << limit << ";";
-    }
-    //  line below is much faster for very large dbs, but not all particles will get run e.g. if some particles are killed by scheduler
-    //  select_ss << "and J.status = 'Q' limit " << n << ";";
-
-    const size_t overall_start_time = duration_cast<seconds>(high_resolution_clock::now().time_since_epoch()).count();
-    // build jobs update statement to indicate job is running
-    stringstream update_ss;
-    update_ss << "update " << JOB_TABLE << " set startTime = " << overall_start_time << ", status = 'R', attempts = attempts + 1 where serial = "; // we don't know the serial yet
-
-    vector<int> serials;
-    vector<unsigned long int> rng_seeds;
-    bool ok_to_continue = fetch_particle_parameters(db, select_ss, update_ss, serials, par_mat, rng_seeds, verbose);
-    vector<string> update_metrics_strings;
-    vector<string> update_jobs_strings;
-    stringstream ss;
-    if (ok_to_continue) {
-        for (size_t i = 0; i < par_mat.size(); ++i) {
-            const high_resolution_clock::time_point start_time = high_resolution_clock::now();
-            const int serial = serials[i];
-            met_mat.push_back( Row(nmet()) );
-// TODO this is the critical step in this function - the rest is managing accounting steps / storage
-            bool success = _run_simulator(par_mat[i], met_mat[i], rng_seeds[i], serial);
-// END critical step
-            if (not success) exit(-211);
-
-            stringstream ss;
-            ss << "update " << MET_TABLE << " set ";
-            for (size_t j = 0; j < nmet()-1; j++) { ss << _model_mets[j]->get_short_name() << "=" << met_mat[i][j] << ", "; }
-            ss << _model_mets.back()->get_short_name() << "=" << met_mat[i].rightCols(1) << " ";
-            // only update metrics if job status is still 'R' or 'Q' or has been paused ('P')
-            ss << "where serial = " << serial << " and (select (status is 'R' or status is 'Q' or status is 'P') from " << JOB_TABLE << " J where J.serial=" << serial << ");";
-            update_metrics_strings.push_back(ss.str());
-            ss.str(string()); ss.clear();
-
-            const size_t time_since_unix_epoch = duration_cast<seconds>(start_time.time_since_epoch()).count();
-            const duration<double> time_span = duration_cast<duration<double>>(high_resolution_clock::now() - start_time); // duration in seconds
-            // build jobs update statement to indicate job is running
-            ss << "update " << JOB_TABLE << " set startTime = " << time_since_unix_epoch << ", duration = " << time_span.count()
-               << ", status = 'D' where serial = " << serial << " and (status = 'R' or status = 'Q' or status = 'P');";
-            update_jobs_strings.push_back(ss.str());
-            ss.str(string()); ss.clear();
+bool AbcSmc::_do_work(
+    const Mat2D &pars,
+    const Coli &serials,
+    const Colsz &seeds,
+    const bool keep_going,
+    const bool bulk,
+    const size_t verbose
+) {
+    for (auto par_idx = 0; par_idx < pars.rows(); par_idx++) {
+        const int serial = serials[par_idx];
+        const size_t seed = seeds[par_idx];
+        Row pars = pars.row(par_idx);
+        Row mets;
+        const size_t start_time = duration_cast<seconds>(high_resolution_clock::now().time_since_epoch()).count();
+        bool success = _run_simulator(pars, mets, seed, serial);
+        if (success) {
+            _storage->put_work(mets, serial, start_time);
+        } else if (not keep_going) {
+            exit(-211);
         }
-        update_particle_metrics(db, update_metrics_strings, update_jobs_strings);
-    } else {
-        cerr << "Parameter selection from database failed.\n";
+    }
+
+}
+
+bool AbcSmc::simulate(
+    const int n,
+    const bool keep_going,
+    const bool bulk, // TODO: allow bulk writes for fast simulations?
+    const size_t verbose
+) {
+    Mat2D pars;
+    Coli serials;
+    Colsz seeds;
+
+    if (_storage->get_work(pars, seeds, serials, n)) {
+        return _do_work(pars, serials, seeds, keep_going, bulk, verbose);
+    } else { // read error fetching work
+        // TODO verbosity? or leave that to storage method?
+        return false;
     }
 
     return true;
 }
 
-void AbcSmc::calculate_predictive_prior_weights(const size_t set_num) {
+bool AbcSmc::simulate_serials(
+    const vector<int> &serials,
+    const bool keep_going,
+    const bool bulk, // TODO: allow bulk writes for fast simulations?
+    const size_t verbose
+) { 
+    Mat2D pars;
+    Coli sercol = Coli(sercol.size());
+    for (auto serial_idx = 0; serial_idx < serials.size(); serial_idx++) {
+        sercol[serial_idx] = serials[serial_idx];
+    }
+    Colsz seeds;
+
+    if (_storage->get_work(pars, seeds, sercol)) {
+        return _do_work(pars, sercol, seeds, keep_going, bulk, verbose);
+    } else { // read error fetching work
+        // TODO verbosity? or leave that to storage method?
+        return false;
+    }
+
+    return true;
+}
+
+bool AbcSmc::simulate_posterior(
+    const vector<size_t> &posterior,
+    const int smc_set,
+    const bool keep_going,
+    const bool bulk, // TODO: allow bulk writes for fast simulations?
+    const size_t verbose
+) { 
+    Coli sercol;
+    _storage->get_posterior_serials(posterior, sercol, smc_set);
+
+    if (_storage->get_work(pars, seeds, sercol)) {
+        return _do_work(pars, sercol, seeds, keep_going, bulk, verbose);
+    } else { // read error fetching work
+        // TODO verbosity? or leave that to storage method?
+        return false;
+    }
+
+    return true;
+}
+
+void AbcSmc::calculate_predictive_prior_weights(
+    const size_t set_num
+) {
     assert(_doubled_variance.size() == set_num); // current length of doubled variance == index of previous set
 
     auto setview = (_particle_parameters[set_num])->operator()(_predictive_prior[set_num], Eigen::placeholders::all);
