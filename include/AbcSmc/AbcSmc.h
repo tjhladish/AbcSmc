@@ -88,17 +88,27 @@ class AbcSmc {
         // when Config class implemented, this goes there and yields a new AbcSmc
         bool parse_config(const std::string &conf_filename);
 
+        // Build the underlying storage
+        //
         // @param verbose the verbosity level
         //
         // @return true if the storage is built *by this call*;
         // false if already built OR if there is an error
-        bool build(
-            const size_t verbose
-        );
+        bool build(const size_t verbose = 0);
+
+        // Process the underlying storage
+        //
+        // @param RNG the random number generator to use
+        // @param verbose the verbosity level
+        //
+        // @return true if the storage is processed *by this call*;
+        // false if already processed OR if there is an error
+        bool process(const gsl_rng* RNG, const size_t verbose = 0);
 
         // when Storage class implemented, these disappear
 //        bool build_database(const gsl_rng* RNG);
 //        void set_database_filename( std::string name ) { _database_filename = name; }
+        [[deprecated("use build(...) to construct db initially, then process(...) to do ABC-SMC step")]]
         bool process_database(const gsl_rng* RNG, const size_t verbose = 0);
         bool load_SMC_sets(std::vector<std::vector<int> > &serials);
         // bool fetch_particle_parameters(

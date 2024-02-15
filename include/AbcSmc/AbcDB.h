@@ -52,12 +52,23 @@ class AbcDB {
             const size_t verbose = 0
         );
 
-        // @param pars: vector of parameter *values*; must be in the same order as the parameters used in setup
-        // @param seeds: the associated seeds; assert length(pars) == length(seeds)
+        // Creates a new SMC set in the storage container.
+        //
+        // All matrix rows correspond to a single parameter set; the vectors
+        // are also of length == rows. The matrix columns must be in the same orders
+        // as the parameters used in setup.
+        //
+        // @param pars: matrix of parameter *values*
+        // @param seeds: the associated seeds; assert pars.rows() == seeds.size()
+        // @param set_num: the set number to use; if -1, use the next available
+        // @param upars: matrix of model space parameter *values*; assert: empty OR same shape as pars
         // @param verbose: level of verbosity to use
         bool create_SMC_set(
             const std::shared_ptr<Mat2D> &pars,
             const std::vector<size_t> &seeds,
+            const std::vector<int> &posterior_ranks = {},
+            const std::shared_ptr<Mat2D> &upars = nullptr,
+            const int set_num = -1,
             const size_t verbose = 0
         );
 
@@ -87,6 +98,14 @@ class AbcDB {
             const std::shared_ptr<Mat2D> &mets,
             const std::vector<size_t> &serials,
             const size_t verbose = 0
+        );
+
+        // 
+        // 
+        // @param n: if n < 0, get all available; otherwise get at most n serials
+        bool get_available_serials(
+            Coli &serials,
+            const int n = -1
         );
 
         bool get_posterior_serials(

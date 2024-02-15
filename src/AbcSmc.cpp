@@ -545,7 +545,7 @@ bool AbcSmc::process_database(
         if (true) { upars = _to_model_space(pars); }
         vector<size_t> seeds;
 
-        return _storage.write_parameters(pars, upars, seeds, setnum, posterior_ranks, verbose);
+        return _storage.create_SMC_set(pars, seeds, posterior_ranks, verbose);
     } else {
         _particle_parameters.clear();
         _particle_metrics.clear();
@@ -876,97 +876,6 @@ bool AbcSmc::build(
 
 }
 
-
-bool AbcSmc::fetch_particle_parameters(
-    sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
-    vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds,
-    const bool verbose
-) {
-    bool db_success = false;
-    try {
-        if (verbose) {
-            std::cerr << "Attempting: " << select_pars_ss.str() << std::endl;
-        }
-        db.Query("BEGIN EXCLUSIVE;").Next();
-        cerr << "Lock obtained" << endl;
-        Statement s = db.Query(select_pars_ss.str().c_str());
-        vector<string> job_strs;
-
-        while (s.Next()) { // grap par vals and find out which jobs need to be updated (changed to running (R), incremented attempts, updated timestamp)
-            Row pars(npar());
-            const int serial = (int) s.GetField(0);
-            serials.push_back( serial );
-            const unsigned long int seed = (unsigned long int) s.GetField(1);
-            rng_seeds.push_back(seed);
-            const int field_offset = 2;
-            for (size_t i = 0; i < npar(); i++) pars[i] = (double) s.GetField(i+field_offset);
-            par_mat.push_back(pars);
-
-            //job_ss << serial << ";";
-            string job_str = update_jobs_ss.str() + to_string((long long) serial) + ";";
-            job_strs.push_back(job_str);
-        }
-
-        for (string job_str: job_strs) {
-            if (verbose) {
-                std::cerr << "Attempting: " << job_str << std::endl;
-            }
-            db.Query(job_str.c_str()).Next(); // update jobs table
-        }
-
-        db.CommitTransaction();
-        db_success = true;
-    } catch (const Exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed while fetching particle parameters" << endl;
-    } catch (const exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed while fetching particle parameters" << endl;
-    }
-
-    return db_success;
-}
-
-
-bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings) {
-    bool db_success = false;
-
-    try {
-        db.Query("BEGIN EXCLUSIVE;").Next();
-        for (size_t i = 0; i < update_metrics_strings.size(); ++i) {
-            db.Query(update_metrics_strings[i].c_str()).Next(); // update metrics table
-            db.Query(update_jobs_strings[i].c_str()).Next(); // update jobs table
-        }
-
-        db_success = true;
-        db.CommitTransaction();
-    } catch (const Exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed while updating metrics:" << endl;
-        for (size_t i = 0; i < update_metrics_strings.size(); ++i) {
-            cerr << update_metrics_strings[i] << endl;
-            cerr << update_jobs_strings[i] << endl;
-        }
-    } catch (const exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed while updating metrics:" << endl;
-        for (size_t i = 0; i < update_metrics_strings.size(); ++i) {
-            cerr << update_metrics_strings[i] << endl;
-            cerr << update_jobs_strings[i] << endl;
-        }
-    }
-
-    return db_success;
-}
-
 bool AbcSmc::simulate_next_particles(
     const int n, const int serial_req, const int posterior_req
 ) {
@@ -1009,12 +918,9 @@ bool AbcSmc::simulate(
 
     if (_storage->get_work(pars, seeds, serials, n)) {
         return _do_work(pars, serials, seeds, keep_going, bulk, verbose);
-    } else { // read error fetching work
-        // TODO verbosity? or leave that to storage method?
-        return false;
     }
 
-    return true;
+    return false;
 }
 
 bool AbcSmc::simulate_serials(
