@@ -388,7 +388,10 @@ bool AbcSmc::parse_config(const string &conf_filename) {
     // TODO find a way to size_t this?
     for (unsigned int parIdx = 0; parIdx < model_par.size(); ++parIdx)  {// Build name lookup
         const string name = model_par[parIdx]["name"].asString();
-        assert(par_name_idx.count(name) == 0);
+        if (par_name_idx.count(name) != 0) {
+            std::cerr << "Error: parameter name " << name << " is not unique: aborting." << std::endl;
+            exit(-202);
+        };
         par_name_idx.emplace(name, parIdx);
     }
 

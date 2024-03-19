@@ -12,6 +12,9 @@ build-static: .FORCE
 build-debug: .FORCE
 	mkdir -p $@ && cd $@ && cmake .. -DBUILD_SHARED_LIBS=NO -DCMAKE_BUILD_TYPE=Debug && cmake --build .
 
+install-exec: .FORCE
+	cd build && make && sudo cmake --install .
+
 clean: .FORCE
 	git clean -ifdx -e .vscode
 

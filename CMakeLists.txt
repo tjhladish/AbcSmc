@@ -44,9 +44,18 @@ target_link_libraries(abc PLS::PLS sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE
 # look in these directories for header files, also make them available to other projects that link to abc
 target_include_directories(abc PUBLIC include src lib)
 
+add_executable(abc-bin src/main.cpp)
+target_link_libraries(abc-bin abc)
+set_target_properties(abc-bin PROPERTIES OUTPUT_NAME abc)
+
+install(TARGETS abc-bin
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
 add_subdirectory(examples)
 
 install(TARGETS abc
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  INCLUDES DESTINATION include
 )
