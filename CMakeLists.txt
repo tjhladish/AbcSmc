@@ -32,29 +32,27 @@ add_subdirectory(lib/sqdb ${CMAKE_BINARY_DIR}/sqdb)
 add_library(jsoncpp STATIC lib/jsoncpp/src/lib_json/json_reader.cpp lib/jsoncpp/src/lib_json/json_value.cpp lib/jsoncpp/src/lib_json/json_writer.cpp)
 target_include_directories(jsoncpp PUBLIC lib/jsoncpp/include lib/jsoncpp/src/lib_json)
 
-add_library(abc STATIC
+add_library(abcsmc STATIC
     $<TARGET_OBJECTS:CCRC32> $<TARGET_OBJECTS:sqdb> $<TARGET_OBJECTS:sqlite3>
     src/AbcLog.cpp src/AbcMPI.cpp src/AbcSmc.cpp src/AbcUtil.cpp
 )
 
 find_package(GSL REQUIRED) # the abc library objects depend on the GSL library
-target_link_libraries(abc PLS::PLS sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE_DL_LIBS})
+target_link_libraries(abcsmc PLS::PLS sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE_DL_LIBS})
 # the abc library objects depend on pls, sqdb, jsoncpp, m (aka math.h), GSL, and dl (aka dl.h) libraries
 
 # look in these directories for header files, also make them available to other projects that link to abc
-target_include_directories(abc PUBLIC include src lib)
+target_include_directories(abcsmc PUBLIC include src lib)
 
 add_executable(abc-bin src/main.cpp)
-target_link_libraries(abc-bin abc)
+target_link_libraries(abc-bin abcsmc)
 set_target_properties(abc-bin PROPERTIES OUTPUT_NAME abc)
 
 install(TARGETS abc-bin
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-add_subdirectory(examples)
-
-install(TARGETS abc
+install(TARGETS abcsmc
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES DESTINATION include
