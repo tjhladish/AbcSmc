@@ -101,11 +101,6 @@ class AbcSmc {
         bool process_database(const gsl_rng* RNG, const bool verbose = false);
         bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
-        bool fetch_particle_parameters(
-            sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
-            vector<int> &serial, vector<Row> &par_mat, vector<unsigned long int> &seeds,
-            const bool verbose = false
-        );
         bool update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings);
 
         bool simulate_next_particles(const int n = 1, const int serial_req = -1, const int posterior_req = -1); // defaults to running next particle
@@ -115,8 +110,21 @@ class AbcSmc {
         size_t npar() { return _model_pars.size(); }
         size_t nmet() { return _model_mets.size(); }
 
-        std::vector<std::shared_ptr<Mat2D>> get_particle_parameters() { return _particle_parameters; }
-        std::vector<std::shared_ptr<Mat2D>> get_particle_metrics()    { return _particle_metrics; }
+        // Get the parameters for a particle by serial number
+        // @param serial the serial number of the particle
+        std::vector<double> get_particle_parameters(const size_t serial);
+
+        // Get the metrics for a particle by serial number
+        // @param serial the serial number of the particle
+        std::vector<double> get_particle_metrics(const size_t serial);
+
+        // Get the parameters for an entire SMC set
+        // @param smc_set_num the index of the SMC set; if negative (the default), returns the last complete set
+        std::vector<std::vector<double>> get_particle_parameters_set(const int smc_set_num = -1);
+
+        // Get the parameters for an entire SMC set
+        // @param smc_set_num the index of the SMC set; if negative (the default), returns the last complete set
+        std::vector<std::vector<double>> get_particle_metrics_set(const int smc_set_num = -1);
 
     private:
         friend AbcLog;
@@ -171,6 +179,35 @@ class AbcSmc {
         void calculate_predictive_prior_weights( const size_t set_num );
 
 // interactions with storage:
+
+        bool _checkout_particle_parameters(
+            sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
+            vector<int> &serial, vector<Row> &par_mat, vector<unsigned long int> &seeds,
+            const bool verbose = false
+        );
+
+        // Get parameters from the database
+        // TODO: this should be via the storage object
+        // @param serial the serial number(s) of the particle(s)
+        // @param met_mat the vector of rows to store the metrics in
+        // @param verbose whether to print debug information
+        bool _fetch_particle_parameters(
+            const vector<int> &serial,
+            vector<Row> &par_mat,
+            const bool verbose = false
+        );
+
+        // Get metrics from the database
+        // TODO: this should be via the storage object
+        // @param serial the serial number(s) of the particle(s)
+        // @param met_mat the vector of rows to store the metrics in
+        // @param verbose whether to print debug information
+        bool _fetch_particle_metrics(
+            const vector<size_t> &serial,
+            vector<Row> &met_mat,
+            const bool verbose = false
+        );
+
 
         // TODO: replace this with storage object
         std::string _database_filename;

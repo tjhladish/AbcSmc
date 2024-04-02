@@ -38,6 +38,28 @@ const string MET_TABLE  = "met";
 const string PAR_TABLE  = "par";
 const string UPAR_TABLE = "upar";
 
+#define CATCH_SQDB_EXCEPTION(DB, MSG, EXIT) catch (const Exception &e) { \
+  DB.RollbackTransaction(); \
+  std::cerr << "CAUGHT E: " << e.GetErrorMsg() << std::endl; \
+  std::cerr << MSG << std::endl; \
+  if (EXIT != 0) exit(EXIT); \
+}
+
+// n.b. catch all exception exit always offset from SQDB exception exit by 1
+#define CATCH_GEN_EXCEPTION(DB, MSG, EXIT) catch (const exception &e) { \
+  DB.RollbackTransaction(); \
+  std::cerr << "CAUGHT e: " << e.what() << std::endl; \
+  std::cerr << MSG << std::endl; \
+  if (EXIT != 0) exit(EXIT-1); \
+}
+
+// DB should be an SQDB object
+// BLOCK should be of form `{ ... }`
+// MSG must fit within std::cerr << MSG << std::endl;
+#define SQL_TRY_BLOCK(DB, BLOCK, MSG, EXIT) try BLOCK CATCH_SQDB_EXCEPTION(DB, MSG, EXIT) CATCH_GEN_EXCEPTION(DB, MSG, EXIT)
+
+#define VERBOSE_MSG(MSG) if (verbose) std::cerr << MSG << std::endl;
+
 bool file_exists(const char *fileName) {
     std::ifstream infile(fileName);
     return infile.good();
@@ -298,10 +320,9 @@ bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
     // db transaction was successful.  A failed transaction will throw
     // an exception and exit.
     bool tables_exist = true;
-    try {
+    SQL_TRY_BLOCK(db, {
         for(string table_name: table_names) {
             string query_str = "select count(*) from sqlite_master where type='table' and name='" + table_name + "';";
-            //cerr << "Attempting: " << query_str << endl;
             Statement s = db.Query( query_str.c_str() );
             s.Next();
             const int count = s.GetField(0);
@@ -310,21 +331,7 @@ bool _db_tables_exist(sqdb::Db &db, vector<string> table_names) {
                 tables_exist = false;
             }
         }
-    } catch (const Exception &e) {
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed while checking whether the following tables exist:";
-        for(string table_name: table_names) cerr << " " << table_name;
-        cerr << endl;
-        exit(-212);
-    } catch (const exception &e) {
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed while checking whether the following tables exist:";
-        for(string table_name: table_names) cerr << " " << table_name;
-        cerr << endl;
-        exit(-213);
-    }
+    }, "Failed while checking whether the following tables exist:"; for (string table_name: table_names) std::cerr << " " << table_name; std::cerr << ";", -212)    
     return tables_exist;
 }
 
@@ -560,7 +567,7 @@ bool AbcSmc::process_database(
                     L
                 );
                 gsl_matrix_free(L);
-                if (verbose) std::cerr << "Populating next set using MULTIVARIATE noising of parameters." << std::endl;
+                VERBOSE_MSG("Populating next set using MULTIVARIATE noising of parameters.")
                 break;
             }
             case NOISE::INDEPENDENT: {
@@ -571,7 +578,7 @@ bool AbcSmc::process_database(
                     _model_pars,
                     *(_doubled_variance[next_set-1])
                 );
-                if (verbose) std::cerr << "Populating next set using INDEPENDENT noising of parameters." << std::endl;
+                VERBOSE_MSG("Populating next set using INDEPENDENT noising of parameters.");
                 break;
             }
             default: std::cerr << "Unknown noise type.  Aborting." << std::endl; exit(-1);
@@ -784,26 +791,14 @@ string AbcSmc::_build_sql_select_met_string() {
 
 bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
     bool db_success = false;
-    try {
+    SQL_TRY_BLOCK(db, {
         db.Query("BEGIN EXCLUSIVE;").Next();
         for (size_t i = 0; i < update_buffer.size(); ++i) {
             db.Query(update_buffer[i].c_str()).Next();
         }
-        db_success = true;
         db.CommitTransaction();
-    } catch (const Exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed query:" << endl;
-        for (size_t i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
-    } catch (const exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed query:" << endl;
-        for (size_t i = 0; i < update_buffer.size(); ++i) cerr << update_buffer[i] << endl;
-    }
+        db_success = true;
+    }, "Failed query:" << std::endl; for (size_t i = 0; i < update_buffer.size(); ++i) std::cerr << update_buffer[i] << endl; std::cerr << ";", 0)
     return db_success;
 }
 
@@ -811,19 +806,9 @@ bool AbcSmc::_db_execute_strings(sqdb::Db &db, vector<string> &update_buffer) {
 bool AbcSmc::_db_execute_stringstream(sqdb::Db &db, stringstream &ss) {
     // We don't need BEGIN EXCLUSIVE here because the calling function has already done it
     bool db_success = false;
-    try {
+    SQL_TRY_BLOCK(db, {
         db_success = db.Query(ss.str().c_str()).Next();
-    } catch (const Exception &e) {
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed query:" << endl;
-        cerr << ss.str() << endl;
-    } catch (const exception &e) {
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed query:" << endl;
-        cerr << ss.str() << endl;
-    }
+    }, "Failed query:" << std::endl; std::cerr << ss.str(), 0)
     ss.str(string());
     ss.clear();
     return db_success;
@@ -896,18 +881,16 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
 }
 
 
-bool AbcSmc::fetch_particle_parameters(
+bool AbcSmc::_checkout_particle_parameters(
     sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
     vector<int> &serials, vector<Row> &par_mat, vector<unsigned long int> &rng_seeds,
     const bool verbose
 ) {
     bool db_success = false;
-    try {
-        if (verbose) {
-            std::cerr << "Attempting: " << select_pars_ss.str() << std::endl;
-        }
+    SQL_TRY_BLOCK(db, {
+        VERBOSE_MSG("Attempting: " << select_pars_ss.str())
         db.Query("BEGIN EXCLUSIVE;").Next();
-        cerr << "Lock obtained" << endl;
+        VERBOSE_MSG("Lock obtained");
         Statement s = db.Query(select_pars_ss.str().c_str());
         vector<string> job_strs;
 
@@ -927,25 +910,97 @@ bool AbcSmc::fetch_particle_parameters(
         }
 
         for (string job_str: job_strs) {
-            if (verbose) {
-                std::cerr << "Attempting: " << job_str << std::endl;
-            }
+            VERBOSE_MSG("Attempting: " << job_str)
             db.Query(job_str.c_str()).Next(); // update jobs table
         }
 
         db.CommitTransaction();
         db_success = true;
-    } catch (const Exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed while fetching particle parameters" << endl;
-    } catch (const exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed while fetching particle parameters" << endl;
+    }, "Failed while fetching particle parameters", 0)
+
+    if (not db_success) { db.RollbackTransaction(); }
+
+    return db_success;
+}
+
+bool AbcSmc::_fetch_particle_parameters(
+    const vector<int> &serials,
+    vector<Row> &par_mat,
+    const bool verbose
+) {
+
+    sqdb::Db db(_database_filename.c_str());
+    stringstream select_pars_ss;
+
+    select_pars_ss << "SELECT * FROM " << PAR_TABLE << " WHERE ";
+    if (serials.size() > 1) {
+        select_pars_ss << "serial IN (" << serials[0];
+        for (size_t i = 1; i < serials.size(); i++) select_pars_ss << ", " << serials[i];
+        select_pars_ss << ");";
+    } else {
+        select_pars_ss << "serial == " << serials[0] << ";";
     }
+
+    bool db_success = false;
+    SQL_TRY_BLOCK(db, {
+        VERBOSE_MSG("Attempting: " << select_pars_ss.str())
+        db.BeginTransaction();
+        Statement s = db.Query(select_pars_ss.str().c_str());
+ 
+        while (s.Next()) {
+            Row pars(npar());
+            const int field_offset = 2; // fields 1 & 2 are always serial, seed
+            for (size_t i = 0; i < npar(); i++) pars[i] = s.GetField(i + field_offset).GetDouble();
+            par_mat.push_back(pars);
+        }
+
+        db.CommitTransaction();
+        db_success = true;
+    }, "Failed while fetching particle parameters", 0)
+
+    if (not db_success) { db.RollbackTransaction(); }
+
+    return db_success;
+}
+
+
+bool AbcSmc::_fetch_particle_metrics(
+    const vector<size_t> &serials,
+    vector<Row> &met_mat,
+    const bool verbose
+) {
+    sqdb::Db db(_database_filename.c_str());
+
+    // construct the select statement for relevant metrics
+    stringstream select_mets_ss;
+    select_mets_ss << "SELECT * FROM " + MET_TABLE + " WHERE ";
+    if (serials.size() > 1) {
+        select_mets_ss << "serial IN (" << serials[0];
+        for (size_t i = 1; i < serials.size(); i++) select_mets_ss << ", " << serials[i];
+        select_mets_ss << ");";
+    } else {
+        select_mets_ss << "serial == " << serials[0] << ";";
+    }
+
+    bool db_success = false;
+    SQL_TRY_BLOCK(db, {
+        VERBOSE_MSG("Attempting: " << select_mets_ss.str())
+
+        // first field is serial, so we need to offset by 1
+        const int field_offset = 1;
+
+        db.BeginTransaction();
+        Statement s = db.Query(select_mets_ss.str().c_str());
+
+        while (s.Next()) {
+            Row mets(nmet());
+            for (size_t i = 0; i < nmet(); i++) mets[i] = s.GetField(i+field_offset).GetDouble();
+            met_mat.push_back(mets);
+        }
+
+        db.CommitTransaction();
+        db_success = true;
+    }, "Failed while fetching particle metrics", 0)
 
     return db_success;
 }
@@ -954,34 +1009,20 @@ bool AbcSmc::fetch_particle_parameters(
 bool AbcSmc::update_particle_metrics(sqdb::Db &db, vector<string> &update_metrics_strings, vector<string> &update_jobs_strings) {
     bool db_success = false;
 
-    try {
+    SQL_TRY_BLOCK(db, {
         db.Query("BEGIN EXCLUSIVE;").Next();
         for (size_t i = 0; i < update_metrics_strings.size(); ++i) {
             db.Query(update_metrics_strings[i].c_str()).Next(); // update metrics table
             db.Query(update_jobs_strings[i].c_str()).Next(); // update jobs table
         }
-
-        db_success = true;
         db.CommitTransaction();
-    } catch (const Exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT E: ";
-        cerr << e.GetErrorMsg() << endl;
-        cerr << "Failed while updating metrics:" << endl;
-        for (size_t i = 0; i < update_metrics_strings.size(); ++i) {
-            cerr << update_metrics_strings[i] << endl;
-            cerr << update_jobs_strings[i] << endl;
-        }
-    } catch (const exception &e) {
-        db.RollbackTransaction();
-        cerr << "CAUGHT e: ";
-        cerr << e.what() << endl;
-        cerr << "Failed while updating metrics:" << endl;
-        for (size_t i = 0; i < update_metrics_strings.size(); ++i) {
-            cerr << update_metrics_strings[i] << endl;
-            cerr << update_jobs_strings[i] << endl;
-        }
-    }
+        db_success = true;
+    }, "Failed while updating metrics:" << std::endl; for (size_t i = 0; i < update_metrics_strings.size(); ++i) {
+            std::cerr << update_metrics_strings[i] << std::endl;
+            std::cerr << update_jobs_strings[i] << std::endl;
+        }; std::cerr << ";", 0)
+
+    if (not db_success) { db.RollbackTransaction(); }
 
     return db_success;
 }
@@ -1021,7 +1062,7 @@ bool AbcSmc::simulate_next_particles(
 
     vector<int> serials;
     vector<unsigned long int> rng_seeds;
-    bool ok_to_continue = fetch_particle_parameters(db, select_ss, update_ss, serials, par_mat, rng_seeds, verbose);
+    bool ok_to_continue = _checkout_particle_parameters(db, select_ss, update_ss, serials, par_mat, rng_seeds, verbose);
     vector<string> update_metrics_strings;
     vector<string> update_jobs_strings;
     stringstream ss;
