@@ -15,6 +15,9 @@ build-debug: .FORCE
 install-exec: .FORCE
 	cd build && make && sudo cmake --install .
 
+build-all: .FORCE
+	make build-shared build-static install-exec
+
 clean: .FORCE
 	git clean -ifdx -e .vscode
 
