@@ -1,5 +1,5 @@
-#ifndef ABCSMC_H
-#define ABCSMC_H
+#ifndef ABC_COORDINATOR_H
+#define ABC_COORDINATOR_H
 
 #define mpi_root 0
 
@@ -29,12 +29,12 @@ namespace ABC {
 //  - private methods: _method_name()
 //  - public fields: field_name
 //  - public methods: method_name()
-class AbcSmc {
+class Coordinator {
     public:
         // default constructor - should be appropriate for `projection` mode
-        AbcSmc();
+        Coordinator();
         // default destructor - has to be defined where Eigen is available
-        ~AbcSmc();
+        ~Coordinator();
 
         size_t get_smc_iterations() { return _num_smc_sets; }
 
@@ -256,4 +256,4 @@ class AbcSmc {
 };
 
 } // namespace ABC
-#endif
+#endif // ABC_COORDINATOR_H

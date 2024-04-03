@@ -76,6 +76,9 @@ vector<T> as_vector(const Json::Value &val) {
     return extracted_vals;
 }
 
+/* --------------------- FUNCTIONS FOR PARSING CONFIGURATION FILE ------------------------------- */
+// TODO - move these into AbcConfig parsing
+
 void parse_iterations(
     const Json::Value &par, const size_t pseudosize,
     size_t * iterations,
@@ -880,6 +883,33 @@ bool AbcSmc::build_database(const gsl_rng* RNG) {
     return true;
 }
 
+std::vector<std::vector<double>> AbcSmc::get_particle_parameters(
+    const std::vector<size_t> &serials
+) {
+    if (serials.size() == 0) return {};
+    vector<Row> par_mat;
+    if (_fetch_particle_parameters(serials, par_mat)) { 
+        vector<vector<double>> res(par_mat.size());
+        for (size_t i = 0; i < par_mat.size(); i++) { res[i] = as_vector(par_mat[i]); }
+        return res;
+    } else {
+        return {}; // error messaging dealt with in _fetch_particle_parameters
+    };
+};
+
+std::vector<std::vector<double>> AbcSmc::get_particle_metrics(
+    const std::vector<size_t> &serials
+) {
+    if (serials.size() == 0) return {};
+    vector<Row> met_mat(serials.size());
+    if (_fetch_particle_metrics(serials, met_mat)) { 
+        vector<vector<double>> res(met_mat.size());
+        for (size_t i = 0; i < met_mat.size(); i++) { res[i] = as_vector(met_mat[i]); }
+        return res;
+    } else {
+        return {}; // error messaging dealt with in _fetch_particle_parameters
+    };
+};
 
 bool AbcSmc::_checkout_particle_parameters(
     sqdb::Db &db, stringstream &select_pars_ss, stringstream &update_jobs_ss,
@@ -924,7 +954,7 @@ bool AbcSmc::_checkout_particle_parameters(
 }
 
 bool AbcSmc::_fetch_particle_parameters(
-    const vector<int> &serials,
+    const vector<size_t> &serials,
     vector<Row> &par_mat,
     const bool verbose
 ) {

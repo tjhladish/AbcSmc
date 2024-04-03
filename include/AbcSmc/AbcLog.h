@@ -4,14 +4,14 @@
 
 #include <iostream>
 
-#include <AbcSmc/AbcSmc.h>
+#include <AbcSmc/Coordinator.h>
 
 namespace ABC {
 
 struct AbcLog {
 
     static void report_convergence_data(
-        AbcSmc * abc, const size_t t,
+        Coordinator * abc, const size_t t,
         std::ostream &os = std::cerr
     );
 
@@ -24,7 +24,7 @@ struct AbcLog {
     );
 
     static void filtering_report(
-        AbcSmc * abc,
+        Coordinator * abc,
         const size_t t,
         const Mat2D &posterior_pars, // rows = samples, by rank; cols = parameters, by order
         const Mat2D &posterior_mets, // rows = samples, by rank; cols = metrics, by order

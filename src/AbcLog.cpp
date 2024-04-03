@@ -30,7 +30,7 @@ void AbcLog::print_stats(
 }
 
 void AbcLog::report_convergence_data(
-    AbcSmc *abc,
+    Coordinator *abc,
     const size_t set_t,
     std::ostream &os
 ) {
@@ -87,7 +87,7 @@ void AbcLog::report_convergence_data(
 }
 
 void AbcLog::filtering_report(
-    AbcSmc * abc,
+    Coordinator * abc,
     const size_t t,
     const Mat2D &posterior_pars, // rows = samples, by rank; cols = parameters, by order
     const Mat2D &posterior_mets, // rows = samples, by rank; cols = metrics, by order

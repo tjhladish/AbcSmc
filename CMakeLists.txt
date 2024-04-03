@@ -1,6 +1,6 @@
 cmake_minimum_required( VERSION 3.16 )
 
-project( AbcSmc )
+project( AbcSmc VERSION 2.0.1 LANGUAGES CXX)
 
 set( CMAKE_CXX_STANDARD 17 )
 set( CMAKE_CXX_FLAGS "-Wall -Wpedantic -O2 -fPIC" )
@@ -37,23 +37,50 @@ add_library(abcsmc STATIC
     src/AbcLog.cpp src/AbcMPI.cpp src/AbcSmc.cpp src/AbcUtil.cpp
 )
 
+set_target_properties(abcsmc PROPERTIES
+  VERSION ${${CMAKE_PROJECT_NAME}_VERSION}
+  SOVERSION ${${CMAKE_PROJECT_NAME}_VERSION_MAJOR})
+
+
 find_package(GSL REQUIRED) # the abc library objects depend on the GSL library
 target_link_libraries(abcsmc PLS::PLS sqdb jsoncpp m GSL::gsl GSL::gslcblas ${CMAKE_DL_LIBS})
 # the abc library objects depend on pls, sqdb, jsoncpp, m (aka math.h), GSL, and dl (aka dl.h) libraries
 
 # look in these directories for header files, also make them available to other projects that link to abc
-target_include_directories(abcsmc PUBLIC include src lib)
+target_include_directories(abcsmc PRIVATE include src lib)
 
 add_executable(abc-bin src/main.cpp)
 target_link_libraries(abc-bin abcsmc)
 set_target_properties(abc-bin PROPERTIES OUTPUT_NAME abc)
 
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+  "AbcSmcConfigVersion.cmake"
+  VERSION ${AbcSmc_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+
+message(CMAKE_CURRENT_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+
+install(FILES "AbcSmcConfig.cmake" "${CMAKE_CURRENT_BINARY_DIR}/AbcSmcConfigVersion.cmake"
+  DESTINATION lib/cmake/AbcSmc
+)
+
 install(TARGETS abc-bin
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(TARGETS abcsmc
+install(TARGETS abcsmc # EXPORT AbcSmcTargets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES DESTINATION include
 )
+
+install(DIRECTORY include/AbcSmc
+  DESTINATION include
+)
+
+# install(EXPORT AbcSmcTargets
+#   NAMESPACE AbcSmc::
+#   DESTINATION lib/cmake/AbcSmc
+# )
