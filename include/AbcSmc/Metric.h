@@ -3,6 +3,7 @@
 #define ABCSMC_METRIC_H
 
 #include <type_traits>
+#include <memory>
 
 namespace ABC {
 
@@ -17,6 +18,9 @@ namespace ABC {
             std::string name;
             std::string short_name;
     };
+
+    typedef std::shared_ptr<const Metric> MetricPtr;
+    typedef std::vector<MetricPtr> MetricVec;
 
     // Type'd metric (as in, integer or float typed)
     template <typename NT>

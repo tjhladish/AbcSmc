@@ -7,6 +7,7 @@
 #include <utility>
 #include <cstddef>
 #include <cassert>
+#include <memory>
 
 using std::vector;
 using std::map;
@@ -36,11 +37,12 @@ namespace ABC {
 //   2. if index == maxindex, reset index to 0; do not lock the prng.
 template<typename Par, typename RNG>
 struct ParRNG {
+    typedef std::shared_ptr<Par> ParPtr;
     ParRNG(
-        RNG* rng, const vector<Par*> &mpars, const size_t posterior_size
+        RNG* rng, const vector<ParPtr> &mpars, const size_t posterior_size
     ) : _rng(rng), posteriorMaxIdx(posterior_size-1) {
         // this builds up the map of pseudo parameters => counters
-        for (const Par * p : mpars) {                                 // for each parameter ...
+        for (auto p : mpars) {                                 // for each parameter ...
             if ((not (p->isPosterior())) and (p->state_size() != 0)) { // if this isn't a posterior, and it has state size > 0 ...
                 _pseudo[p] = { 0, p->state_size() - 1 };              // ... then register it 
             }               
@@ -50,19 +52,19 @@ struct ParRNG {
     RNG* rng() const { return _rng; }
     void unlock() { lock = false; }
 
-    size_t pseudo(const Par * p);
+    size_t pseudo(const ParPtr p);
     size_t posterior();
 
     private:
         RNG* _rng;
-        map<const Par*, pair<size_t, size_t>> _pseudo;
+        map<const ParPtr, pair<size_t, size_t>> _pseudo;
         bool lock = false;
         size_t posteriorIdx = 0;
         size_t posteriorMaxIdx;
 };
 
 template<typename Par, typename RNG>
-size_t ParRNG<Par, RNG>::pseudo(const Par * p) {
+size_t ParRNG<Par, RNG>::pseudo(const ParPtr p) {
     assert(_pseudo.count(p) == 1);
     auto ret = _pseudo[p];
     if (not lock) {

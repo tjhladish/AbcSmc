@@ -4,16 +4,14 @@
 
 #include <iostream>
 
-#include <AbcSmc/AbcSmc.h>
+#include <AbcSmc/Coordinator.h>
+
+namespace ABC {
 
 struct AbcLog {
 
     static void report_convergence_data(
-        AbcSmc * abc, const size_t t,
-        std::ostream &os = std::cerr
-    );
-    static void _print_particle_table_header(
-        AbcSmc * abc,
+        Coordinator * abc, const size_t t,
         std::ostream &os = std::cerr
     );
 
@@ -26,20 +24,18 @@ struct AbcLog {
     );
 
     static void filtering_report(
-        AbcSmc * abc,
+        Coordinator * abc,
         const size_t t,
         const Mat2D &posterior_pars, // rows = samples, by rank; cols = parameters, by order
         const Mat2D &posterior_mets, // rows = samples, by rank; cols = metrics, by order
         std::ostream &os = std::cerr
     );
 
-
-    inline static const int WIDTH = 12;
-    inline static const string double_bar = "=========================================================================================";
-
     private:
-        AbcLog() {};
+        AbcLog();
 
-};
+}; // struct AbcLog
+
+} // namespace ABC
 
 #endif
