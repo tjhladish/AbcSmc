@@ -6,8 +6,9 @@
 #include <fstream> // for external executable version
 #include <sstream> // for stringstream
 #include <string> // for string
+#include <iostream> // for cerr
 
-#include <PLS/pls.h> // for float_type
+#include <PLS/types.h> // for float_type
 #include <AbcSmc/AbcMPIPar.h>
 
 // TODO approach this way?

@@ -1,9 +1,19 @@
 .FORCE:
 
-.FORCE:
-
 build: .FORCE
-	@cmake -S . -B $@ > /dev/null
+	mkdir -p $@ && cd $@ && cmake ..
+
+build-shared: .FORCE
+	mkdir -p $@ && cd $@ && cmake .. -DBUILD_SHARED_LIBS=YES -DCMAKE_BUILD_TYPE=Release && cmake --build .
+
+build-static: .FORCE
+	mkdir -p $@ && cd $@ && cmake .. -DBUILD_SHARED_LIBS=NO -DCMAKE_BUILD_TYPE=Release && cmake --build .
+
+build-debug: .FORCE
+	mkdir -p $@ && cd $@ && cmake .. -DBUILD_SHARED_LIBS=NO -DCMAKE_BUILD_TYPE=Debug && cmake --build .
+
+install-exec: .FORCE
+	cd build && make && sudo cmake --install .
 
 clean: .FORCE
 	git clean -ifdx -e .vscode

@@ -6,14 +6,12 @@
 
 #include <AbcSmc/AbcSmc.h>
 
+namespace ABC {
+
 struct AbcLog {
 
     static void report_convergence_data(
         AbcSmc * abc, const size_t t,
-        std::ostream &os = std::cerr
-    );
-    static void _print_particle_table_header(
-        AbcSmc * abc,
         std::ostream &os = std::cerr
     );
 
@@ -33,13 +31,11 @@ struct AbcLog {
         std::ostream &os = std::cerr
     );
 
-
-    inline static const int WIDTH = 12;
-    inline static const string double_bar = "=========================================================================================";
-
     private:
-        AbcLog() {};
+        AbcLog();
 
-};
+}; // struct AbcLog
+
+} // namespace ABC
 
 #endif
