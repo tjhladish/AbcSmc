@@ -39,8 +39,23 @@ class AbcSmc {
         // default constructor - should be appropriate for `projection` mode
         AbcSmc() {};
 
-        size_t get_smc_iterations() { return _num_smc_sets; }
+// Fundamental verbs for ABC-SMC
 
+        // parse a configuration file; warning: in the future, this may be moved to a configuration class
+        // OR become a constructor method?
+        void parse(const std::string &config_file, const size_t verbose = 0);
+
+        // build the storage database; in the future, may link to other storage classes?
+        void build(const size_t verbose = 0);
+
+        // check storage state => if jobs complete, perform PLS-ABC-SMC to create new simulation set
+        void process(const size_t rng_seed, const size_t verbose = 0);
+
+        // check storage state => if jobs available, run up-to-buffer-size simulations
+        void evaluate(const size_t buffer_size, const size_t verbose = 0);
+
+
+        size_t get_smc_iterations() { return _num_smc_sets; }
         size_t get_smc_size_at(const size_t set_num) {
             if (set_num >= _num_smc_sets) throw std::out_of_range("set_num out of range");
             return (set_num < _smc_set_sizes.size()) ? _smc_set_sizes[set_num] : _smc_set_sizes.back();
@@ -103,9 +118,12 @@ class AbcSmc {
         bool parse_config(const std::string &conf_filename);
 
         // when Storage class implemented, this goes there
+        [[deprecated("use build => process instead")]]
         bool build_database(const gsl_rng* RNG);
-
+        [[deprecated("use process")]]
         bool process_database(const gsl_rng* RNG, const bool verbose = false);
+
+
         bool read_SMC_sets_from_database(sqdb::Db &db, std::vector<std::vector<int> > &serials);
 
         bool fetch_particle_parameters(
@@ -178,6 +196,9 @@ class AbcSmc {
         void calculate_predictive_prior_weights( const size_t set_num );
 
 // interactions with storage:
+
+        bool _populate(const gsl_rng* RNG, const size_t verbose = 0);
+        bool _filter(const gsl_rng* RNG, const size_t verbose = 0);
 
         // TODO: replace this with storage object
         std::string _database_filename;

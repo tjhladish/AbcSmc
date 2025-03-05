@@ -2,20 +2,21 @@
 #ifndef DICE_H
 #define DICE_H
 
-#include <gsl/gsl_statistics_double.h>
+#include <gsl/gsl_rng.h>               // for gsl_rng_* functions
+#include <gsl/gsl_statistics_double.h> // for gsl_stats_sd
 #include <vector>
-#include "examples.h"
 
 using namespace std;
 
 // wrapper for simulator
 // must take vector of doubles (ABC parameters)
 // and return vector of doubles (ABC metrics)
-extern "C" std::vector<double> simulator(
-    std::vector<double> parameters,
+extern "C" vector<double> simulator(
+    vector<double> parameters,
     const unsigned long int rng_seed,
     const unsigned long int serial
 ) {
+    auto RNG = gsl_rng_alloc(gsl_rng_taus2);
     // seed the rng using the provided seed
     gsl_rng_set(RNG, rng_seed);
     // NB: your simulator may use whatever rng you like, seed it however you like, etc
@@ -26,20 +27,19 @@ extern "C" std::vector<double> simulator(
 
     vector<double> results(num_dice, 0);
 
-    int sum = 0;
+    size_t sum = 0;
 
     for (size_t i = 0; i < num_dice; i++) {
         results[i] = gsl_rng_uniform_int(RNG, num_faces) + 1;
         sum += results[i];
     }
 
-    vector<double> metrics(2);
-    metrics[0] = sum;
-    if (num_dice == 1) {
-        metrics[1] = 0;
-    } else {
+    vector<double> metrics = { static_cast<double>(sum), 0 };
+    if (num_dice != 1) {
         metrics[1] = gsl_stats_sd(&results[0], 1, num_dice);
     }
+
+    gsl_rng_free(RNG);
 
     return metrics;
 };
